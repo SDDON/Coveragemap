@@ -1,15 +1,20 @@
 import dagre from 'dagre';
 import { Node, Edge, Position } from '@xyflow/react';
 
-const nodeWidth = 200;
-const nodeHeight = 50;
+const nodeWidth = 220;
+const nodeHeight = 100;
 
 export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
   
   const isHorizontal = direction === 'LR';
-  dagreGraph.setGraph({ rankdir: direction });
+  dagreGraph.setGraph({
+    rankdir: direction,
+    nodesep: 80,   // Horizontal spacing between sibling nodes
+    ranksep: 120,  // Vertical spacing between hierarchy levels
+    edgesep: 30,   // Spacing between edges
+  });
 
   nodes.forEach((node) => {
     dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });

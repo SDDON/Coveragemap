@@ -1,26 +1,31 @@
+import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 
-export default function CoverageNode({ data }: { data: Record<string, any> }) {
-  const bgColor = data.test_status === 'Passed' ? '#c8e6c9' : data.test_status === 'Failed' ? '#ffcdd2' : 'white';
+// Inline style extracted as a constant to avoid creating a new object on every render
+const wrapperStyle = { pointerEvents: 'auto' as const, width: '220px' };
+
+function CoverageNode({ data }: { data: any; selected?: boolean; [key: string]: any }) {
+  // Status classes are applied to the wrapper by App.tsx, so we just use standard classes here
   return (
-    <div style={{ position: 'relative', width: '200px', height: '100%', pointerEvents: 'auto' }}>
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{ zIndex: 10, left: 0, top: 0, width: '100%', height: '5px', borderRadius: 0, opacity: 1, background: 'transparent', border: 'none', transform: 'none' }}
-      />
-      <div style={{ textAlign: 'center', background: bgColor, border: '1px solid #333', borderRadius: '5px', padding: '10px' }}>
-        <div className="node-label" style={{ fontWeight: 'bold' }}>{data.label || 'Node'}</div>
-        <div style={{ fontSize: '10px', color: '#555' }}>{data.name}</div>
-        <div style={{ fontSize: '10px', fontStyle: 'italic', marginTop: 4 }}>
+    <div className="custom-node-wrapper" style={wrapperStyle}>
+      <Handle type="target" position={Position.Top} id="top" className="react-flow__handle-top" />
+      <div className="custom-node">
+        {/* Decorative corner element for status color inheritance (handled in CSS) */}
+        <div className="status-indicator"></div>
+        
+        <div className="node-label">{data.label || 'Node'}</div>
+        <div className="node-type">{data.name}</div>
+        <div className="node-aliases">
           {data.aliases?.join(', ')}
         </div>
       </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={{ zIndex: 10, left: 0, bottom: 0, width: '100%', height: '5px', borderRadius: 0, opacity: 1, background: 'transparent', border: 'none', transform: 'none' }}
-      />
+      <Handle type="source" position={Position.Bottom} id="bottom" className="react-flow__handle-bottom" />
     </div>
   );
 }
+
+// Custom comparator: only re-render when actual visible data changes.
+// Ignore xPos, yPos, dragging, zIndex etc. which change every drag frame.
+export default memo(CoverageNode, (prev, next) => {
+  return prev.data === next.data && prev.selected === next.selected;
+});

@@ -87,8 +87,8 @@ def api_create_edge(edge: EdgeCreate, session = Depends(get_db)):
 @app.put("/api/edges/{edge_id}")
 def api_update_edge(edge_id: str, edge: EdgeUpdate, session = Depends(get_db)):
     try:
-        update_edge(session, edge_id, edge)
-        return {"status": "success"}
+        new_id = update_edge(session, edge_id, edge)
+        return {"status": "success", "new_id": new_id}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

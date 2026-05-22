@@ -1,8 +1,56 @@
-﻿body {
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Light Theme Colors */
+  --bg-color: #f8fafc;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  
+  --panel-bg: rgba(255, 255, 255, 0.85);
+  --panel-border: rgba(226, 232, 240, 0.8);
+  --panel-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  
+  --node-bg: #ffffff;
+  --node-border: #cbd5e1;
+  --node-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --node-shadow-hover: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  
+  /* Status Colors */
+  --status-passed-bg: #dcfce7;
+  --status-passed-border: #22c55e;
+  --status-passed-text: #166534;
+  
+  --status-failed-bg: #fee2e2;
+  --status-failed-border: #ef4444;
+  --status-failed-text: #991b1b;
+
+  --status-untested-bg: #ffffff;
+  --status-untested-border: #cbd5e1;
+  --status-untested-text: #0f172a;
+
+  /* Handle Colors */
+  --handle-color: rgba(59, 130, 246, 0.15); /* Light blue strip */
+  --handle-hover: rgba(59, 130, 246, 0.8);
+
+  --accent-incoming: #3b82f6; /* Blue */
+  --accent-outgoing: #f59e0b; /* Amber */
+  
+  --primary-btn: #3b82f6;
+  --primary-btn-hover: #2563eb;
+  --danger-btn: #ef4444;
+  --danger-btn-hover: #dc2626;
+  --success-btn: #10b981;
+  --success-btn-hover: #059669;
+}
+
+body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bg-color);
+  color: var(--text-main);
+  overflow: hidden;
 }
 
 #root {
@@ -10,31 +58,300 @@
   height: 100vh;
 }
 
-.react-flow__node, .react-flow__edge {
-  transition: opacity 0.3s, border 0.3s, box-shadow 0.3s;
+/* Glassmorphism Panels */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
+  border-radius: 12px;
+  padding: 20px;
 }
 
-.has-selection .react-flow__node:not(.active),
-.has-selection .react-flow__edge:not(.active) {
-  opacity: 0.2;
+/* Base Node Styling */
+.react-flow__node {
+  /* GPU-accelerate position updates for smooth dragging */
+  will-change: transform;
+}
+
+/* Only animate opacity/filter when Focus+Context selection is active */
+.has-selection .react-flow__node {
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.custom-node {
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: var(--node-shadow);
+  min-width: 180px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  /* No transition during drag — status color changes are instant */
+  border: 2px solid transparent;
+}
+
+.custom-node:hover {
+  box-shadow: var(--node-shadow-hover);
+}
+
+/* Status-based styles for Nodes */
+.react-flow__node.status-passed .custom-node {
+  background: var(--status-passed-bg);
+  border-color: var(--status-passed-border);
+  color: var(--status-passed-text);
+}
+.react-flow__node.status-passed .node-type { color: var(--status-passed-text); opacity: 0.8; }
+
+.react-flow__node.status-failed .custom-node {
+  background: var(--status-failed-bg);
+  border-color: var(--status-failed-border);
+  color: var(--status-failed-text);
+}
+.react-flow__node.status-failed .node-type { color: var(--status-failed-text); opacity: 0.8; }
+
+.react-flow__node.status-untested .custom-node {
+  background: var(--status-untested-bg);
+  border-color: var(--status-untested-border);
+  color: var(--status-untested-text);
+}
+.react-flow__node.status-untested .node-type { color: var(--text-muted); }
+
+/* Node Text */
+.node-label {
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 4px;
+}
+
+.node-type {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+.node-aliases {
+  font-size: 0.75rem;
+  font-style: italic;
+  margin-top: 6px;
+  opacity: 0.7;
+}
+
+/* Node Handles (Distinct Top & Bottom Bars) */
+.react-flow__handle {
+  width: 100% !important;
+  height: 14px !important; /* Larger hit area */
+  background-color: transparent !important; /* Invisible by default */
+  border: none !important;
+  border-radius: 0 !important;
+  opacity: 1 !important;
+  transition: background-color 0.2s ease !important;
+  transform: none !important; /* Fix alignment */
+  z-index: 10 !important;
+}
+
+.react-flow__handle:hover {
+  background-color: rgba(59, 130, 246, 0.8) !important;
+  cursor: crosshair !important;
+}
+
+.react-flow__handle-top {
+  top: 0 !important;
+  left: 0 !important;
+  border-top-left-radius: 4px !important;
+  border-top-right-radius: 4px !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.react-flow__handle-bottom {
+  bottom: 0 !important;
+  left: 0 !important;
+  border-bottom-left-radius: 4px !important;
+  border-bottom-right-radius: 4px !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+/* Side handles for bidirectional edge separation */
+.react-flow__handle-side {
+  width: 12px !important;
+  height: 12px !important;
+  border-radius: 50% !important;
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  min-width: 12px !important;
+  min-height: 12px !important;
+}
+
+/* Hovering over the node highlights the handles slightly */
+.custom-node-wrapper:hover .react-flow__handle {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+.custom-node-wrapper:hover .react-flow__handle:hover {
+  background-color: rgba(59, 130, 246, 0.8) !important;
+}
+
+/* Hovering directly on the handle */
+.react-flow__handle:hover {
+  background-color: var(--handle-hover) !important;
+  height: 8px !important;
+}
+
+/* Edges */
+.react-flow__edge {
+  transition: opacity 0.3s, stroke 0.3s;
+}
+.react-flow__edge path.react-flow__edge-path {
+  stroke: #64748b !important; /* Default gray for untested edges */
+}
+.react-flow__edge .custom-marker-path {
+  fill: #64748b; /* Default gray marker */
+}
+
+.react-flow__edge.status-passed path.react-flow__edge-path {
+  stroke: var(--status-passed-border) !important;
+}
+.react-flow__edge.status-passed .custom-marker-path {
+  fill: var(--status-passed-border) !important;
+}
+
+.react-flow__edge.status-failed path.react-flow__edge-path {
+  stroke: var(--status-failed-border) !important;
+}
+.react-flow__edge.status-failed .custom-marker-path {
+  fill: var(--status-failed-border) !important;
+}
+
+.react-flow__edge.active path.react-flow__edge-path {
+  stroke-width: 3.5 !important;
+}
+.react-flow__edge.active .custom-marker-path {
+  /* Increase marker size slightly by scaling */
+  transform: scale(1.2);
+  transform-origin: center;
+}
+
+/* Focus + Context Dimming (opacity only, no expensive filter) */
+.has-selection .react-flow__node:not(.active):not(.related),
+.has-selection .react-flow__edge:not(.active):not(.related) {
+  opacity: 0.15;
+}
+
+.react-flow__node.active,
+.react-flow__edge.active,
+.react-flow__node.related,
+.react-flow__edge.related {
+  opacity: 1;
 }
 
 .react-flow__node.active,
 .react-flow__edge.active {
   opacity: 1;
+  filter: none;
 }
 
-/* Directional Highlight Styles */
-.react-flow__node.highlight-incoming {
-  border: 2px solid #3498db !important;
-  box-shadow: 0 0 10px #3498db;
+/* Directional Highlights (Selected Node Neighbors) */
+.react-flow__node.highlight-incoming .custom-node {
+  box-shadow: 0 0 0 3px var(--accent-incoming), 0 0 20px rgba(59, 130, 246, 0.5);
 }
 
-.react-flow__node.highlight-outgoing {
-  border: 2px solid #e67e22 !important;
-  box-shadow: 0 0 10px #e67e22;
+.react-flow__node.highlight-outgoing .custom-node {
+  box-shadow: 0 0 0 3px var(--accent-outgoing), 0 0 20px rgba(245, 158, 11, 0.5);
 }
 
 .react-flow__edge.highlight-edge path.react-flow__edge-path {
   stroke-width: 4 !important;
+}
+
+/* UI Controls Form Styling */
+.form-group {
+  margin-bottom: 12px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: 0.95rem;
+  border-radius: 8px;
+  border: 1px solid var(--node-border);
+  padding: 8px 12px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+  background: white;
+  color: var(--text-main);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary-btn);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Button Styling */
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--node-border);
+  background: white;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+button:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+button.primary {
+  background: var(--primary-btn);
+  color: white;
+  border: none;
+}
+button.primary:hover {
+  background: var(--primary-btn-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+}
+
+button.danger {
+  background: var(--danger-btn);
+  color: white;
+  border: none;
+}
+button.danger:hover {
+  background: var(--danger-btn-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.3);
+}
+
+button.success {
+  background: var(--success-btn);
+  color: white;
+  border: none;
+}
+button.success:hover {
+  background: var(--success-btn-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+}
+
+button.icon-btn {
+  padding: 6px;
+  border-radius: 50%;
 }

@@ -112,7 +112,7 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
             r_test_status = r_props.get("test_status", "Untested")
             normalized_edge_type = _normalize_string(r.type)
             
-            G.add_edge(n_id, m_id, key=r_id, id=r_id, type=normalized_edge_type, properties=r_props, test_status=r_test_status)
+            G.add_edge(n_id, m_id, key=r_id, id=r_id, type=normalized_edge_type, action=r_props.get("action"), properties=r_props, test_status=r_test_status)
             
     return G
 
@@ -180,6 +180,7 @@ def convert_to_response(G: nx.MultiDiGraph, debounce_id: Optional[str] = None) -
             source=u,
             target=v,
             type=data.get("type", "RELATED"),
+            action=data.get("action"),
             properties=data.get("properties", {}),
             test_status=data.get("test_status", "Untested")
         ))
@@ -225,21 +226,60 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
         
     set_query = "SET " + ", ".join(set_clauses) if set_clauses else ""
         
-    if not set_query:
+    if not set_query and node_data.label is None:
         return
         
     query = f"""
     MATCH (n) WHERE elementId(n) = $id
     {set_query}
+    RETURN n
     """
-    session.run(query, **params)
+    
+    # First apply properties update
+    if set_query:
+        session.run(query, **params)
+        
+    # Then handle label update if provided
+    if node_data.label is not None:
+        # Get existing labels
+        labels_result = session.run("MATCH (n) WHERE elementId(n) = $id RETURN labels(n) as labels", id=node_id).single()
+        if labels_result and labels_result["labels"]:
+            old_labels = labels_result["labels"]
+            # Remove all old labels and set the new one
+            remove_clause = " ".join([f"REMOVE n:`{l}`" for l in old_labels])
+            set_label_query = f"MATCH (n) WHERE elementId(n) = $id {remove_clause} SET n:`{node_data.label}`"
+            session.run(set_label_query, id=node_id)
+
+def _recalc_target_node_status(session, target_id: str):
+    query = """
+    MATCH (target) WHERE elementId(target) = $target_id
+    OPTIONAL MATCH ()-[in_r]->(target)
+    WITH target, collect(coalesce(in_r.test_status, 'Untested')) AS statuses
+    SET target.test_status = 
+      CASE 
+        WHEN size(statuses) = 0 THEN 'Untested'
+        WHEN 'Failed' IN statuses THEN 'Failed' 
+        WHEN all(s IN statuses WHERE s = 'Passed') THEN 'Passed' 
+        ELSE 'Untested' 
+      END
+    """
+    session.run(query, target_id=target_id)
 
 def delete_node(session, node_id: str):
+    find_targets_query = """
+    MATCH (n)-[r]->(target) WHERE elementId(n) = $id
+    RETURN elementId(target) AS target_id
+    """
+    targets = [record["target_id"] for record in session.run(find_targets_query, id=node_id)]
+    
     query = """
     MATCH (n) WHERE elementId(n) = $id
     DETACH DELETE n
     """
     session.run(query, id=node_id)
+    
+    for t_id in targets:
+        _recalc_target_node_status(session, t_id)
 
 def create_edge(session, edge_data: EdgeCreate) -> str:
     query = f"""
@@ -247,6 +287,7 @@ def create_edge(session, edge_data: EdgeCreate) -> str:
     WHERE elementId(source) = $source_id AND elementId(target) = $target_id
     CREATE (source)-[r:`{edge_data.type}`]->(target)
     SET r.test_status = $test_status,
+        r.action = $action,
         r += $properties
     RETURN elementId(r) as id
     """
@@ -254,37 +295,71 @@ def create_edge(session, edge_data: EdgeCreate) -> str:
         source_id=edge_data.source,
         target_id=edge_data.target,
         test_status=edge_data.test_status,
+        action=edge_data.action,
         properties=edge_data.properties
     )
     record = result.single()
     if not record:
         raise ValueError(f"Source or target node not found")
+    _recalc_target_node_status(session, edge_data.target)
     return record["id"]
 
-def update_edge(session, edge_id: str, edge_data: EdgeUpdate):
+def update_edge(session, edge_id: str, edge_data: EdgeUpdate) -> str:
     set_clauses = []
     params = {"id": edge_id}
     
     if edge_data.test_status is not None:
         set_clauses.append("r.test_status = $test_status")
         params["test_status"] = edge_data.test_status
+    if getattr(edge_data, "action", None) is not None or "action" in edge_data.model_fields_set:
+        set_clauses.append("r.action = $action")
+        params["action"] = edge_data.action
     if edge_data.properties is not None:
         set_clauses.append("r += $properties")
         params["properties"] = edge_data.properties
         
     set_query = "SET " + ", ".join(set_clauses) if set_clauses else ""
-    if not set_query:
-        return
+    
+    new_id = edge_id
+    if getattr(edge_data, "type", None) is not None:
+        query = f"""
+        MATCH (a)-[r]->(b) WHERE elementId(r) = $id
+        CREATE (a)-[r2:`{edge_data.type}`]->(b)
+        SET r2 = properties(r)
+        {set_query.replace('r.', 'r2.').replace('r +=', 'r2 +=')}
+        DELETE r
+        RETURN elementId(r2) AS new_id, elementId(b) AS target_id
+        """
+        result = session.run(query, **params)
+        record = result.single()
+        if record:
+            new_id = record["new_id"]
+            _recalc_target_node_status(session, record["target_id"])
+            return new_id
+        return new_id
         
-    query = f"""
-    MATCH ()-[r]->() WHERE elementId(r) = $id
-    {set_query}
-    """
-    session.run(query, **params)
+    if set_query:
+        query = f"""
+        MATCH ()-[r]->(target) WHERE elementId(r) = $id
+        {set_query}
+        RETURN elementId(r) AS new_id, elementId(target) AS target_id
+        """
+        result = session.run(query, **params)
+        record = result.single()
+        if record:
+            new_id = record["new_id"]
+            _recalc_target_node_status(session, record["target_id"])
+            
+    return new_id
 
 def delete_edge(session, edge_id: str):
     query = """
-    MATCH ()-[r]->() WHERE elementId(r) = $id
+    MATCH ()-[r]->(target) WHERE elementId(r) = $id
+    WITH r, target, elementId(target) AS target_id
     DELETE r
+    RETURN target_id
     """
-    session.run(query, id=edge_id)
+    result = session.run(query, id=edge_id)
+    record = result.single()
+    if record:
+        _recalc_target_node_status(session, record["target_id"])
