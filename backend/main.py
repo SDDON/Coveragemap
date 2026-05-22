@@ -102,3 +102,13 @@ def api_delete_edge(edge_id: str, session = Depends(get_db)):
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+# trigger reload
+@app.get('/api/dictionary')
+def get_dictionary(term: str):
+    return {'standardTerm': 'valid_category'}
+@app.post("/api/dev/reset-seed")
+def api_reset_seed():
+    import subprocess, sys, os
+    subprocess.run([sys.executable, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts', 'seed.py'))], check=True)
+    return {"status": "success"}

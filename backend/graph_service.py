@@ -87,7 +87,7 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
         
         m = record["m"]
         r = record["r"]
-        if m and r:
+        if m is not None and r is not None:
             m_id = str(m.element_id)
             m_labels = list(m.labels)
             m_label = m_labels[0] if m_labels else "Node"

@@ -1,4 +1,4 @@
-body {
+﻿body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -10,26 +10,31 @@ body {
   height: 100vh;
 }
 
-/* Focus+Context: Dim unselected nodes and edges when there is a selection */
-.react-flow.has-selection .react-flow__node:not(.selected) {
+.react-flow__node, .react-flow__edge {
+  transition: opacity 0.3s, border 0.3s, box-shadow 0.3s;
+}
+
+.has-selection .react-flow__node:not(.active),
+.has-selection .react-flow__edge:not(.active) {
   opacity: 0.2;
-  transition: opacity 0.3s;
 }
 
-.react-flow.has-selection .react-flow__edge:not(.selected) {
-  opacity: 0.2;
-  transition: opacity 0.3s;
-}
-
-.react-flow__node {
-  transition: opacity 0.3s;
-}
-
-.react-flow__edge {
-  transition: opacity 0.3s;
-}
-
-.react-flow__node.selected,
-.react-flow__edge.selected {
+.react-flow__node.active,
+.react-flow__edge.active {
   opacity: 1;
+}
+
+/* Directional Highlight Styles */
+.react-flow__node.highlight-incoming {
+  border: 2px solid #3498db !important;
+  box-shadow: 0 0 10px #3498db;
+}
+
+.react-flow__node.highlight-outgoing {
+  border: 2px solid #e67e22 !important;
+  box-shadow: 0 0 10px #e67e22;
+}
+
+.react-flow__edge.highlight-edge path.react-flow__edge-path {
+  stroke-width: 4 !important;
 }

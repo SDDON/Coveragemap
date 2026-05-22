@@ -21,7 +21,7 @@
 | 5 | E2E Final Pass | E2E Test execution (Phase 1: Tiers 1-4, Phase 2: Tier 5) | M1, M2, M3, M4 | PLANNED |
 
 ## Interface Contracts
-### FastAPI ↔ React
+### FastAPI ??React
 - `GET /api/graph`: Returns JSON representation of the graph (nodes, edges) standardized by NetworkX. Include Alias normalization.
 - `POST /api/graph/nodes`: Create a new node.
 - `PUT /api/graph/nodes/{id}`: Update a node (including test status, alias).

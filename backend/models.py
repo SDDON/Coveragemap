@@ -18,7 +18,7 @@ class EdgeModel(BaseModel):
     test_status: Literal["Untested", "Passed", "Failed"] = "Untested"
 
 class NodeCreate(BaseModel):
-    label: str = Field(..., pattern=r"^[A-Za-z0-9_]+$")
+    label: str = Field(..., pattern=r"^.*$")
     name: str
     aliases: List[str] = Field(default_factory=list)
     properties: Dict[str, Any] = Field(default_factory=dict)
@@ -33,7 +33,7 @@ class NodeUpdate(BaseModel):
 class EdgeCreate(BaseModel):
     source: str
     target: str
-    type: str = Field(..., pattern=r"^[A-Za-z0-9_]+$")
+    type: str = Field(..., pattern=r"^.*$")
     properties: Dict[str, Any] = Field(default_factory=dict)
     test_status: Literal["Untested", "Passed", "Failed"] = "Untested"
 

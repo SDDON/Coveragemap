@@ -1,61 +1,33 @@
-# Handoff Report: Milestone 3-1 (Backend Alias Logic)
+﻿# Handoff Report: React Flow UI Enhancements - Connection Mechanism
 
 ## 1. Observation
-- In `backend/graph_service.py` (lines 7-16), an `ALIAS_MAP` is defined, and `_normalize_aliases` correctly normalizes arrays of aliases.
-- In `backend/graph_service.py` (lines 68, 81), `n.get("aliases")` is successfully normalized for all nodes: `aliases = _normalize_aliases(n.get("aliases"))`.
-- However, when adding nodes and edges to the NetworkX graph (`G.add_node`, `G.add_edge`), properties are passed as raw dicts (`properties=dict(n)` and `properties=dict(r)`). Edge types are passed directly as `type=r.type`.
-- According to `d:\personal\living_graph_tc\.agents\sub_orch_m3_resume\SCOPE.md` (line 4): "The `GET /api/graph` endpoint should normalize `category` or `type` or relevant view properties to standard terms."
-- In `backend/main.py` (lines 40-51), the `GET /api/aliases` endpoint properly aggregates and returns normalized alias values from all `n.aliases` arrays.
+- 대상 파일: rontend/src/CoverageNode.tsx
+- 현재 CoverageNode 구현을 확인한 결과, 2개의 <Handle> 컴포넌트(	ype="target", 	ype="source")가 다음과 같은 인라인 스타일로 구현되어 있습니다.
+  style={{ width: '100%', height: '100%', position: 'absolute', zIndex: 1, ... }}
+- 이로 인해 <Handle> 요소가 노드의 전체(100%)를 덮고 있으며(z-index: 1), source 핸들과 target 핸들이 완전히 겹쳐 있는 상태입니다. 
 
 ## 2. Logic Chain
-1. The backend has successfully laid the groundwork for aliases (`ALIAS_MAP`, `_normalize_aliases`, and the `/api/aliases` endpoint).
-2. Node `aliases` fields are being correctly intercepted and normalized during the Neo4j -> NetworkX conversion.
-3. However, single-value fields (e.g., node `category`, edge `type`, node/edge `type` property) are extracted and appended to the graph without passing through `ALIAS_MAP`.
-4. Because the scope requires standardizing `category` and `type` properties, the current implementation is incomplete and needs a minor fix to apply standardisation to those fields as well.
+- React Flow에서 <Handle>은 포인터 이벤트를 가로채어 엣지(Edge) 연결을 시작하는 역할을 합니다.
+- 핸들 2개가 노드 크기의 100%를 차지하고 노드 위에 덮어씌워져 있으므로, 사용자가 노드의 본문을 클릭하거나 드래그하려고 할 때 실제로는 핸들을 클릭하게 되어 노드 선택 및 드래그가 불가능해집니다.
+- 또한 source와 	arget 핸들이 동일한 크기로 정확히 겹쳐 있기 때문에, 마우스 이벤트가 상단에 위치한 핸들에만 도달하여 들어오는 연결(incoming connection)을 	arget 핸들에 올바르게 연결할 수 없습니다.
+- 이를 해결하기 위해서는 노드의 중앙 부분(드래그 및 클릭 영역)을 방해하지 않으면서 엣지가 노드의 경계면에 자연스럽게 연결되도록 핸들의 크기와 위치를 수정해야 합니다. 
 
 ## 3. Caveats
-- It is assumed that properties like `category` and `type` will contain strings that map to `ALIAS_MAP` keys.
-- Edge `type` in Neo4j is capitalized by convention, but `ALIAS_MAP` values are lowercase. `_normalize_aliases` title-cases unrecognized terms, which might change edge types from `RELATED` to `Related`. If `type` needs to be uppercase, a different normalizer or an `.upper()` conversion on the final edge type may be necessary. For now, the proposed fix handles basic mapping and title-casing.
+- Custom Edge(Floating Edge)를 구현하는 방법도 있으나, 구조가 복잡해지므로 현재 구조에서 가장 간단하고 직관적인 '얇은 경계면 핸들' 전략이 적합하다고 판단했습니다.
+- 저는 Read-only 조사자(explorer)이므로 직접 코드를 수정하지 않습니다.
 
 ## 4. Conclusion
-The Backend Alias Logic is mostly implemented but misses the requirement to normalize `category` and `type` fields. 
+리뷰어의 피드백을 반영하여 드래그/클릭 이벤트를 막지 않도록 **상/하단 얇은 경계면 핸들(Thin boundary handles)** 전략을 채택할 것을 권장합니다.
 
-**Proposed Fix Strategy**: 
-Introduce a `_normalize_string` helper in `backend/graph_service.py` and apply it to properties and edge types during `fetch_graph_from_neo4j`. 
+**추천 수정 전략:**
+rontend/src/CoverageNode.tsx의 핸들 스타일을 노드 전체를 덮지 않고 얇은 띠 형태로 분리합니다.
+1. **Target Handle (Top):** 노드의 상단 모서리에만 얇게 배치.
+   - height: '10px', width: '100%', 	op: 0, 	ransform: 'translateY(-50%)'
+2. **Source Handle (Bottom):** 노드의 하단 모서리에만 얇게 배치.
+   - height: '10px', width: '100%', ottom: 0, 	ransform: 'translateY(50%)'
 
-**Snippet for proposed fix (`backend/graph_service.py`)**:
-```python
-def _normalize_string(val: Any) -> Any:
-    if not isinstance(val, str):
-        return val
-    val_lower = val.lower()
-    if val_lower in ALIAS_MAP:
-        return ALIAS_MAP[val_lower]
-    elif val_lower in CANONICAL_VALUES:
-        return val_lower
-    return val.title()
-```
-
-Inside `fetch_graph_from_neo4j`, before adding a node/edge, normalize the specific keys:
-```python
-# For node properties
-n_props = dict(n)
-for key in ["category", "type"]:
-    if key in n_props:
-        n_props[key] = _normalize_string(n_props[key])
-
-# For edge properties and type
-r_props = dict(r)
-for key in ["category", "type"]:
-    if key in r_props:
-        r_props[key] = _normalize_string(r_props[key])
-normalized_edge_type = _normalize_string(r.type)
-
-G.add_edge(n_id, m_id, type=normalized_edge_type, properties=r_props)
-```
+이 방식을 통해 노드의 중앙 영역이 개방되어 정상적으로 드래그와 클릭이 가능해지며, 동시에 다중 연결을 쉽게 할 수 있습니다.
 
 ## 5. Verification Method
-- Edit `backend/graph_service.py` to include the fix.
-- Ensure `uvicorn main:app` runs without errors.
-- Create a test node in Neo4j with `category: "front-end"` or an edge with `type: "FRONT-END"`.
-- Fetch `GET /api/graph` and verify the output JSON shows the properties translated to `frontend`.
+- **명령어:** cd frontend && npm run build (문법 에러 확인)
+- **검증 조건:** 앱 실행 후 노드 중앙 바디를 클릭하여 선택 및 드래그가 가능한지, 그리고 상/하단 엣지로 올바르게 엣지 연결이 가능한지 테스트합니다.
