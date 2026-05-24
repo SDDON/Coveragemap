@@ -1,4 +1,17 @@
 import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => {
+  page.on('framenavigated', async () => {
+    try {
+      const heavyBtn = page.getByRole('button', { name: /전체 그래프 로드/i });
+      await heavyBtn.waitFor({ state: 'visible', timeout: 1500 });
+      await heavyBtn.click({ force: true });
+    } catch (e) {
+      // Ignore if button is not present
+    }
+  });
+});
+
 test('debug node bounds', async ({ page }) => {
   const loadPromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
   await page.goto('/');

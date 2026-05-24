@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 from main import app
 from database import get_db
 
@@ -42,6 +42,11 @@ def test_api_update_node():
 
 def test_api_delete_node():
     mock_session = Mock()
+    # Mock iteration for targets query
+    mock_run_result = MagicMock()
+    mock_run_result.__iter__.return_value = iter([])
+    mock_session.run.return_value = mock_run_result
+    
     app.dependency_overrides[get_db] = lambda: mock_session
     
     response = client.delete("/api/nodes/n1")
@@ -70,6 +75,10 @@ def test_api_create_edge():
 
 def test_api_update_edge():
     mock_session = Mock()
+    mock_result = MagicMock()
+    mock_result.single.return_value = {"new_id": "e1", "target_id": "n2"}
+    mock_session.run.return_value = mock_result
+    
     app.dependency_overrides[get_db] = lambda: mock_session
     
     response = client.put("/api/edges/e1", json={
@@ -77,12 +86,16 @@ def test_api_update_edge():
     })
     
     assert response.status_code == 200
-    assert response.json() == {"status": "success"}
+    assert response.json() == {"status": "success", "new_id": "e1"}
     
     app.dependency_overrides.clear()
 
 def test_api_delete_edge():
     mock_session = Mock()
+    mock_result = MagicMock()
+    mock_result.single.return_value = {"target_id": "n2"}
+    mock_session.run.return_value = mock_result
+    
     app.dependency_overrides[get_db] = lambda: mock_session
     
     response = client.delete("/api/edges/e1")
@@ -91,3 +104,4 @@ def test_api_delete_edge():
     assert response.json() == {"status": "success"}
     
     app.dependency_overrides.clear()
+

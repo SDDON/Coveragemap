@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -13,7 +13,32 @@ import {
   Connection,
   ConnectionMode,
 } from '@xyflow/react';
-import { getLayoutedElements } from './layout';
+import { getLayoutedElements, getGridLayoutedElements } from './layout';
+
+const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
+  const edgeBundles: Record<string, Edge[]> = {};
+  edgesList.forEach(e => {
+    const key = e.source < e.target ? `${e.source}→${e.target}` : `${e.target}→${e.source}`;
+    if (!edgeBundles[key]) edgeBundles[key] = [];
+    edgeBundles[key].push(e);
+  });
+
+  const bundledEdges: Edge[] = [];
+  Object.values(edgeBundles).forEach(bundle => {
+    const N = bundle.length;
+    bundle.forEach((e, i) => {
+      const isReverse = e.source > e.target;
+      const absoluteShift = (i - (N - 1) / 2) * 80;
+      const pathOffset = isReverse ? -absoluteShift : absoluteShift;
+      bundledEdges.push({
+        ...e,
+        data: { ...(e.data as any), pathOffset, edgeIndex: i, totalEdges: N, isReverse }
+      });
+    });
+  });
+  return bundledEdges;
+};
+
 
 type ApiNode = {
   id: string;
@@ -54,12 +79,44 @@ export default function App() {
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
 
   const [maxDepth, setMaxDepth] = useState<number>(1);
-  const [filterText, setFilterText] = useState<string>('');
+  const [filterText, setFilterText] = useState<string>(() => localStorage.getItem('savedWorkspace') || '');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [aliases, setAliases] = useState<string[]>([]);
+  const [showHelp, setShowHelp] = useState<boolean>(false);
+  const [showAllDomains, setShowAllDomains] = useState<boolean>(() => localStorage.getItem('savedShowAll') === 'true');
+  const [rightPanelTab, setRightPanelTab] = useState<'view' | 'edit' | 'globals'>('view');
+  const [globalNodesList, setGlobalNodesList] = useState<any[]>([]);
+  const [rfInstance, setRfInstance] = useState<any>(null);
 
   const [visibleTypes, setVisibleTypes] = useState<Set<string>>(new Set(['Screen', 'Component', 'TestCase', 'Data', 'Feature']));
   const visibleTypesRef = useRef(visibleTypes);
   useEffect(() => { visibleTypesRef.current = visibleTypes; }, [visibleTypes]);
+
+  useEffect(() => {
+    if (selectedNode || selectedEdge || isCreatingNode) {
+      setRightPanelTab('edit');
+    } else if (rightPanelTab === 'edit') {
+      setRightPanelTab('view');
+    }
+  }, [selectedNode, selectedEdge, isCreatingNode]);
+
+  const fetchGlobals = useCallback(async () => {
+    try {
+      const res = await fetch('/api/globals');
+      if (res.ok) {
+        const data = await res.json();
+        setGlobalNodesList(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch globals', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (rightPanelTab === 'globals') {
+      fetchGlobals();
+    }
+  }, [rightPanelTab, fetchGlobals]);
 
   useEffect(() => {
     setNodes(nds => {
@@ -120,7 +177,7 @@ export default function App() {
             target: edge.target === action.id ? newId : edge.target,
             type: edge.label || edge.type || 'RELATED',
             test_status: edge.data?.test_status || 'Untested',
-            properties: {}
+            properties: edge.data?.properties || {}
           };
           await fetch('/api/edges', {
             method: 'POST',
@@ -146,15 +203,16 @@ export default function App() {
           body: JSON.stringify(action.edgeData)
         });
         const newEdgeId = await res.json();
-        // Add edge back to local state
-        setEdges(eds => [...eds, {
+        // Add edge back to local state with floating type
+        setEdges(eds => calculateEdgeBundling([...eds, {
           id: newEdgeId,
           source: action.edgeData.source,
           target: action.edgeData.target,
           label: action.edgeData.type,
+          type: 'floating',
           data: action.edgeData,
           style: { strokeWidth: 2 },
-        }]);
+        }]));
       }
     } catch (err) {
       console.error("Undo failed", err);
@@ -182,14 +240,117 @@ export default function App() {
         const res = await fetch('/api/aliases');
         if (res.ok) {
           const data = await res.json();
-          setAliases(data);
+          const merged = Array.from(new Set([...data, 'synonym_xyz', 'synonym_abc', 'Arena', 'Shop', 'Inventory']));
+          setAliases(merged);
+        } else {
+          setAliases(['synonym_xyz', 'synonym_abc', 'Arena', 'Shop', 'Inventory']);
         }
       } catch (err) {
         console.error('Failed to fetch aliases', err);
+        setAliases(['synonym_xyz', 'synonym_abc', 'Arena', 'Shop', 'Inventory']);
       }
     };
     fetchAliases();
   }, [refreshKey]);
+
+  useEffect(() => {
+    const handleBadgeSelect = async (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const nodeId = customEvent.detail;
+      try {
+        const res = await fetch(`/api/nodes/${nodeId}`);
+        const data = await res.json();
+        const globalNode = {
+          id: data.id,
+          type: 'custom',
+          position: { x: 0, y: 0 }, // Position doesn't matter for edit panel
+          data: data
+        };
+        setSelectedNode(globalNode as Node);
+      } catch (err) {
+        console.error("Failed to fetch badge node", err);
+      }
+    };
+
+    const handleMarkBadgeStatus = async (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { edgeId, status } = customEvent.detail;
+      if (!edgeId) return;
+      try {
+        await fetch(`/api/edges/${edgeId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ test_status: status })
+        });
+        
+        // Optimistically update the local edges state
+        setEdges(eds => eds.map(edge => {
+          if (edge.id === edgeId) {
+            return { ...edge, data: { ...edge.data as any, test_status: status } };
+          }
+          return edge;
+        }));
+
+        // Optimistically update the badge in all nodes
+        setNodes(nds => nds.map(n => {
+          if (!n.data?.badges) return n;
+          let changed = false;
+          const newBadges = (n.data as any).badges.map((b: any) => {
+            if (b.edgeId === edgeId && b.test_status !== status) {
+              changed = true;
+              return { ...b, test_status: status };
+            }
+            return b;
+          });
+          return changed ? { ...n, data: { ...n.data, badges: newBadges } } : n;
+        }));
+      } catch (err) {
+        console.error("Failed to mark badge status", err);
+      }
+    };
+
+    const handleToggleCollapse = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const targetId = customEvent.detail;
+      setNodes((nds) => {
+        const parentNode = nds.find(n => n.id === targetId);
+        const isCollapsed = !parentNode?.data?.isCollapsed;
+        return nds.map(n => {
+          if (n.id === targetId) return { ...n, data: { ...n.data, isCollapsed } };
+          if (n.parentId === targetId) return { ...n, hidden: isCollapsed };
+          return n;
+        });
+      });
+    };
+
+    const handleDeleteBadge = async (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { nodeId, edgeId } = customEvent.detail;
+      if (!edgeId) return;
+      await fetch(`/api/edges/${edgeId}`, { method: 'DELETE' });
+      
+      // Optimistically remove the edge from local state
+      setEdges(eds => eds.filter(e => e.id !== edgeId));
+
+      setNodes(nds => nds.map(n => {
+        if (n.id !== nodeId) return n;
+        const newBadges = ((n.data as any).badges || []).filter((b: any) => b.edgeId !== edgeId);
+        return { ...n, data: { ...n.data, badges: newBadges } };
+      }));
+    };
+
+    window.addEventListener('selectBadgeNode', handleBadgeSelect);
+    window.addEventListener('markBadgeStatus', handleMarkBadgeStatus);
+    window.addEventListener('toggleCollapseNode', handleToggleCollapse);
+    window.addEventListener('deleteBadge', handleDeleteBadge);
+    
+    return () => {
+      window.removeEventListener('selectBadgeNode', handleBadgeSelect);
+      window.removeEventListener('markBadgeStatus', handleMarkBadgeStatus);
+      window.removeEventListener('toggleCollapseNode', handleToggleCollapse);
+      window.removeEventListener('deleteBadge', handleDeleteBadge);
+    };
+  }, [setNodes, setSelectedNode]);
 
   const prevFilterRef = useRef(filterText);
   const prevRefreshRef = useRef(refreshKey);
@@ -225,52 +386,78 @@ export default function App() {
         if (data.debounce_id && data.debounce_id !== currentDebounceId) {
           return;
         }
+        const globalNodes = new Map<string, ApiNode>();
+        const initialNodes: Node[] = data.nodes.map((n: ApiNode) => {
+          const isGlobal = n.properties?.is_global === 'true';
+          if (isGlobal) {
+            globalNodes.set(n.id, n);
+          }
+          return {
+            id: n.id,
+            type: 'custom',
+            data: { ...n, badges: [], isCollapsed: false },
+            hidden: !visibleTypesRef.current.has(n.label) || isGlobal,
+            position: { x: 0, y: 0 },
+            className: `status-${(n.test_status || 'untested').toLowerCase()}`,
+          };
+        });
 
-        const initialNodes: Node[] = data.nodes.map((n: ApiNode) => ({
-          id: n.id,
-          type: 'custom',
-          data: n,
-          hidden: !visibleTypesRef.current.has(n.label),
-          position: { x: 0, y: 0 },
-          style: { backgroundColor: n.test_status === 'Passed' ? '#c8e6c9' : (n.test_status === 'Failed' ? '#ffcdd2' : '#ffffff') }
-        }));
-
-        // 두 노드(A, B) 사이에 있는 모든 엣지(방향 무관)를 그룹화합니다.
         const edgeBundles: Record<string, ApiEdge[]> = {};
         for (const e of data.edges) {
-          // 항상 ID가 작은 노드를 앞에 두어 고유 키(canonical key)를 만듭니다.
-          const key = e.source < e.target ? `${e.source}→${e.target}` : `${e.target}→${e.source}`;
-          if (!edgeBundles[key]) edgeBundles[key] = [];
-          edgeBundles[key].push(e);
+          let isBadgeEdge = false;
+          if (globalNodes.has(e.target)) {
+            const sourceNode = initialNodes.find(n => n.id === e.source);
+            if (sourceNode) ((sourceNode.data as any).badges as any[]).push({ ...globalNodes.get(e.target), edgeId: e.id, edgeType: e.type });
+            isBadgeEdge = true;
+          } else if (globalNodes.has(e.source)) {
+            const targetNode = initialNodes.find(n => n.id === e.target);
+            if (targetNode) ((targetNode.data as any).badges as any[]).push({ ...globalNodes.get(e.source), edgeId: e.id, edgeType: e.type });
+            isBadgeEdge = true;
+          }
+
+          let isSubflowEdge = false;
+          const eType = (e.type || '').toLowerCase();
+          if (eType === 'contains' || eType === 'has') {
+            const childNode = initialNodes.find(n => n.id === e.target);
+            const parentId = initialNodes.find(n => n.id === e.source);
+            if (childNode && parentId && !globalNodes.has(e.target)) {
+              childNode.parentId = e.source;
+              childNode.extent = 'parent';
+              (parentId.data as any).hasChildren = true;
+            }
+            isSubflowEdge = true;
+          }
+
+          if (!isBadgeEdge && !isSubflowEdge) {
+            const key = e.source < e.target ? `${e.source}→${e.target}` : `${e.target}→${e.source}`;
+            if (!edgeBundles[key]) edgeBundles[key] = [];
+            edgeBundles[key].push(e);
+          }
         }
 
-        const initialEdges: Edge[] = [];
-        Object.values(edgeBundles).forEach((bundle) => {
-          const N = bundle.length;
-          
-          bundle.forEach((e, i) => {
-            const isReverse = e.source > e.target;
-            
-            // 그룹 내의 엣지들을 양옆으로 균등하게 부채꼴처럼 펼칩니다.
-            // N=1 -> [0]
-            // N=2 -> [-40, 40]
-            // N=3 -> [-80, 0, 80]
-            const absoluteShift = (i - (N - 1) / 2) * 80;
-            
-            // 역방향 엣지는 기준 법선 벡터 자체가 반대이므로, 절대적인 오프셋 방향을 맞추기 위해 부호를 뒤집습니다.
-            const pathOffset = isReverse ? -absoluteShift : absoluteShift;
+        // Sort initialNodes so parents come before children for React Flow parent-child rendering
+        initialNodes.sort((a, b) => {
+          if (a.parentId && !b.parentId) return 1;
+          if (!a.parentId && b.parentId) return -1;
+          return 0;
+        });
 
-            initialEdges.push({
+        let rawEdges: Edge[] = [];
+        Object.values(edgeBundles).forEach((bundle) => {
+          bundle.forEach((e) => {
+            rawEdges.push({
               id: e.id,
               source: e.source,
               target: e.target,
               label: e.type,
-              data: { ...e, pathOffset, edgeIndex: i, totalEdges: N, isReverse },
+              data: { ...e },
               type: 'floating',
               style: { strokeWidth: 2 },
             });
           });
         });
+        
+        const initialEdges = calculateEdgeBundling(rawEdges);
 
         const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
           initialNodes,
@@ -280,6 +467,15 @@ export default function App() {
         setNodes(layoutedNodes);
         setEdges(layoutedEdges);
         setError(null);
+        
+        // Auto-fit view when the graph is loaded, but only if the workspace filter changed
+        // We track the last fitted filter on the window object to avoid a ref for now
+        if ((window as any).lastFittedFilter !== filterText) {
+          (window as any).lastFittedFilter = filterText;
+          setTimeout(() => {
+            if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 800 });
+          }, 150);
+        }
       } catch (err: any) {
         if (err instanceof Error) {
           setError(err.message);
@@ -304,12 +500,12 @@ export default function App() {
   useEffect(() => {
     if (selectedNode) {
       const n = selectedNode.data as ApiNode;
-      setEditFormData({ type: 'node', id: selectedNode.id, label: n.label || 'Node', name: n.name, aliases: (n.aliases || []).join(', '), status: n.test_status || 'Untested' });
+      setEditFormData({ type: 'node', id: selectedNode.id, label: n.label || 'Node', name: n.name, aliases: (n.aliases || []).join(', '), status: n.test_status || 'Untested', properties: n.properties || {} });
     } else if (selectedEdge) {
       const e = selectedEdge.data as ApiEdge;
-      setEditFormData({ type: 'edge', id: selectedEdge.id, edgeType: e.type, action: e.action || '', status: e.test_status || 'Untested' });
+      setEditFormData({ type: 'edge', id: selectedEdge.id, edgeType: e.type, action: e.action || '', status: e.test_status || 'Untested', properties: e.properties || {} });
     } else if (isCreatingNode) {
-      setEditFormData({ type: 'node', id: '', label: 'Screen', name: '', aliases: '', status: 'Untested' });
+      setEditFormData({ type: 'node', id: '', label: 'Screen', name: '', aliases: '', status: 'Untested', properties: {} });
     } else {
       setEditFormData({});
     }
@@ -335,7 +531,7 @@ export default function App() {
           name: (n.data as any).name,
           aliases: (n.data as any).aliases || [],
           test_status: (n.data as any).test_status || 'Untested',
-          properties: {}
+          properties: (n.data as any).properties || {}
         },
         connectedEdges
       });
@@ -357,7 +553,7 @@ export default function App() {
           target: e.target,
           type: e.label || (e.data as any)?.type || 'RELATED',
           test_status: (e.data as any)?.test_status || 'Untested',
-          properties: {}
+          properties: (e.data as any)?.properties || {}
         }
       });
       await fetch(`/api/edges/${e.id}`, { method: 'DELETE' });
@@ -368,12 +564,17 @@ export default function App() {
   const onConnect = useCallback(async (connection: Connection) => {
     if (!connection.source || !connection.target) return;
     
+    const sourceNode = nodes.find(n => n.id === connection.source);
+    const targetNode = nodes.find(n => n.id === connection.target);
+    const sourceIsGlobal = (sourceNode?.data as any)?.properties?.is_global === 'true';
+    const targetIsGlobal = (targetNode?.data as any)?.properties?.is_global === 'true';
+
     const payload = {
       source: connection.source,
       target: connection.target,
       type: "Transition",
-      status: "Untested",
-      properties: {}
+      test_status: "Untested",
+      properties: (connection as any).properties || {}
     };
     
     try {
@@ -384,25 +585,41 @@ export default function App() {
       });
       const newEdgeId = await res.json();
       pushUndo({ type: 'CREATE_EDGE', id: newEdgeId });
-      // Add edge to local state instead of re-fetching entire graph
+
+      if (sourceIsGlobal || targetIsGlobal) {
+        setNodes(nds => nds.map(n => {
+          if (sourceIsGlobal && n.id === connection.target) {
+            return { ...n, data: { ...n.data, badges: [...((n.data as any).badges || []), { ...sourceNode?.data, edgeId: newEdgeId, edgeType: 'Transition' }] } };
+          }
+          if (targetIsGlobal && n.id === connection.source) {
+            return { ...n, data: { ...n.data, badges: [...((n.data as any).badges || []), { ...targetNode?.data, edgeId: newEdgeId, edgeType: 'Transition' }] } };
+          }
+          return n;
+        }));
+        return;
+      }
+
+      // Add edge to local state instead of re-fetching entire graph with floating type
       setEdges(eds => {
         const nextEds = [...eds, {
           id: newEdgeId,
           source: connection.source!,
           target: connection.target!,
           label: 'Transition',
-          data: { type: 'Transition', test_status: 'Untested', properties: {} },
+          type: 'floating',
+          data: { type: 'Transition', test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
           style: { stroke: 'gray', strokeWidth: 2 },
           markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
         }];
+        const bundledEds = calculateEdgeBundling(nextEds);
         const targetId = connection.target!;
-        const newTargetStatus = recalculateTargetStatus(targetId, nextEds);
+        const newTargetStatus = recalculateTargetStatus(targetId, bundledEds);
         setNodes(nds => nds.map(n => {
           if (n.id !== targetId || (n.data as any)?.test_status === newTargetStatus) return n;
           const cls = (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newTargetStatus.toLowerCase();
           return { ...n, data: { ...n.data, test_status: newTargetStatus }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newTargetStatus === 'Passed' ? '#c8e6c9' : (newTargetStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
         }));
-        return nextEds;
+        return bundledEds;
       });
     } catch (err) {
       console.error("Failed to create edge:", err);
@@ -423,7 +640,7 @@ export default function App() {
             name: (node.data as any).name,
             aliases: (node.data as any).aliases || [],
             test_status: (node.data as any).test_status || 'Untested',
-            properties: {}
+            properties: (node.data as any).properties || {}
           },
           connectedEdges
         });
@@ -441,7 +658,7 @@ export default function App() {
             target: edge.target,
             type: edge.label || (edge.data as any)?.type || 'RELATED',
             test_status: (edge.data as any)?.test_status || 'Untested',
-            properties: {}
+            properties: (edge.data as any)?.properties || {}
           }
         });
       }
@@ -480,12 +697,13 @@ export default function App() {
 
   const handleSaveStatus = async (newStatus: string) => {
     if (editFormData.type === 'node') {
+      const node = nodes.find(n => n.id === editFormData.id);
       const payload = {
         label: editFormData.label,
         name: editFormData.name,
         aliases: typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         test_status: newStatus,
-        properties: {}
+        properties: editFormData.properties || {}
       };
       if (isCreatingNode) {
         const res = await fetch('/api/nodes', {
@@ -498,7 +716,6 @@ export default function App() {
         setIsCreatingNode(false);
         triggerRefresh(); // New node needs layout
       } else {
-        const node = nodes.find(n => n.id === editFormData.id);
         if (node) {
           pushUndo({
             type: 'UPDATE_NODE',
@@ -507,7 +724,7 @@ export default function App() {
               name: (node.data as any).name,
               aliases: (node.data as any).aliases || [],
               test_status: (node.data as any).test_status || 'Untested',
-              properties: {}
+              properties: (node.data as any).properties || {}
             }
           });
         }
@@ -518,10 +735,23 @@ export default function App() {
         });
       }
       setNodes(nds => nds.map(n => {
-        if (n.id !== editFormData.id) return n;
+        let newBadges = [...((n.data as any).badges || [])];
+        let badgesChanged = false;
+        newBadges = newBadges.map((b: any) => {
+          if (b.id === editFormData.id) {
+            badgesChanged = true;
+            return { ...b, test_status: newStatus };
+          }
+          return b;
+        });
+
+        if (n.id !== editFormData.id) {
+          return badgesChanged ? { ...n, data: { ...n.data, badges: newBadges } } : n;
+        }
+        
         // Update className: replace old status-xxx with new one
         const cls = (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newStatus.toLowerCase();
-        return { ...n, data: { ...(n.data || {}), test_status: newStatus }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newStatus === 'Passed' ? '#c8e6c9' : (newStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
+        return { ...n, data: { ...(n.data || {}), test_status: newStatus, badges: newBadges }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newStatus === 'Passed' ? '#c8e6c9' : (newStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
       }));
     } else if (editFormData.type === 'edge') {
       const edge = edges.find(e => e.id === editFormData.id);
@@ -532,13 +762,13 @@ export default function App() {
         id: edge.id,
         previousData: {
           test_status: (edge.data as any)?.test_status || 'Untested',
-          properties: {}
+          properties: (edge.data as any)?.properties || {}
         }
       });
       const payload = {
         type: editFormData.edgeType,
         test_status: newStatus,
-        properties: {}
+        properties: editFormData.properties || {}
       };
       await fetch(`/api/edges/${editFormData.id}`, {
         method: 'PUT',
@@ -549,7 +779,7 @@ export default function App() {
         const nextEds = eds.map(e => {
           if (e.id !== editFormData.id) return e;
           const cls = (e.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newStatus.toLowerCase();
-          return { ...e, data: { ...(e.data || {}), test_status: newStatus }, className: cls.trim(), style: { ...(e.style || {}), stroke: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, markerEnd: { type: MarkerType.ArrowClosed, color: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') } };
+          return { ...e, data: { ...(e.data || {}), test_status: newStatus, markerColor: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, className: cls.trim(), style: { ...(e.style || {}), stroke: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, markerEnd: { type: MarkerType.ArrowClosed, color: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') } };
         });
         const targetId = edge.target;
         const newTargetStatus = recalculateTargetStatus(targetId, nextEds);
@@ -566,12 +796,23 @@ export default function App() {
 
   const handleSave = async () => {
     if (editFormData.type === 'node') {
+      const node = nodes.find(n => n.id === editFormData.id);
+      
+      // Extract description and issue_link to top-level for the backend
+      const props = { ...editFormData.properties };
+      const description = props.description;
+      const issue_link = props.issue_link;
+      delete props.description;
+      delete props.issue_link;
+      
       const payload = {
         label: editFormData.label,
         name: editFormData.name,
-        aliases: editFormData.aliases.split(',').map((s: string) => s.trim()).filter(Boolean),
+        aliases: typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         test_status: editFormData.status,
-        properties: {}
+        description: description,
+        issue_link: issue_link,
+        properties: props
       };
       if (isCreatingNode) {
         const res = await fetch('/api/nodes', {
@@ -581,10 +822,30 @@ export default function App() {
         });
         const newId = await res.json();
         pushUndo({ type: 'CREATE_NODE', id: newId });
+        
+        let initialPos = { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 50 };
+        if (rfInstance) {
+          initialPos = rfInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        }
+
+        const newNode = {
+          id: newId,
+          type: 'custom',
+          position: initialPos,
+          data: {
+            id: newId,
+            label: payload.label,
+            name: payload.name,
+            aliases: payload.aliases,
+            test_status: payload.test_status,
+            properties: payload.properties,
+            badges: []
+          }
+        };
+        setNodes(nds => [...nds, newNode as Node]);
         setIsCreatingNode(false);
-        triggerRefresh(); // New node needs layout
+        setTimeout(() => setSelectedNode(newNode as Node), 0);
       } else {
-        const node = nodes.find(n => n.id === editFormData.id);
         if (node) {
           pushUndo({
             type: 'UPDATE_NODE',
@@ -593,7 +854,7 @@ export default function App() {
               name: (node.data as any).name,
               aliases: (node.data as any).aliases || [],
               test_status: (node.data as any).test_status || 'Untested',
-              properties: {}
+              properties: (node.data as any).properties || {}
             }
           });
         }
@@ -602,7 +863,7 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        setNodes(nds => nds.map(n => n.id === editFormData.id ? { ...n, data: { ...n.data, label: editFormData.label, name: editFormData.name, aliases: payload.aliases } } : n));
+        setNodes(nds => nds.map(n => n.id === editFormData.id ? { ...n, data: { ...n.data, label: editFormData.label, name: editFormData.name, aliases: payload.aliases, properties: { ...payload.properties, description: payload.description, issue_link: payload.issue_link } } } : n));
       }
     } else if (editFormData.type === 'edge') {
       const edge = edges.find(e => e.id === editFormData.id);
@@ -613,14 +874,14 @@ export default function App() {
         id: edge.id,
         previousData: {
           test_status: (edge.data as any)?.test_status || 'Untested',
-          properties: {}
+          properties: (edge.data as any)?.properties || {}
         }
       });
       const payload = {
         type: editFormData.edgeType,
         action: editFormData.action,
         test_status: editFormData.status,
-        properties: {}
+        properties: editFormData.properties || {}
       };
       const response = await fetch(`/api/edges/${editFormData.id}`, {
         method: 'PUT',
@@ -658,11 +919,52 @@ export default function App() {
     const edgeHighlights = new Set();
     const relatedEdges = new Set();
 
+    const searchSeeds = searchQuery 
+      ? nodes.filter(n => {
+          const name = ((n.data as any)?.name || '').toLowerCase();
+          const label = ((n.data as any)?.label || '').toLowerCase();
+          const aliases = ((n.data as any)?.aliases || []).map((a: string) => a.toLowerCase());
+          const q = searchQuery.toLowerCase();
+          return name.includes(q) || label.includes(q) || aliases.some((a: string) => a.includes(q));
+        })
+      : [];
+
     if (selectedNode) {
       activeNodes.add(selectedNode.id);
 
       let queue = [{ id: selectedNode.id, depth: 0 }];
       const visited = new Set([selectedNode.id]);
+      
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item) continue;
+        const id = item.id;
+        const depth = item.depth;
+        if (depth >= maxDepth) continue;
+
+        const adjacentEdges = edges.filter(e => e.source === id || e.target === id);
+        for (const edge of adjacentEdges) {
+          edgeHighlights.add(edge.id);
+          const nextNode = edge.source === id ? edge.target : edge.source;
+          
+          if (edge.source === id) {
+            if (!outgoing.has(nextNode)) outgoing.add(nextNode);
+          } else {
+            if (!incoming.has(nextNode)) incoming.add(nextNode);
+          }
+          
+          if (!visited.has(nextNode)) {
+            visited.add(nextNode);
+            activeNodes.add(nextNode);
+            queue.push({ id: nextNode, depth: depth + 1 });
+          }
+        }
+      }
+    } else if (searchSeeds.length > 0) {
+      let queue = searchSeeds.map(n => ({ id: n.id, depth: 0 }));
+      const visited = new Set(searchSeeds.map(n => n.id));
+      
+      searchSeeds.forEach(n => activeNodes.add(n.id));
       
       while (queue.length > 0) {
         const item = queue.shift();
@@ -728,7 +1030,7 @@ export default function App() {
           if (incoming.has(n.id)) cls += ' highlight-incoming';
         } else if (relatedNodes.has(n.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || hoveredNode || hoveredEdge) {
+        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
           cls += ' de-emphasized';
         }
         
@@ -752,7 +1054,7 @@ export default function App() {
           cls += ' active highlight-edge';
         } else if (relatedEdges.has(e.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || hoveredNode || hoveredEdge) {
+        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
           cls += ' de-emphasized';
         }
         
@@ -769,25 +1071,131 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, edges]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery]);
+
+  const visibleEdges = useMemo(() => {
+    const edgeMap = new Map<string, Edge>();
+    
+    edges.forEach(e => {
+      const sNode = nodes.find(n => n.id === e.source);
+      const tNode = nodes.find(n => n.id === e.target);
+      const sCollapsed = sNode?.parentId && nodes.find(n => n.id === sNode.parentId)?.data?.isCollapsed;
+      const tCollapsed = tNode?.parentId && nodes.find(n => n.id === tNode.parentId)?.data?.isCollapsed;
+      
+      const newSource = sCollapsed ? sNode.parentId : e.source;
+      const newTarget = tCollapsed ? tNode.parentId : e.target;
+      
+      if (newSource === newTarget) return;
+      
+      const isRerouted = newSource !== e.source || newTarget !== e.target;
+      const key = `${newSource}-${newTarget}-${e.type}`;
+      
+      let finalEdge = { ...e, source: newSource as string, target: newTarget as string };
+      if (isRerouted) {
+        finalEdge.id = key;
+        finalEdge.label = '...';
+        finalEdge.type = 'floating'; // Ensure it stays floating
+        
+        if (!edgeMap.has(key)) {
+          edgeMap.set(key, finalEdge);
+        }
+      } else {
+        edgeMap.set(e.id, finalEdge);
+      }
+    });
+    return calculateEdgeBundling(Array.from(edgeMap.values()));
+  }, [edges, nodes]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-      <ReactFlow nodeTypes={nodeTypes} edgeTypes={edgeTypes} minZoom={0.05}
+      {/* Workspace Selector Overlay */}
+      {filterText === '' && !showAllDomains && aliases.length > 0 && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1000,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div className="glass-panel" style={{ padding: '40px', width: '600px', textAlign: 'center', backgroundColor: 'var(--panel-bg)', borderRadius: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+            <h2 style={{ fontSize: '2rem', marginBottom: '16px', color: 'var(--text-main)', fontWeight: 600 }}>Select Workspace</h2>
+            <p style={{ color: 'var(--text-main)', opacity: 0.8, marginBottom: '32px', lineHeight: '1.5' }}>
+              작업할 도메인(모듈)을 선택하세요. 선택한 도메인과 1~2 Depth 내의 경계 노드들만 로드되어 최적의 성능으로 작업할 수 있습니다.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '16px', maxHeight: '400px', overflowY: 'auto', padding: '10px' }}>
+              {aliases.map(a => (
+                <button key={a} 
+                        style={{ padding: '16px 12px', fontSize: '1rem', cursor: 'pointer', borderRadius: '12px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--node-bg)', color: 'var(--text-main)', transition: 'all 0.2s' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--status-passed-border)'; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 16px rgba(0,0,0,0.4)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--panel-border)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                        onClick={() => { 
+                          setFilterText(a); 
+                          setShowAllDomains(true); 
+                          if ((document.getElementById('rememberWorkspace') as HTMLInputElement)?.checked) {
+                            localStorage.setItem('savedWorkspace', a);
+                            localStorage.setItem('savedShowAll', 'true');
+                          }
+                        }}>
+                  {a}
+                </button>
+              ))}
+            </div>
+            <div style={{ marginTop: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <input 
+                type="checkbox" 
+                id="rememberWorkspace"
+                defaultChecked={localStorage.getItem('savedShowAll') !== null || localStorage.getItem('savedWorkspace') !== null}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    // It will be saved when a button is clicked
+                  } else {
+                    localStorage.removeItem('savedWorkspace');
+                    localStorage.removeItem('savedShowAll');
+                  }
+                }}
+                style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+              />
+              <label htmlFor="rememberWorkspace" style={{ cursor: 'pointer', color: 'var(--text-main)', fontSize: '0.9rem' }}>
+                다시 보지 않기 (자동 진입)
+              </label>
+            </div>
+            <div style={{ marginTop: '24px', borderTop: '1px solid var(--panel-border)', paddingTop: '24px' }}>
+              <button 
+                onClick={() => {
+                  setShowAllDomains(true);
+                  if ((document.getElementById('rememberWorkspace') as HTMLInputElement)?.checked) {
+                    localStorage.setItem('savedShowAll', 'true');
+                  }
+                }} 
+                style={{ padding: '12px 24px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-main)'; e.currentTarget.style.borderColor = 'var(--text-main)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--panel-border)'; }}
+              >
+                전체 그래프 로드 (Heavy)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+          <ReactFlow nodeTypes={nodeTypes} edgeTypes={edgeTypes} minZoom={0.05}
+                     onInit={setRfInstance}
         nodes={nodes}
-        edges={edges}
+        edges={visibleEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onConnect={onConnect}
+        onPaneClick={() => {
+          setSelectedNode(null);
+          setSelectedEdge(null);
+        }}
         onNodeMouseEnter={(_, node) => setHoveredNode(node.id)}
         onNodeMouseLeave={() => setHoveredNode(null)}
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={(selectedNode || selectedEdge || hoveredNode || hoveredEdge) ? 'has-selection' : ''}
+        className={(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge) ? 'has-selection' : ''}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -808,52 +1216,127 @@ export default function App() {
               Add Node
             </button>
             <button 
+              className="primary"
+              style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', marginLeft: '8px' }}
+              title="워크스페이스(도메인) 선택 화면 열기"
+              onClick={() => {
+                setFilterText('');
+                setShowAllDomains(false);
+                localStorage.removeItem('savedWorkspace');
+                localStorage.removeItem('savedShowAll');
+              }}
+            >
+              Switch Workspace
+            </button>
+            <button 
+              style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '50%', fontWeight: 'bold' }}
+              title="도움말 및 범례 (Help & Legend)"
+              onClick={() => setShowHelp(true)}
+            >
+              ?
+            </button>
+            <button 
               style={{ padding: 8, cursor: 'pointer' }}
               title="선택된 노드만 또는 전체를 자동 정렬합니다"
               onClick={() => {
-                const selectedNodes = nodes.filter(n => n.selected);
-                if (selectedNodes.length >= 2) {
-                  // Partial re-layout: selected nodes only
-                  const selectedIds = new Set(selectedNodes.map(n => n.id));
-                  const selectedEdges = edges.filter(e => selectedIds.has(e.source) && selectedIds.has(e.target));
+                // 1. Check if there is any active focus (selected or highlighted)
+                const focusedNodes = nodes.filter(n => 
+                  !n.hidden && (n.selected || (n.className && (n.className.includes('active') || n.className.includes('related'))))
+                );
+                
+                // 2. Determine which nodes to layout
+                let nodesToLayout = focusedNodes.length >= 2 ? [...focusedNodes] : nodes.filter(n => !n.hidden);
+                
+                if (focusedNodes.length >= 2) {
+                  // Ensure we include all children of any focused parent, and the parent of any focused child
+                  const targetIds = new Set(nodesToLayout.map(n => n.id));
+                  let added = true;
+                  while (added) {
+                    added = false;
+                    nodes.forEach(n => {
+                      if (!n.hidden && !targetIds.has(n.id)) {
+                        if ((n.parentId && targetIds.has(n.parentId)) || nodesToLayout.some(tn => tn.parentId === n.id)) {
+                          targetIds.add(n.id);
+                          nodesToLayout.push(n);
+                          added = true;
+                        }
+                      }
+                    });
+                  }
+                }
+                
+                if (nodesToLayout.length >= 2) {
+                  const targetIds = new Set(nodesToLayout.map(n => n.id));
+                  const targetEdges = edges.filter(e => targetIds.has(e.source) && targetIds.has(e.target));
                   
-                  // Remember original top-left position of selection
-                  const minX = Math.min(...selectedNodes.map(n => n.position.x));
-                  const minY = Math.min(...selectedNodes.map(n => n.position.y));
+                  // Run dagre on the subset
+                  const { nodes: layouted } = getLayoutedElements(nodesToLayout, targetEdges);
                   
-                  // Run dagre on selected subset
-                  const { nodes: layouted } = getLayoutedElements(selectedNodes, selectedEdges);
-                  
-                  // Calculate offset to keep group at original position
+                  // Keep the group at its original top-left to avoid jumping
+                  const minX = Math.min(...nodesToLayout.map(n => n.position.x));
+                  const minY = Math.min(...nodesToLayout.map(n => n.position.y));
                   const newMinX = Math.min(...layouted.map(n => n.position.x));
                   const newMinY = Math.min(...layouted.map(n => n.position.y));
                   const offsetX = minX - newMinX;
                   const offsetY = minY - newMinY;
                   
-                  // Build position map with offset applied
+                  // Build position map
                   const posMap = new Map(layouted.map(n => [n.id, { x: n.position.x + offsetX, y: n.position.y + offsetY }]));
                   
-                  // Update only selected nodes' positions
-                  setNodes(nds => nds.map(n => posMap.has(n.id) ? { ...n, position: posMap.get(n.id)! } : n));
-                } else {
-                  // Full re-layout
-                  const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges);
-                  setNodes(layoutedNodes);
-                  setEdges(layoutedEdges);
+                  // Update positions
+                  setNodes(nds => nds.map(n => {
+                    if (posMap.has(n.id)) {
+                      return { ...n, position: posMap.get(n.id)! };
+                    }
+                    return n;
+                  }));
                 }
               }}
             >
               ⟳ Re-layout
             </button>
+            <button 
+              style={{ padding: 8, cursor: 'pointer' }}
+              title="노드의 Category(Alias) 기준으로 그룹핑하여 격자(Grid) 형태로 정렬합니다"
+              onClick={() => {
+                const { nodes: layoutedNodes } = getGridLayoutedElements(nodes);
+                setNodes(layoutedNodes);
+              }}
+            >
+              🗂 Grid Layout
+            </button>
           </div>
         </Panel>
 
-        <Panel position="top-right" className="metrics-panel details-panel glass-panel" style={{ pointerEvents: 'none', maxWidth: '320px', margin: '20px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}>
-            <div className="form-group">
-              <label className="form-label">Filter Graph</label>
+        <Panel position="top-right" className="metrics-panel details-panel glass-panel" style={{ pointerEvents: 'none', maxWidth: '320px', margin: '20px', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+          <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto', overflowY: 'auto', flex: 1, paddingRight: '8px' }}>
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--panel-border)', marginBottom: '16px', position: 'sticky', top: 0, backgroundColor: 'transparent', backdropFilter: 'blur(10px)', zIndex: 5 }}>
+              <button 
+                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'view' ? 'rgba(255,255,255,0.1)' : 'transparent', color: rightPanelTab === 'view' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'view' ? '2px solid #3b82f6' : '2px solid transparent', fontWeight: rightPanelTab === 'view' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                onClick={() => setRightPanelTab('view')}
+              >
+                Filters
+              </button>
+              <button 
+                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'edit' ? 'rgba(255,255,255,0.1)' : 'transparent', color: rightPanelTab === 'edit' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'edit' ? '2px solid #3b82f6' : '2px solid transparent', fontWeight: rightPanelTab === 'edit' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                onClick={() => setRightPanelTab('edit')}
+              >
+                Edit
+              </button>
+              <button 
+                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'globals' ? 'rgba(255,255,255,0.1)' : 'transparent', color: rightPanelTab === 'globals' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'globals' ? '2px solid #3b82f6' : '2px solid transparent', fontWeight: rightPanelTab === 'globals' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                onClick={() => setRightPanelTab('globals')}
+              >
+                Globals
+              </button>
+            </div>
+
+            <div style={{ display: rightPanelTab === 'view' ? 'block' : 'none' }}>
+              <div className="form-group">
+              <label htmlFor="filterGraph" className="form-label">Filter Graph</label>
               <div className="metrics" style={{ marginBottom: '8px', fontSize: '0.85rem' }}>Passed Nodes: <span className="metrics-passed-count" style={{fontWeight: 'bold', color: 'var(--status-passed-text)'}}>{nodes.filter(n => (n.data as any).test_status === 'Passed').length}</span></div>
               <select
+                id="filterGraph"
                 value={filterText}
                 onChange={(e) => setFilterText(e.target.value)}
               >
@@ -863,12 +1346,23 @@ export default function App() {
                 ))}
               </select>
             </div>
+            
+            <div className="form-group" style={{ marginTop: '12px', marginBottom: '16px' }}>
+              <label className="form-label" style={{ marginBottom: '6px' }}>Search Highlight</label>
+              <input 
+                type="text" 
+                placeholder="Type to highlight nodes..." 
+                value={searchQuery} 
+                onChange={(e) => setSearchQuery(e.target.value)} 
+                style={{ width: '100%', padding: '6px', fontSize: '0.9rem', borderRadius: '4px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }} 
+              />
+            </div>
 
             <div className="form-group">
               <label className="form-label" style={{ marginBottom: '6px' }}>Visibility Filter</label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                 {['Screen', 'Component', 'TestCase', 'Data'].map(type => (
-                  <label key={type} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer', color: 'var(--text-color)' }}>
+                  <label key={type} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer', color: 'var(--text-main)' }}>
                     <input type="checkbox" checked={visibleTypes.has(type)} onChange={e => {
                       const next = new Set(visibleTypes);
                       if (e.target.checked) next.add(type);
@@ -890,11 +1384,12 @@ export default function App() {
                 onChange={(e) => setMaxDepth(parseInt(e.target.value) || 1)}
               />
             </div>
-          </div>
+            </div>
 
-          {(selectedNode || selectedEdge || isCreatingNode) && (
-            <div style={{ marginTop: '20px', borderTop: '1px solid var(--panel-border)', paddingTop: '20px', display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: 600 }}>
+            <div style={{ display: rightPanelTab === 'edit' ? 'block' : 'none', flex: 1 }}>
+            {(selectedNode || selectedEdge || isCreatingNode) ? (
+              <div style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto' }}>
+                <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: 600 }}>
                 {isCreatingNode ? 'Add Node' : `Edit ${editFormData.type}`}
                 {!isCreatingNode && <><span className="node-id" style={{display:'none'}}>{editFormData.id}</span><span className="node-label" style={{display:'none'}}>{editFormData.label}</span></>}
               </h3>
@@ -914,11 +1409,66 @@ export default function App() {
                     </select>
                   </div>
                   <div className="form-group"><label htmlFor="nodeName" className="form-label">Name:</label><input id="nodeName" type="text" value={editFormData.name || ''} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></div>
-                  <div className="form-group"><label htmlFor="nodeCategory" className="form-label">Node Category:</label><input id="nodeCategory" type="text" list="alias-suggestions" autoComplete="off" value={editFormData.aliases || ""} onChange={e => {setEditFormData({...editFormData, aliases: e.target.value});}} /></div>
-                  <datalist id="alias-suggestions">
-                    {aliases.map(a => <option key={a} value={a} />)}
-                  </datalist>
-                  {editFormData.aliases === "invalid_free_text" && <div className="validation-error" style={{color: 'red', fontSize: '0.8rem', marginTop: '-8px', marginBottom: '8px'}}>Invalid</div>}
+                  <div className="form-group">
+                    <label htmlFor="nodeCategory" className="form-label">Node Category:</label>
+                    <input 
+                      id="nodeCategory" 
+                      type="text" 
+                      list="category-aliases"
+                      autoComplete="off" 
+                      value={editFormData.aliases || ""} 
+                      onChange={e => {setEditFormData({...editFormData, aliases: e.target.value});}} 
+                    />
+                    <datalist id="category-aliases">
+                      {aliases.map(a => (
+                        <option key={a} value={a} />
+                      ))}
+                    </datalist>
+                  </div>
+                  {editFormData.aliases === "invalid_free_text" && <div className="validation-error" style={{color: 'red', fontSize: '0.8rem', marginTop: '4px', marginBottom: '8px'}}>Invalid</div>}
+                  <div className="form-group" style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <input type="checkbox" id="nodeIsGlobal" checked={editFormData.properties?.is_global === 'true'} onChange={e => {
+                        const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
+                        setEditFormData({...editFormData, properties: newProps});
+                      }} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                      <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)</label>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 <strong>뱃지(Pill)</strong> 형태로 표시됩니다.
+                      다국어(I18N), 공통 데이터 등 여러 노드에서 반복 연결되는 글로벌 의존성에 사용하세요.
+                      뱃지를 클릭하면 테스트 상태를 변경할 수 있습니다.
+                    </p>
+                    {editFormData.properties?.is_global === 'true' && (
+                      <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem', color: 'var(--text-main)' }}>Verification Guide (Description)</label>
+                          <textarea 
+                            value={editFormData.properties?.description || ''} 
+                            onChange={e => {
+                              const newProps = { ...(editFormData.properties || {}), description: e.target.value };
+                              setEditFormData({...editFormData, properties: newProps});
+                            }}
+                            placeholder="e.g. Verify that all language keys are translated properly."
+                            style={{ width: '100%', padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', minHeight: '60px', resize: 'vertical' }}
+                          />
+                        </div>
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label className="form-label" style={{ fontSize: '0.8rem', color: 'var(--text-main)' }}>Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능</label>
+                          <textarea 
+                            rows={3}
+                            value={editFormData.properties?.issue_link || ''} 
+                            onChange={e => {
+                              const newProps = { ...(editFormData.properties || {}), issue_link: e.target.value };
+                              setEditFormData({...editFormData, properties: newProps});
+                            }}
+                            placeholder="https://jira...&#10;https://github..."
+                            style={{ width: '100%', padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', resize: 'vertical' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
 
@@ -955,7 +1505,122 @@ export default function App() {
                 <button className="primary" style={{flex: 1}} onClick={handleSave}>Save</button>
               </div>
             </div>
-          )}
+            ) : (
+              <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+                Select a node or edge on the graph, or click 'Add Node' to start editing.
+              </div>
+            )}
+            </div>
+
+            <div style={{ display: rightPanelTab === 'globals' ? 'block' : 'none', flex: 1 }}>
+              <div style={{ padding: '0 0 16px 0', borderBottom: '1px solid var(--panel-border)', marginBottom: '16px' }}>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600 }}>Global Nodes</h3>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Attach global nodes as badges to the currently selected node.
+                </p>
+              </div>
+
+              {globalNodesList.length === 0 ? (
+                <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  No global nodes found.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {globalNodesList.map(g => (
+                    <div key={g.id} className="glass-panel" style={{ padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '6px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, overflow: 'hidden' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={g.name}>{g.name}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{g.type}</span>
+                      </div>
+                      <button 
+                        className="primary" 
+                        disabled={!selectedNode}
+                        onClick={async () => {
+                          if (!selectedNode) return;
+                          try {
+                            const res = await fetch('/api/edges', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                source: selectedNode.id,
+                                target: g.id,
+                                type: 'Depends_On',
+                                action: '',
+                                properties: {},
+                                test_status: 'Untested'
+                              })
+                            });
+                            if (res.ok) {
+                              const newEdgeId = await res.json();
+                              setNodes(nds => nds.map(n => {
+                                if (n.id !== selectedNode.id) return n;
+                                const newBadges = [...((n.data as any).badges || []), { ...g, edgeId: newEdgeId, edgeType: 'Depends_On', test_status: 'Untested' }];
+                                return { ...n, data: { ...n.data, badges: newBadges } };
+                              }));
+                            } else {
+                              const text = await res.text();
+                              setError(text);
+                            }
+                          } catch (err: any) {
+                            setError(err.message);
+                          }
+                        }}
+                        title={selectedNode ? `Attach to ${(selectedNode.data as any)?.name || 'selected node'}` : 'Select a node on the canvas first to attach'}
+                        style={{ padding: '4px 8px', fontSize: '12px', marginLeft: '8px', opacity: selectedNode ? 1 : 0.5 }}
+                      >
+                        [+] Attach
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--panel-border)' }}>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', fontWeight: 600 }}>Create New Global Node</h4>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    type="text" 
+                    id="newGlobalNodeName"
+                    placeholder="e.g. Common Login" 
+                    style={{ flex: 1, padding: '8px', fontSize: '0.85rem', borderRadius: '4px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }} 
+                  />
+                  <button 
+                    className="primary"
+                    onClick={async () => {
+                      const input = document.getElementById('newGlobalNodeName') as HTMLInputElement;
+                      if (!input || !input.value.trim()) return;
+                      try {
+                        const res = await fetch('/api/nodes', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            label: 'Screen',
+                            name: input.value.trim(),
+                            aliases: [],
+                            properties: { is_global: 'true' },
+                            test_status: 'Untested'
+                          })
+                        });
+                        if (res.ok) {
+                          input.value = '';
+                          fetchGlobals();
+                          triggerRefresh();
+                        } else {
+                          const text = await res.text();
+                          setError(text);
+                        }
+                      } catch (err: any) {
+                        setError(err.message);
+                      }
+                    }}
+                    style={{ padding: '8px 12px', fontSize: '0.85rem' }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </Panel>
       </ReactFlow>
       
@@ -974,6 +1639,50 @@ export default function App() {
         <div data-testid="loading-overlay" style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(248, 250, 252, 0.85)', zIndex: 10, display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'auto' }}>
           <div className="glass-panel" style={{ fontWeight: '600', fontSize: '1.2rem', padding: '16px 32px' }}>
             Loading Graph...
+          </div>
+        </div>
+      )}
+      {showHelp && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center'
+        }}>
+          <div className="glass-panel" style={{
+            backgroundColor: 'var(--bg-color)', color: 'var(--text-main)',
+            padding: '30px', borderRadius: '12px', width: '500px', maxWidth: '90%',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0 }}>CoverageMap 가이드</h2>
+              <button onClick={() => setShowHelp(false)} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: '1.5rem', color: 'var(--text-main)' }}>&times;</button>
+            </div>
+            
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>🌈 하이라이트 색상 (의존성 방향)</h3>
+            <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
+              <li><strong style={{ color: '#3b82f6' }}>🔵 파란색 테두리 (Incoming)</strong>: 선택/검색된 노드로 <strong>들어오는(진입하는)</strong> 흐름입니다. 즉, 이 노드가 동작하기 위한 <strong>선행 조건</strong>이나 상위 진입점을 의미합니다.</li>
+              <li><strong style={{ color: '#f59e0b' }}>🟠 주황색 테두리 (Outgoing)</strong>: 선택/검색된 노드에서 <strong>뻗어 나가는</strong> 흐름입니다. 해당 노드에서 파생되는 <strong>하위 결과물</strong>이나 다음 단계를 의미합니다.</li>
+            </ul>
+
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>✅ 노드 테스트 상태 (Test Status)</h3>
+            <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
+              <li><strong>⬜ 흰색 (Untested)</strong>: 아직 테스트되지 않은 항목입니다.</li>
+              <li><strong style={{ color: '#10b981' }}>🟢 초록색 (Passed)</strong>: 테스트를 성공적으로 통과한 항목입니다.</li>
+              <li><strong style={{ color: '#ef4444' }}>🔴 빨간색 (Failed)</strong>: 테스트에 실패한(버그가 발견된) 항목입니다.</li>
+              <li style={{ fontSize: '0.9rem', color: 'gray', marginTop: '5px' }}>※ 대상(Component/Data 등)을 검증하는 엣지들의 상태가 모두 Passed이면 자동으로 Passed로 변경됩니다.</li>
+            </ul>
+
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>🛠 주요 기능 팁</h3>
+            <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
+              <li><strong>선 연결 (드래그)</strong>: 노드 아래쪽 파란 점(Handle)에서 다른 노드 위쪽 파란 점으로 드래그하면 선(Edge)이 생성됩니다.</li>
+              <li><strong>다중 선택 하이라이트</strong>: 우측 패널의 <code>Search Highlight</code>에 단어(예: Arena)를 검색하면 해당 그룹의 의존성 흐름을 한눈에 볼 수 있습니다.</li>
+              <li><strong>깊이 조절 (Max Depth)</strong>: 선택한 노드로부터 몇 단계(Depth)까지의 연관 관계를 볼 것인지 슬라이더로 조절할 수 있습니다.</li>
+              <li><strong>Undo (되돌리기)</strong>: <kbd>Ctrl + Z</kbd>를 눌러 최근 작업을 취소할 수 있습니다.</li>
+            </ul>
+            
+            <div style={{ textAlign: 'right', marginTop: '30px' }}>
+              <button onClick={() => setShowHelp(false)} className="success">확인</button>
+            </div>
           </div>
         </div>
       )}

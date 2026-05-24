@@ -61,6 +61,26 @@ def api_create_node(node: NodeCreate, session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.get("/api/globals")
+def api_get_globals(session = Depends(get_db)):
+    try:
+        res = session.run("MATCH (n) WHERE n.is_global = 'true' RETURN elementId(n) AS id, labels(n)[0] AS type, n.name AS name, n.aliases AS aliases, n.description AS description, n.issue_link AS issue_link, n.test_status AS test_status").data()
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/nodes/{node_id}")
+def api_get_node(node_id: str, session = Depends(get_db)):
+    try:
+        res = session.run("MATCH (n) WHERE elementId(n) = $id RETURN elementId(n) AS id, labels(n)[0] AS type, n.name AS name, n.aliases AS aliases, properties(n) AS properties", id=node_id).single()
+        if not res:
+            raise HTTPException(status_code=404, detail="Node not found")
+        data = res.data()
+        data["properties"] = data.get("properties") or {}
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.put("/api/nodes/{node_id}")
 def api_update_node(node_id: str, node: NodeUpdate, session = Depends(get_db)):
     try:
@@ -101,7 +121,7 @@ def api_delete_edge(edge_id: str, session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8190, reload=True)
 
 # trigger reload
 @app.get('/api/dictionary')

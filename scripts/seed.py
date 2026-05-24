@@ -38,7 +38,13 @@ def seed_data(tx):
         {"id": "F7", "name": "Reports", "aliases": ["Analytics", "Metrics"]},
         {"id": "F8", "name": "Export", "aliases": ["Download", "Save As"]},
         {"id": "F9", "name": "Integrations", "aliases": ["API", "Webhooks"]},
-        {"id": "F10", "name": "Admin Panel", "aliases": ["Backoffice"]}
+        {"id": "F10", "name": "Admin Panel", "aliases": ["Backoffice"]},
+        # Arena Category / Group Nodes
+        {"id": "Arena_Group", "name": "Arena Group", "aliases": ["Arena", "PVP"]},
+        {"id": "Arena_Lobby", "name": "Arena Lobby", "aliases": ["Arena"]},
+        {"id": "Arena_Match", "name": "Arena Matchmaking", "aliases": ["Arena"]},
+        {"id": "Arena_Battle", "name": "Arena Battle", "aliases": ["Arena"]},
+        {"id": "Arena_Result", "name": "Arena Result", "aliases": ["Arena"]}
     ]
     
     for f in features:
@@ -69,7 +75,12 @@ def seed_data(tx):
         {"id": "TC12", "title": "Webhook Trigger", "status": "Passed", "tests_feature": "F9"},
         {"id": "TC13", "title": "Admin Role Access", "status": "Passed", "tests_feature": "F10"},
         {"id": "TC14", "title": "SQL Injection on Search", "status": "Failed", "tests_feature": "F6"},
-        {"id": "TC15", "title": "Export to CSV", "status": "Passed", "tests_feature": "F8"}
+        {"id": "TC15", "title": "Export to CSV", "status": "Passed", "tests_feature": "F8"},
+        # Arena Test Cases
+        {"id": "TC_Arena_1", "title": "Enter Arena Lobby", "status": "Passed", "tests_feature": "Arena_Lobby"},
+        {"id": "TC_Arena_2", "title": "Queue Matchmaking", "status": "Untested", "tests_feature": "Arena_Match"},
+        {"id": "TC_Arena_3", "title": "Battle Victory Check", "status": "Passed", "tests_feature": "Arena_Battle"},
+        {"id": "TC_Arena_4", "title": "Result Reward Claim", "status": "Untested", "tests_feature": "Arena_Result"}
     ]
 
     for tc in testcases:
@@ -93,6 +104,12 @@ def seed_data(tx):
         ("F7", "F2"), # Reports depends on Dashboard
         ("F8", "F7"), # Export depends on Reports
         ("TC6", "TC1"), # Process Payment tests valid login first? Just for graph connectivity
+        # Arena Dependencies
+        ("Arena_Group", "F2"), # Arena depends on Dashboard
+        ("Arena_Lobby", "F1"), # Lobby depends on Login
+        ("Arena_Match", "Arena_Lobby"),
+        ("Arena_Battle", "Arena_Match"),
+        ("Arena_Result", "Arena_Battle")
     ]
     
     for src, dst in dependencies:
@@ -101,6 +118,24 @@ def seed_data(tx):
             MATCH (a {id: $src})
             MATCH (b {id: $dst})
             CREATE (a)-[:DEPENDS_ON]->(b)
+            """,
+            src=src, dst=dst
+        )
+
+    # Create Group Containment Relationships (Sub-Flows)
+    contains_relations = [
+        ("Arena_Group", "Arena_Lobby"),
+        ("Arena_Group", "Arena_Match"),
+        ("Arena_Group", "Arena_Battle"),
+        ("Arena_Group", "Arena_Result")
+    ]
+    
+    for src, dst in contains_relations:
+        tx.run(
+            """
+            MATCH (a {id: $src})
+            MATCH (b {id: $dst})
+            CREATE (a)-[:CONTAINS]->(b)
             """,
             src=src, dst=dst
         )

@@ -194,6 +194,8 @@ def create_node(session, node_data: NodeCreate) -> str:
     CREATE (n:`{node_data.label}`)
     SET n.name = $name,
         n.aliases = $aliases,
+        n.description = $description,
+        n.issue_link = $issue_link,
         n.test_status = $test_status,
         n += $properties
     RETURN elementId(n) as id
@@ -201,6 +203,8 @@ def create_node(session, node_data: NodeCreate) -> str:
     result = session.run(query, 
         name=node_data.name,
         aliases=node_data.aliases,
+        description=node_data.description,
+        issue_link=node_data.issue_link,
         test_status=node_data.test_status,
         properties=node_data.properties
     )
@@ -217,6 +221,12 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
     if node_data.aliases is not None:
         set_clauses.append("n.aliases = $aliases")
         params["aliases"] = node_data.aliases
+    if node_data.description is not None:
+        set_clauses.append("n.description = $description")
+        params["description"] = node_data.description
+    if node_data.issue_link is not None:
+        set_clauses.append("n.issue_link = $issue_link")
+        params["issue_link"] = node_data.issue_link
     if node_data.test_status is not None:
         set_clauses.append("n.test_status = $test_status")
         params["test_status"] = node_data.test_status
