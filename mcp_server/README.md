@@ -59,7 +59,7 @@ cd backend && uv run uvicorn main:app --port 8001 --reload
   "coveragemap": {
     "command": "uv",
     "args": ["run", "python", "server.py"],
-    "cwd": "E:/Workspace/coveragemap/mcp_server"
+    "cwd": "D:/workspace/Coveragemap/mcp_server"
   }
 }
 ```
