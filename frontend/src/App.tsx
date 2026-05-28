@@ -88,6 +88,44 @@ export default function App() {
   const [globalNodesList, setGlobalNodesList] = useState<any[]>([]);
   const [rfInstance, setRfInstance] = useState<any>(null);
 
+  // Impact Overlay Mode
+  const [impactMode, setImpactMode] = useState<{
+    globalNodeId: string;
+    globalNodeName: string;
+    connectedIds: Set<string>;
+    edgeIds: Set<string>;
+    stats: { Passed: number; Failed: number; Untested: number };
+    total: number;
+  } | null>(null);
+
+  const activateImpact = useCallback(async (globalNodeId: string, globalNodeName: string) => {
+    try {
+      const res = await fetch(`/api/impact/${globalNodeId}`);
+      if (!res.ok) throw new Error('Failed to fetch impact data');
+      const data = await res.json();
+      const connectedIds = new Set<string>(data.connected_nodes.map((n: any) => n.id));
+      const edgeIds = new Set<string>(data.connected_nodes.map((n: any) => n.edge_id).filter(Boolean));
+      setImpactMode({
+        globalNodeId,
+        globalNodeName,
+        connectedIds,
+        edgeIds,
+        stats: data.stats,
+        total: data.total,
+      });
+      // Deselect everything else
+      setSelectedNode(null);
+      setSelectedEdge(null);
+      setSearchQuery('');
+    } catch (err) {
+      console.error('Failed to activate impact mode', err);
+    }
+  }, []);
+
+  const deactivateImpact = useCallback(() => {
+    setImpactMode(null);
+  }, []);
+
   const [visibleTypes, setVisibleTypes] = useState<Set<string>>(new Set(['Screen', 'Component', 'TestCase', 'Data', 'Feature']));
   const visibleTypesRef = useRef(visibleTypes);
   useEffect(() => { visibleTypesRef.current = visibleTypes; }, [visibleTypes]);
@@ -1020,11 +1058,18 @@ export default function App() {
     setNodes(nds => {
       let changed = false;
       const next = nds.map(n => {
-        let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
+        let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
         const status = ((n.data as any)?.test_status || 'untested').toLowerCase();
         cls += ' status-' + status;
 
-        if (activeNodes.has(n.id) || hoveredNode === n.id) {
+        // Impact mode classes
+        if (impactMode) {
+          if (n.id === impactMode.globalNodeId) {
+            cls += ' impact-highlighted impact-source';
+          } else if (impactMode.connectedIds.has(n.id)) {
+            cls += ' impact-highlighted';
+          }
+        } else if (activeNodes.has(n.id) || hoveredNode === n.id) {
           cls += ' active';
           if (outgoing.has(n.id)) cls += ' highlight-outgoing';
           if (incoming.has(n.id)) cls += ' highlight-incoming';
@@ -1046,11 +1091,14 @@ export default function App() {
     setEdges(eds => {
       let changed = false;
       const next = eds.map(e => {
-        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-edge|status-[a-z-]+)\b/g, '').trim();
+        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-edge|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
         const status = ((e.data as any)?.test_status || 'untested').toLowerCase();
         cls += ' status-' + status;
 
-        if (edgeHighlights.has(e.id) || hoveredEdge === e.id) {
+        // Impact mode edge classes
+        if (impactMode && impactMode.edgeIds.has(e.id)) {
+          cls += ' impact-edge';
+        } else if (edgeHighlights.has(e.id) || hoveredEdge === e.id) {
           cls += ' active highlight-edge';
         } else if (relatedEdges.has(e.id)) {
           cls += ' related';
@@ -1071,7 +1119,7 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
@@ -1189,13 +1237,14 @@ export default function App() {
         onPaneClick={() => {
           setSelectedNode(null);
           setSelectedEdge(null);
+          if (impactMode) deactivateImpact();
         }}
         onNodeMouseEnter={(_, node) => setHoveredNode(node.id)}
         onNodeMouseLeave={() => setHoveredNode(null)}
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge) ? 'has-selection' : ''}
+        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''}`}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -1532,44 +1581,65 @@ export default function App() {
                         <span style={{ fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={g.name}>{g.name}</span>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{g.type}</span>
                       </div>
-                      <button 
-                        className="primary" 
-                        disabled={!selectedNode}
-                        onClick={async () => {
-                          if (!selectedNode) return;
-                          try {
-                            const res = await fetch('/api/edges', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                source: selectedNode.id,
-                                target: g.id,
-                                type: 'Depends_On',
-                                action: '',
-                                properties: {},
-                                test_status: 'Untested'
-                              })
-                            });
-                            if (res.ok) {
-                              const newEdgeId = await res.json();
-                              setNodes(nds => nds.map(n => {
-                                if (n.id !== selectedNode.id) return n;
-                                const newBadges = [...((n.data as any).badges || []), { ...g, edgeId: newEdgeId, edgeType: 'Depends_On', test_status: 'Untested' }];
-                                return { ...n, data: { ...n.data, badges: newBadges } };
-                              }));
+                      <div style={{ display: 'flex', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
+                        <button 
+                          onClick={() => {
+                            if (impactMode?.globalNodeId === g.id) {
+                              deactivateImpact();
                             } else {
-                              const text = await res.text();
-                              setError(text);
+                              activateImpact(g.id, g.name);
                             }
-                          } catch (err: any) {
-                            setError(err.message);
-                          }
-                        }}
-                        title={selectedNode ? `Attach to ${(selectedNode.data as any)?.name || 'selected node'}` : 'Select a node on the canvas first to attach'}
-                        style={{ padding: '4px 8px', fontSize: '12px', marginLeft: '8px', opacity: selectedNode ? 1 : 0.5 }}
-                      >
-                        [+] Attach
-                      </button>
+                          }}
+                          title={`Show impact: which nodes are affected by ${g.name}`}
+                          style={{ 
+                            padding: '4px 8px', fontSize: '12px', 
+                            background: impactMode?.globalNodeId === g.id ? 'rgba(167, 139, 250, 0.3)' : 'rgba(167, 139, 250, 0.1)',
+                            border: impactMode?.globalNodeId === g.id ? '1px solid #a78bfa' : '1px solid rgba(167, 139, 250, 0.3)',
+                            color: '#c4b5fd',
+                            borderRadius: '6px'
+                          }}
+                        >
+                          {impactMode?.globalNodeId === g.id ? '🔍 ON' : '🔍 Impact'}
+                        </button>
+                        <button 
+                          className="primary" 
+                          disabled={!selectedNode}
+                          onClick={async () => {
+                            if (!selectedNode) return;
+                            try {
+                              const res = await fetch('/api/edges', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  source: selectedNode.id,
+                                  target: g.id,
+                                  type: 'Depends_On',
+                                  action: '',
+                                  properties: {},
+                                  test_status: 'Untested'
+                                })
+                              });
+                              if (res.ok) {
+                                const newEdgeId = await res.json();
+                                setNodes(nds => nds.map(n => {
+                                  if (n.id !== selectedNode.id) return n;
+                                  const newBadges = [...((n.data as any).badges || []), { ...g, edgeId: newEdgeId, edgeType: 'Depends_On', test_status: 'Untested' }];
+                                  return { ...n, data: { ...n.data, badges: newBadges } };
+                                }));
+                              } else {
+                                const text = await res.text();
+                                setError(text);
+                              }
+                            } catch (err: any) {
+                              setError(err.message);
+                            }
+                          }}
+                          title={selectedNode ? `Attach to ${(selectedNode.data as any)?.name || 'selected node'}` : 'Select a node on the canvas first to attach'}
+                          style={{ padding: '4px 8px', fontSize: '12px', opacity: selectedNode ? 1 : 0.5 }}
+                        >
+                          [+] Attach
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1623,6 +1693,34 @@ export default function App() {
           </div>
         </Panel>
       </ReactFlow>
+
+      {/* Impact Overlay Stats Bar */}
+      {impactMode && (
+        <div className="impact-stats-bar" style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '1.1rem' }}>🔍</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#c4b5fd' }}>{impactMode.globalNodeName}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>영향 받는 노드 {impactMode.total}개</div>
+            </div>
+          </div>
+          <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
+          <div className="impact-stat-item">
+            <div className="impact-stat-dot" style={{ background: '#22c55e' }} />
+            <span style={{ color: '#4ade80' }}>{impactMode.stats.Passed}</span>
+          </div>
+          <div className="impact-stat-item">
+            <div className="impact-stat-dot" style={{ background: '#ef4444' }} />
+            <span style={{ color: '#f87171' }}>{impactMode.stats.Failed}</span>
+          </div>
+          <div className="impact-stat-item">
+            <div className="impact-stat-dot" style={{ background: '#64748b' }} />
+            <span style={{ color: '#94a3b8' }}>{impactMode.stats.Untested}</span>
+          </div>
+          <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
+          <button className="impact-close-btn" onClick={deactivateImpact}>✕ Close</button>
+        </div>
+      )}
       
       {error && (
         <div className="error-toast glass-panel" style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', color: 'var(--status-failed-text)', background: 'var(--status-failed-bg)', border: '1px solid var(--status-failed-border)', zIndex: 50 }}>

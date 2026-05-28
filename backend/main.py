@@ -6,7 +6,8 @@ from models import GraphResponse, NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate
 from graph_service import (
     fetch_graph_from_neo4j, process_graph, convert_to_response,
     create_node, update_node, delete_node,
-    create_edge, update_edge, delete_edge
+    create_edge, update_edge, delete_edge,
+    get_impact_nodes
 )
 import uvicorn
 
@@ -117,6 +118,14 @@ def api_delete_edge(edge_id: str, session = Depends(get_db)):
     try:
         delete_edge(session, edge_id)
         return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/impact/{node_id}")
+def api_get_impact(node_id: str, session = Depends(get_db)):
+    """Return all nodes connected to a global node for Impact Overlay."""
+    try:
+        return get_impact_nodes(session, node_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

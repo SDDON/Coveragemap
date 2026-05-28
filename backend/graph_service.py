@@ -373,3 +373,52 @@ def delete_edge(session, edge_id: str):
     record = result.single()
     if record:
         _recalc_target_node_status(session, record["target_id"])
+
+
+def get_impact_nodes(session, global_node_id: str) -> dict:
+    """Return all nodes connected to a global node and their edge info.
+    
+    Used by the Impact Overlay feature to show which nodes are affected
+    by a cross-cutting concern (e.g. language, sound settings).
+    """
+    query = """
+    MATCH (global) WHERE elementId(global) = $id
+    OPTIONAL MATCH (n)-[r]-(global)
+    WHERE n <> global
+    RETURN elementId(n) AS connected_id,
+           n.name AS name,
+           labels(n)[0] AS label,
+           coalesce(n.test_status, 'Untested') AS test_status,
+           type(r) AS edge_type,
+           elementId(r) AS edge_id,
+           coalesce(r.test_status, 'Untested') AS edge_test_status,
+           CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END AS direction
+    """
+    result = session.run(query, id=global_node_id)
+    
+    connected = []
+    stats = {"Passed": 0, "Failed": 0, "Untested": 0}
+    
+    for record in result:
+        if record["connected_id"] is None:
+            continue
+        node_status = record["test_status"]
+        stats[node_status] = stats.get(node_status, 0) + 1
+        connected.append({
+            "id": record["connected_id"],
+            "name": record["name"],
+            "label": record["label"],
+            "test_status": node_status,
+            "edge_type": record["edge_type"],
+            "edge_id": record["edge_id"],
+            "edge_test_status": record["edge_test_status"],
+            "direction": record["direction"]
+        })
+    
+    return {
+        "global_node_id": global_node_id,
+        "connected_nodes": connected,
+        "total": len(connected),
+        "stats": stats
+    }
+
