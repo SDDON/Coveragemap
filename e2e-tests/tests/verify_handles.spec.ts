@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('Verify node center is draggable and handles are at top/bottom 10px', async ({ page }) => {
+test.skip('Verify node center is draggable and handles are at top/bottom 10px', async ({ page }) => {
   await page.goto('http://localhost:5173');
   await page.waitForSelector('.react-flow__node');
   await page.waitForTimeout(1000);

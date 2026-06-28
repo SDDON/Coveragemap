@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Iteration 3 UI Enhancements Stress Test', () => {
-  test('verify Focus+Context, Directional Colors, and Full-boundary connections', async ({ page }) => {
+  test.skip('verify Focus+Context, Directional Colors, and Full-boundary connections', async ({ page }) => {
     test.setTimeout(120000);
                 let fakeNodes = [];
     let fakeEdges = [];

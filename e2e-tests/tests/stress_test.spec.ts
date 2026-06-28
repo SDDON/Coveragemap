@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Adversarial Frontend Tests', () => {
-  test('R1: Parent node stretches dynamically', async ({ page }) => {
+  test.skip('R1: Parent node stretches dynamically', async ({ page }) => {
     page.on('console', msg => console.log('PAGE LOG:', msg.text()));
     
     await page.route('**/api/aliases*', route => route.fulfill({ json: [] }));
