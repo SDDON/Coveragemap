@@ -279,8 +279,8 @@ body {
 /* Focus + Context Dimming */
 .has-selection .react-flow__node:not(.active):not(.related),
 .has-selection .react-flow__edge:not(.active):not(.related) {
-  opacity: 0.4;
-  filter: grayscale(100%);
+  opacity: 0.5;
+  filter: grayscale(100%) brightness(1.1);
 }
 .react-flow__node.active, .react-flow__edge.active,
 .react-flow__node.related, .react-flow__edge.related {
@@ -383,11 +383,11 @@ select option {
   transition: opacity 0.4s ease, filter 0.4s ease;
 }
 .has-impact .react-flow__node:not(.impact-highlighted) {
-  opacity: 0.15;
+  opacity: 0.25;
   filter: grayscale(100%) blur(0.5px);
 }
 .has-impact .react-flow__edge:not(.impact-edge) {
-  opacity: 0.08;
+  opacity: 0.15;
   filter: grayscale(100%);
 }
 

@@ -497,7 +497,7 @@ export default function App() {
         
         const initialEdges = calculateEdgeBundling(rawEdges);
 
-        const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+        const { nodes: layoutedNodes, edges: layoutedEdges } = await getLayoutedElements(
           initialNodes,
           initialEdges
         );
@@ -1287,7 +1287,7 @@ export default function App() {
             <button 
               style={{ padding: 8, cursor: 'pointer' }}
               title="선택된 노드만 또는 전체를 자동 정렬합니다"
-              onClick={() => {
+              onClick={async () => {
                 // 1. Check if there is any active focus (selected or highlighted)
                 const focusedNodes = nodes.filter(n => 
                   !n.hidden && (n.selected || (n.className && (n.className.includes('active') || n.className.includes('related'))))
@@ -1318,8 +1318,8 @@ export default function App() {
                   const targetIds = new Set(nodesToLayout.map(n => n.id));
                   const targetEdges = edges.filter(e => targetIds.has(e.source) && targetIds.has(e.target));
                   
-                  // Run dagre on the subset
-                  const { nodes: layouted } = getLayoutedElements(nodesToLayout, targetEdges);
+                  // Run ELK on the subset
+                  const { nodes: layouted } = await getLayoutedElements(nodesToLayout, targetEdges);
                   
                   // Keep the group at its original top-left to avoid jumping
                   const minX = Math.min(...nodesToLayout.map(n => n.position.x));

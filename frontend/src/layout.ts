@@ -1,4 +1,5 @@
-import dagre from 'dagre';
+import ELK from 'elkjs/lib/elk.bundled.js';
+const elk = new ELK();
 import { Node, Edge, Position } from '@xyflow/react';
 
 // Base dimensions for a single node (matches .custom-node min-width + padding)
@@ -15,17 +16,19 @@ const nodeHeight = 120;
  * 4. Feed only root-level nodes into Dagre for global positioning.
  * 5. Apply Dagre positions to root nodes; children keep their relative positions.
  */
-export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => {
-  const dagreGraph = new dagre.graphlib.Graph();
-  dagreGraph.setDefaultEdgeLabel(() => ({}));
-  
+export const getLayoutedElements = async (nodes: Node[], edges: Edge[], direction = 'TB') => {
   const isHorizontal = direction === 'LR';
-  dagreGraph.setGraph({
-    rankdir: direction,
-    nodesep: 160,   // Generous spacing between sibling nodes
-    ranksep: 200,   // Generous spacing between ranks
-    edgesep: 40,
-  });
+  const elkGraph: any = {
+    id: "root",
+    layoutOptions: {
+      'elk.algorithm': 'layered',
+      'elk.direction': isHorizontal ? 'RIGHT' : 'DOWN',
+      'elk.spacing.nodeNode': '160',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '200',
+    },
+    children: [],
+    edges: []
+  };
 
   // -- Step 1: Group children by parent --
   const parentToChildren: Record<string, Node[]> = {};
@@ -42,7 +45,6 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'T
 
   // Grid layout parameters for children inside a parent
   const CHILD_W = nodeWidth;
-  const CHILD_H = 180;
   const CHILD_GAP_X = 120;  // Increased to give horizontal edges more breathing room
   const CHILD_GAP_Y = 120;  // Increased to prevent tight vertical gaps
   const PAD_LEFT = 40;      // Increased padding
@@ -117,42 +119,47 @@ export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'T
     }
   });
 
-  // -- Step 3: Register only root nodes with Dagre --
+  // -- Step 3: Register only root nodes with ELK --
   newNodes.forEach(node => {
     if (!node.parentId) {
       const dims = nodeDimensions[node.id] || { w: nodeWidth, h: nodeHeight };
-      dagreGraph.setNode(node.id, { width: dims.w, height: dims.h });
+      elkGraph.children.push({ id: node.id, width: dims.w, height: dims.h });
     }
   });
 
-  // -- Step 4: Register edges with Dagre (route through parents if needed) --
+  // -- Step 4: Register edges with ELK (route through parents if needed) --
   edges.forEach(edge => {
     const sourceNode = nodes.find(n => n.id === edge.source);
     const targetNode = nodes.find(n => n.id === edge.target);
     const effectiveSource = sourceNode?.parentId || edge.source;
     const effectiveTarget = targetNode?.parentId || edge.target;
     
-    if (effectiveSource !== effectiveTarget && dagreGraph.hasNode(effectiveSource) && dagreGraph.hasNode(effectiveTarget)) {
-      dagreGraph.setEdge(effectiveSource, effectiveTarget);
+    if (effectiveSource !== effectiveTarget && 
+        elkGraph.children.some((c: any) => c.id === effectiveSource) && 
+        elkGraph.children.some((c: any) => c.id === effectiveTarget)) {
+      elkGraph.edges.push({
+        id: edge.id,
+        sources: [effectiveSource],
+        targets: [effectiveTarget]
+      });
     }
   });
 
-  dagre.layout(dagreGraph);
+  const layoutedGraph = await elk.layout(elkGraph);
 
-  // -- Step 5: Apply Dagre positions to root nodes --
+  // -- Step 5: Apply ELK positions to root nodes --
   const finalNodes = newNodes.map(node => {
     const newNode = { ...node };
 
     if (!newNode.parentId) {
-      const nodeWithPosition = dagreGraph.node(newNode.id);
+      const elkNode = layoutedGraph.children?.find(c => c.id === newNode.id);
       newNode.targetPosition = isHorizontal ? Position.Left : Position.Top;
       newNode.sourcePosition = isHorizontal ? Position.Right : Position.Bottom;
 
-      if (nodeWithPosition) {
-        const dims = nodeDimensions[newNode.id] || { w: nodeWidth, h: nodeHeight };
+      if (elkNode) {
         newNode.position = {
-          x: nodeWithPosition.x - dims.w / 2,
-          y: nodeWithPosition.y - dims.h / 2,
+          x: elkNode.x as number,
+          y: elkNode.y as number,
         };
       }
     } else {
