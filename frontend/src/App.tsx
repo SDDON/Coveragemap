@@ -1543,7 +1543,7 @@ export default function App() {
 
             <div style={{ display: rightPanelTab === 'view' ? 'block' : 'none' }}>
               <div className="form-group">
-              <label htmlFor="filterGraph" className="form-label">Filter Graph</label>
+              <label htmlFor="filterGraph" className="form-label">Filter Graph<span className="info-icon-wrapper">❓<span className="info-tooltip">선택한 카테고리(Alias)에 해당하는 노드들만 캔버스에 표시합니다.</span></span></label>
               <div className="metrics" style={{ marginBottom: '8px', fontSize: '0.85rem' }}>Passed Nodes: <span className="metrics-passed-count" style={{fontWeight: 'bold', color: 'var(--status-passed-text)'}}>{nodes.filter(n => (n.data as any).test_status === 'Passed').length}</span></div>
               <select
                 id="filterGraph"
@@ -1558,7 +1558,7 @@ export default function App() {
             </div>
             
             <div className="form-group" style={{ marginTop: '12px', marginBottom: '16px' }}>
-              <label className="form-label" style={{ marginBottom: '6px' }}>Search Highlight</label>
+              <label className="form-label" style={{ marginBottom: '6px' }}>Search Highlight<span className="info-icon-wrapper">❓<span className="info-tooltip">검색어가 포함된 노드와 그 의존성 흐름을 하이라이트합니다.</span></span></label>
               <input 
                 type="text" 
                 placeholder="Type to highlight nodes..." 
@@ -1569,7 +1569,7 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label className="form-label" style={{ marginBottom: '6px' }}>Visibility Filter</label>
+              <label className="form-label" style={{ marginBottom: '6px' }}>Visibility Filter<span className="info-icon-wrapper">❓<span className="info-tooltip">체크한 타입의 노드들만 캔버스에 표시합니다.</span></span></label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                 {['Screen', 'Component', 'TestCase', 'Data'].map(type => (
                   <label key={type} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer', color: 'var(--text-main)' }}>
@@ -1586,7 +1586,7 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="maxDepth" className="form-label">Max Depth</label>
+              <label htmlFor="maxDepth" className="form-label">Max Depth<span className="info-icon-wrapper">❓<span className="info-tooltip">선택한 노드로부터 지정한 단계(Depth)까지만 연관 노드를 표시합니다.</span></span></label>
               <input id="maxDepth" type="number"
                 min={1}
                 max={10}
@@ -1606,7 +1606,7 @@ export default function App() {
               
               {editFormData.type === 'node' && (
                 <>
-                  <div className="form-group"><label htmlFor="nodeLabel" className="form-label">Label:</label>
+                  <div className="form-group"><label htmlFor="nodeLabel" className="form-label">Label:<span className="info-icon-wrapper">❓<span className="info-tooltip">노드의 역할을 나타내는 주요 타입입니다. (예: Screen, Feature 등)</span></span></label>
                     <select id="nodeLabel" value={editFormData.label || 'Node'} onChange={e => setEditFormData({...editFormData, label: e.target.value})}>
                       <option value="Feature">Feature (기능)</option>
                       <option value="Screen">Screen (화면)</option>
@@ -1618,9 +1618,9 @@ export default function App() {
                       <option value="Node">Node (기본)</option>
                     </select>
                   </div>
-                  <div className="form-group"><label htmlFor="nodeName" className="form-label">Name:</label><input id="nodeName" type="text" value={editFormData.name || ''} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></div>
+                  <div className="form-group"><label htmlFor="nodeName" className="form-label">Name:<span className="info-icon-wrapper">❓<span className="info-tooltip">노드에 표시될 실제 이름입니다.</span></span></label><input id="nodeName" type="text" value={editFormData.name || ''} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></div>
                   <div className="form-group">
-                    <label htmlFor="nodeCategory" className="form-label">Node Category:</label>
+                    <label htmlFor="nodeCategory" className="form-label">Node Category:<span className="info-icon-wrapper">❓<span className="info-tooltip">그룹화나 검색에 쓰이는 카테고리 태그(Alias)입니다.</span></span></label>
                     <input 
                       id="nodeCategory" 
                       type="text" 
@@ -1646,7 +1646,7 @@ export default function App() {
                               const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
                               setEditFormData({...editFormData, properties: newProps});
                             }} style={{ cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }} />
-                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)</label>
+                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)<span className="info-icon-wrapper">❓<span className="info-tooltip">체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.</span></span></label>
                           </div>
                           {!isGlobalAllowed && (
                             <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: 'var(--danger-color)' }}>
@@ -1714,7 +1714,7 @@ export default function App() {
               )}
 
               <div className="form-group">
-                <label className="form-label">Status:</label>
+                <label className="form-label">Status:<span className="info-icon-wrapper">❓<span className="info-tooltip">현재 테스트/개발 상태를 나타냅니다.</span></span></label>
                 <div style={{display:"flex", gap:"8px", marginTop:"5px", flexWrap: 'wrap'}}>
                   <button className="success" onClick={(e) => { e.preventDefault(); handleSaveStatus("Passed"); }}>Mark Passed</button>
                   <button className="danger" onClick={(e) => { e.preventDefault(); handleSaveStatus("Failed"); }}>Mark Failed</button>
@@ -1736,7 +1736,7 @@ export default function App() {
 
             <div style={{ display: rightPanelTab === 'globals' ? 'block' : 'none', flex: 1 }}>
               <div style={{ padding: '0 0 16px 0', borderBottom: '1px solid var(--panel-border)', marginBottom: '16px' }}>
-                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600 }}>Global Nodes</h3>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600 }}>Global Nodes<span className="info-icon-wrapper">❓<span className="info-tooltip" style={{fontWeight: 'normal', fontSize: '0.75rem'}}>전역 노드를 다른 노드에 부착(Attach)하거나, 해당 전역 노드에 의존하는 모든 노드(Impact)를 시각화합니다.</span></span></h3>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   Attach global nodes as badges to the currently selected node.
                 </p>

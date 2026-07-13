@@ -101,3 +101,12 @@ stateDiagram-v2
 새로운 팀원이 UI 레이아웃을 수정할 때는 자바스크립트로 일일이 노드의 투명도를 계산해서 렌더링하지 마세요. 
 CoverageMap은 `React Flow`의 상태를 기반으로 **순수 CSS 필터(`index.css`의 `.has-selection` 클래스)**를 사용해 Focus+Context 시각화를 처리합니다. 
 새로운 노드 컴포넌트를 추가할 때는 반드시 `.custom-node` 클래스를 감싸서 이 CSS 정책이 자동 적용되도록 만들어야 합니다.
+
+## 4. 인라인 도움말 (Inline Help Tooltip) 정책
+복잡한 도메인 용어나 설정의 접근성을 높이기 위해, 폼 필드 라벨 옆에 설명용 툴팁을 추가합니다.
+- **적용 대상**: 우측 패널(Filters, Edit, Globals 등)의 주요 설정 및 `Label` 태그 내부.
+- **CSS 클래스 구현**: 
+  - 래퍼: `<span class="info-icon-wrapper">❓<span class="info-tooltip">내용</span></span>`
+  - `.info-icon-wrapper`: 마우스 커서 호버 시 툴팁을 띄우는 역할 (`cursor: help`).
+  - `.info-tooltip`: 실제 나타나는 팝업 말풍선 컨테이너 (`backdrop-filter` 및 테마 일관성 유지). 우측 패널 범위를 벗어나지 않도록 우측 정렬 속성이 적용되어 있습니다.
+- **효과**: 화면 공간을 차지하지 않으면서도 온보딩/학습 비용을 크게 줄이고, 상용 서비스 수준의 깔끔한 UX를 제공합니다.
