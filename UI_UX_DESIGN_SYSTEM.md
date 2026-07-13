@@ -105,8 +105,9 @@ CoverageMap은 `React Flow`의 상태를 기반으로 **순수 CSS 필터(`index
 ## 4. 인라인 도움말 (Inline Help Tooltip) 정책
 복잡한 도메인 용어나 설정의 접근성을 높이기 위해, 폼 필드 라벨 옆에 설명용 툴팁을 추가합니다.
 - **적용 대상**: 우측 패널(Filters, Edit, Globals 등)의 주요 설정 및 `Label` 태그 내부.
-- **CSS 클래스 구현**: 
-  - 래퍼: `<span class="info-icon-wrapper">❓<span class="info-tooltip">내용</span></span>`
-  - `.info-icon-wrapper`: 마우스 커서 호버 시 툴팁을 띄우는 역할 (`cursor: help`).
-  - `.info-tooltip`: 실제 나타나는 팝업 말풍선 컨테이너 (`backdrop-filter` 및 테마 일관성 유지). 우측 패널 범위를 벗어나지 않도록 우측 정렬 속성이 적용되어 있습니다.
-- **효과**: 화면 공간을 차지하지 않으면서도 온보딩/학습 비용을 크게 줄이고, 상용 서비스 수준의 깔끔한 UX를 제공합니다.
+- **라이브러리 및 컴포넌트**: `react-tooltip`을 사용하여 Portal 기반으로 렌더링함으로써, 스크롤 컨테이너 내부에서도 툴팁이 잘리지 않도록 합니다.
+- **구현 방식**: 
+  - 트리거 엘리먼트: `<span class="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="도움말 내용">❓</span>`
+  - 전역 툴팁 컴포넌트: `App.tsx` 최상단(또는 하단)에 `<Tooltip id="app-tooltip" className="custom-tooltip" place="left" />` 배치
+  - `.custom-tooltip`: `backdrop-filter` 및 테마 일관성을 유지하는 CSS 적용
+- **효과**: 화면 공간을 차지하지 않으면서도 온보딩/학습 비용을 크게 줄이고, 상용 서비스 수준의 깔끔하고 견고한 UX를 제공합니다.

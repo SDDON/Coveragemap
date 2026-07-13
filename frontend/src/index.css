@@ -246,54 +246,32 @@ body {
   justify-content: center;
   margin-left: 6px;
   cursor: help;
-  color: var(--text-muted);
+  color: #94a3b8;
   font-size: 0.85rem;
   font-weight: normal;
   border-radius: 50%;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   transition: color 0.2s, background-color 0.2s;
 }
 .info-icon-wrapper:hover {
   color: var(--text-main);
   background-color: rgba(255,255,255,0.1);
 }
-.info-tooltip {
-  visibility: hidden;
-  opacity: 0;
-  position: absolute;
-  bottom: 100%;
-  left: -10px;
-  right: auto;
-  transform: translateY(0px);
-  background: rgba(15, 23, 42, 0.95);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 8px 12px;
-  border-radius: 6px;
-  width: max-content;
-  max-width: 220px;
-  color: #f1f5f9;
-  font-size: 0.75rem;
-  line-height: 1.4;
-  font-weight: normal;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  transition: all 0.2s ease-in-out;
-  pointer-events: none;
-  z-index: 2000;
-  white-space: normal;
-  text-align: left;
+.custom-tooltip {
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  max-width: 220px !important;
+  color: #f1f5f9 !important;
+  font-size: 0.75rem !important;
+  line-height: 1.4 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  z-index: 9999 !important;
+  white-space: pre-wrap !important;
 }
-.info-icon-wrapper.right-align .info-tooltip {
-  left: auto;
-  right: -10px;
-}
-.info-icon-wrapper:hover .info-tooltip {
-  visibility: visible;
-  opacity: 1;
-  transform: translateY(-6px);
-}
-
 
 /* Handles */
 .react-flow__handle {
