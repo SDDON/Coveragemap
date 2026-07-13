@@ -1646,7 +1646,7 @@ export default function App() {
                               const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
                               setEditFormData({...editFormData, properties: newProps});
                             }} style={{ cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }} />
-                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)<span className="info-icon-wrapper">❓<span className="info-tooltip">체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.</span></span></label>
+                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)<span className="info-icon-wrapper right-align">❓<span className="info-tooltip">체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.</span></span></label>
                           </div>
                           {!isGlobalAllowed && (
                             <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: 'var(--danger-color)' }}>
