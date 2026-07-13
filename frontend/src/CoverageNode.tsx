@@ -25,12 +25,12 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
 
   const isParent = data.hasChildren;
   const wrapperStyle = isParent 
-    ? { pointerEvents: 'auto' as const, width: '100%', height: '100%' }
-    : { pointerEvents: 'auto' as const, width: '240px' };
+    ? { position: 'relative' as const, pointerEvents: 'auto' as const, width: '100%', height: '100%' }
+    : { position: 'relative' as const, pointerEvents: 'auto' as const, width: '240px' };
 
   const customNodeStyle = isParent 
-    ? { width: '100%', height: '100%', padding: '16px', boxSizing: 'border-box' as const }
-    : undefined;
+    ? { position: 'relative' as const, zIndex: 1, width: '100%', height: '100%', padding: '16px', boxSizing: 'border-box' as const }
+    : { position: 'relative' as const, zIndex: 1 };
 
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>
@@ -94,6 +94,12 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                        onClick={(e) => {
                          e.stopPropagation();
                          window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: badge.id }));
+                       }}
+                       onMouseEnter={() => {
+                         window.dispatchEvent(new CustomEvent('hoverGlobalBadge', { detail: badge.id }));
+                       }}
+                       onMouseLeave={() => {
+                         window.dispatchEvent(new CustomEvent('unhoverGlobalBadge'));
                        }}
                        style={{ border: `1px solid ${borderColor}`, backgroundColor: bgColor, ...highlightStyle }}>
                     {isPassed && <span style={{ color: '#4ade80', fontSize: '0.7rem' }}>✔</span>}

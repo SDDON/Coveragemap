@@ -72,11 +72,16 @@ export default function App() {
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+  const [hoveredGlobalBadgeId, setHoveredGlobalBadgeId] = useState<string | null>(null);
   const [isCreatingNode, setIsCreatingNode] = useState(false);
   const [editFormData, setEditFormData] = useState<any>({});
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, show: boolean } | null>(null);
+  const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
+
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
+  const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
 
   const [maxDepth, setMaxDepth] = useState<number>(1);
   const [filterText, setFilterText] = useState<string>(() => localStorage.getItem('savedWorkspace') || '');
@@ -126,7 +131,7 @@ export default function App() {
     setImpactMode(null);
   }, []);
 
-  const [visibleTypes, setVisibleTypes] = useState<Set<string>>(new Set(['Screen', 'Component', 'TestCase', 'Data', 'Feature']));
+  const [visibleTypes, setVisibleTypes] = useState<Set<string>>(new Set(['Screen', 'Component', 'TestCase', 'Data', 'Feature', 'System']));
   const visibleTypesRef = useRef(visibleTypes);
   useEffect(() => { visibleTypesRef.current = visibleTypes; }, [visibleTypes]);
 
@@ -137,6 +142,21 @@ export default function App() {
       setRightPanelTab('view');
     }
   }, [selectedNode, selectedEdge, isCreatingNode]);
+
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch('/api/health');
+        if (res.ok) setHealthStatus('ok');
+        else setHealthStatus('error');
+      } catch {
+        setHealthStatus('error');
+      }
+    };
+    checkHealth();
+    const interval = setInterval(checkHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchGlobals = useCallback(async () => {
     try {
@@ -159,12 +179,24 @@ export default function App() {
   useEffect(() => {
     setNodes(nds => {
       let changed = false;
+      const hiddenNodes = new Set<string>();
+      nds.forEach(n => {
+        const type = (n.data as any)?.label || 'Data';
+        if (!visibleTypes.has(type)) hiddenNodes.add(n.id);
+      });
+
       const next = nds.map(n => {
         const type = (n.data as any)?.label || 'Data';
         const isHidden = !visibleTypes.has(type);
-        if (n.hidden !== isHidden) {
+        
+        let newExtent = n.extent;
+        if (n.parentId) {
+           newExtent = hiddenNodes.has(n.parentId) ? undefined : 'parent';
+        }
+
+        if (n.hidden !== isHidden || n.extent !== newExtent) {
           changed = true;
-          return { ...n, hidden: isHidden };
+          return { ...n, hidden: isHidden, extent: newExtent };
         }
         return n;
       });
@@ -278,14 +310,13 @@ export default function App() {
         const res = await fetch('/api/aliases');
         if (res.ok) {
           const data = await res.json();
-          const merged = Array.from(new Set([...data, 'synonym_xyz', 'synonym_abc', 'Arena', 'Shop', 'Inventory']));
-          setAliases(merged);
+          setAliases(data);
         } else {
-          setAliases(['synonym_xyz', 'synonym_abc', 'Arena', 'Shop', 'Inventory']);
+          setAliases([]);
         }
       } catch (err) {
         console.error('Failed to fetch aliases', err);
-        setAliases(['synonym_xyz', 'synonym_abc', 'Arena', 'Shop', 'Inventory']);
+        setAliases([]);
       }
     };
     fetchAliases();
@@ -377,16 +408,29 @@ export default function App() {
       }));
     };
 
+    const handleHoverGlobalBadge = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setHoveredGlobalBadgeId(customEvent.detail);
+    };
+
+    const handleUnhoverGlobalBadge = () => {
+      setHoveredGlobalBadgeId(null);
+    };
+
     window.addEventListener('selectBadgeNode', handleBadgeSelect);
     window.addEventListener('markBadgeStatus', handleMarkBadgeStatus);
     window.addEventListener('toggleCollapseNode', handleToggleCollapse);
     window.addEventListener('deleteBadge', handleDeleteBadge);
+    window.addEventListener('hoverGlobalBadge', handleHoverGlobalBadge);
+    window.addEventListener('unhoverGlobalBadge', handleUnhoverGlobalBadge);
     
     return () => {
       window.removeEventListener('selectBadgeNode', handleBadgeSelect);
       window.removeEventListener('markBadgeStatus', handleMarkBadgeStatus);
       window.removeEventListener('toggleCollapseNode', handleToggleCollapse);
       window.removeEventListener('deleteBadge', handleDeleteBadge);
+      window.removeEventListener('hoverGlobalBadge', handleHoverGlobalBadge);
+      window.removeEventListener('unhoverGlobalBadge', handleUnhoverGlobalBadge);
     };
   }, [setNodes, setSelectedNode]);
 
@@ -460,7 +504,7 @@ export default function App() {
             const parentId = initialNodes.find(n => n.id === e.source);
             if (childNode && parentId && !globalNodes.has(e.target)) {
               childNode.parentId = e.source;
-              childNode.extent = 'parent';
+              childNode.extent = parentId.hidden ? undefined : 'parent';
               (parentId.data as any).hasChildren = true;
             }
             isSubflowEdge = true;
@@ -543,11 +587,11 @@ export default function App() {
       const e = selectedEdge.data as ApiEdge;
       setEditFormData({ type: 'edge', id: selectedEdge.id, edgeType: e.type, action: e.action || '', status: e.test_status || 'Untested', properties: e.properties || {} });
     } else if (isCreatingNode) {
-      setEditFormData({ type: 'node', id: '', label: 'Screen', name: '', aliases: '', status: 'Untested', properties: {} });
+      setEditFormData({ type: 'node', id: '', label: 'Screen', name: '', aliases: filterText || '', status: 'Untested', properties: {} });
     } else {
       setEditFormData({});
     }
-  }, [selectedNode, selectedEdge, isCreatingNode]);
+  }, [selectedNode, selectedEdge, isCreatingNode, filterText]);
 
   const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
     const isSelected = params.nodes.length > 0 || params.edges.length > 0;
@@ -558,7 +602,16 @@ export default function App() {
   }, []);
 
   const onNodesDelete = useCallback(async (deleted: Node[]) => {
+    const deletedIds = new Set<string>();
     for (const n of deleted) {
+      const res = await fetch(`/api/nodes/${n.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.detail || 'Failed to delete node');
+        triggerRefresh(); // Restore node to canvas since React Flow eagerly removed it
+        continue;
+      }
+      deletedIds.add(n.id);
       // Find connected edges for undo
       const connectedEdges = edges.filter(e => e.source === n.id || e.target === n.id);
       pushUndo({
@@ -573,11 +626,9 @@ export default function App() {
         },
         connectedEdges
       });
-      await fetch(`/api/nodes/${n.id}`, { method: 'DELETE' });
     }
     // ReactFlow already removes node from local state via onNodesChange
     // Remove connected edges from local state
-    const deletedIds = new Set(deleted.map(n => n.id));
     setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
   }, [pushUndo, edges, setEdges]);
 
@@ -607,10 +658,16 @@ export default function App() {
     const sourceIsGlobal = (sourceNode?.data as any)?.properties?.is_global === 'true';
     const targetIsGlobal = (targetNode?.data as any)?.properties?.is_global === 'true';
 
+    let defaultType = "Transition";
+    const sourceLabel = (sourceNode?.data as any)?.label;
+    if (sourceLabel === 'System' || sourceLabel === 'Category') {
+      defaultType = "Contains";
+    }
+
     const payload = {
       source: connection.source,
       target: connection.target,
-      type: "Transition",
+      type: defaultType,
       test_status: "Untested",
       properties: (connection as any).properties || {}
     };
@@ -634,6 +691,27 @@ export default function App() {
           }
           return n;
         }));
+        return;
+      }
+
+      if (defaultType.toLowerCase() === 'contains' || defaultType.toLowerCase() === 'has') {
+        setNodes(nds => {
+          const nextNds = nds.map(n => {
+            if (n.id === connection.target) {
+              return { ...n, parentId: connection.source!, extent: 'parent' as 'parent' };
+            }
+            if (n.id === connection.source) {
+              return { ...n, data: { ...n.data, hasChildren: true } };
+            }
+            return n;
+          });
+          // React Flow requires parent nodes to appear before children in the array
+          return nextNds.sort((a, b) => {
+            if (a.parentId && !b.parentId) return 1;
+            if (!a.parentId && b.parentId) return -1;
+            return 0;
+          });
+        });
         return;
       }
 
@@ -667,6 +745,12 @@ export default function App() {
   
   const handleDelete = async () => {
     if (editFormData.type === "node") {
+      const res = await fetch(`/api/nodes/${editFormData.id}`, { method: "DELETE" }); 
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.detail || 'Failed to delete node');
+        return;
+      }
       const node = nodes.find(n => n.id === editFormData.id);
       if (node) {
         const connectedEdges = edges.filter(e => e.source === node.id || e.target === node.id);
@@ -683,7 +767,6 @@ export default function App() {
           connectedEdges
         });
       }
-      await fetch(`/api/nodes/${editFormData.id}`, { method: "DELETE" }); 
       setNodes(nds => nds.filter(n => n.id !== editFormData.id)); 
     } else if (editFormData.type === "edge") { 
       const edge = edges.find(e => e.id === editFormData.id);
@@ -749,6 +832,12 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        if (!res.ok) {
+          const errData = await res.json();
+          setError(errData.detail || 'Failed to create node');
+          return;
+        }
+        setError(null);
         const newId = await res.json();
         pushUndo({ type: 'CREATE_NODE', id: newId });
         setIsCreatingNode(false);
@@ -858,11 +947,19 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        if (!res.ok) {
+          const errData = await res.json();
+          setError(errData.detail || 'Failed to create node');
+          return;
+        }
+        setError(null);
         const newId = await res.json();
         pushUndo({ type: 'CREATE_NODE', id: newId });
         
         let initialPos = { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 50 };
-        if (rfInstance) {
+        if (contextMenu?.show && rfInstance) {
+          initialPos = rfInstance.screenToFlowPosition({ x: contextMenu.x, y: contextMenu.y });
+        } else if (rfInstance) {
           initialPos = rfInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
         }
 
@@ -943,8 +1040,11 @@ export default function App() {
         setEditFormData({...editFormData, id: newId});
         setSelectedEdge(prev => prev ? {...prev, id: newId} : null);
       }
+      if (payload.type?.toLowerCase() === 'contains' || payload.type?.toLowerCase() === 'has') {
+        triggerRefresh();
+      }
     }
-    // Don't triggerRefresh for edits — local state is already updated
+    // Don't triggerRefresh for normal edits — local state is already updated
     // triggerRefresh would re-run dagre layout and reset all dragged positions
   };
 
@@ -1205,7 +1305,15 @@ export default function App() {
                 다시 보지 않기 (자동 진입)
               </label>
             </div>
-            <div style={{ marginTop: '24px', borderTop: '1px solid var(--panel-border)', paddingTop: '24px' }}>
+            <div style={{ marginTop: '24px', borderTop: '1px solid var(--panel-border)', paddingTop: '24px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
+              <button 
+                onClick={() => setShowWorkspaceManager(true)} 
+                style={{ padding: '12px 24px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-main)'; e.currentTarget.style.borderColor = 'var(--text-main)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--panel-border)'; }}
+              >
+                ⚙️ Workspace 관리자
+              </button>
               <button 
                 onClick={() => {
                   setShowAllDomains(true);
@@ -1226,8 +1334,45 @@ export default function App() {
 
           <ReactFlow nodeTypes={nodeTypes} edgeTypes={edgeTypes} minZoom={0.05}
                      onInit={setRfInstance}
-        nodes={nodes}
-        edges={visibleEdges}
+        nodes={(() => {
+          if (!hoveredGlobalBadgeId || !rfInstance) return nodes;
+          const center = rfInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+          return nodes.map(n => {
+            if (n.id === hoveredGlobalBadgeId) {
+              return {
+                ...n,
+                hidden: false,
+                position: center,
+                style: { ...n.style, zIndex: 2000, boxShadow: '0 0 20px rgba(0, 229, 255, 0.5)' },
+                className: `${n.className || ''} hovered-global-neighbor`,
+              };
+            }
+            const badges = (n.data as any)?.badges || [];
+            if (badges.some((b: any) => b.id === hoveredGlobalBadgeId)) {
+              return { ...n, className: `${n.className || ''} hovered-global-neighbor` };
+            }
+            return n;
+          });
+        })()}
+        edges={(() => {
+          if (!hoveredGlobalBadgeId || !rfInstance) return visibleEdges;
+          const tempEdges: Edge[] = [];
+          nodes.forEach(n => {
+            const badges = (n.data as any)?.badges || [];
+            const badge = badges.find((b: any) => b.id === hoveredGlobalBadgeId);
+            if (badge) {
+              tempEdges.push({
+                id: `hover-edge-${n.id}-${badge.id}`,
+                source: hoveredGlobalBadgeId,
+                target: n.id,
+                type: 'floating',
+                animated: true,
+                style: { stroke: '#00e5ff', strokeWidth: 2, strokeDasharray: '5,5' },
+              });
+            }
+          });
+          return [...visibleEdges, ...tempEdges];
+        })()}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
@@ -1238,13 +1383,22 @@ export default function App() {
           setSelectedNode(null);
           setSelectedEdge(null);
           if (impactMode) deactivateImpact();
+          setContextMenu(null);
+        }}
+        onPaneContextMenu={(event) => {
+          event.preventDefault();
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            show: true
+          });
         }}
         onNodeMouseEnter={(_, node) => setHoveredNode(node.id)}
         onNodeMouseLeave={() => setHoveredNode(null)}
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''}`}
+        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge || hoveredGlobalBadgeId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''}`}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -1259,14 +1413,21 @@ export default function App() {
               onClick={() => {
                 setSelectedNode(null);
                 setSelectedEdge(null);
+                setError(null);
                 setIsCreatingNode(true);
               }}
             >
               Add Node
             </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Current:</span>
+              <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '0.95rem' }}>
+                {filterText ? filterText : (showAllDomains ? '전체 워크스페이스' : 'None')}
+              </span>
+            </div>
             <button 
               className="primary"
-              style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', marginLeft: '8px' }}
+              style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
               title="워크스페이스(도메인) 선택 화면 열기"
               onClick={() => {
                 setFilterText('');
@@ -1476,18 +1637,30 @@ export default function App() {
                   </div>
                   {editFormData.aliases === "invalid_free_text" && <div className="validation-error" style={{color: 'red', fontSize: '0.8rem', marginTop: '4px', marginBottom: '8px'}}>Invalid</div>}
                   <div className="form-group" style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <input type="checkbox" id="nodeIsGlobal" checked={editFormData.properties?.is_global === 'true'} onChange={e => {
-                        const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
-                        setEditFormData({...editFormData, properties: newProps});
-                      }} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
-                      <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)</label>
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
-                      체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 <strong>뱃지(Pill)</strong> 형태로 표시됩니다.
-                      다국어(I18N), 공통 데이터 등 여러 노드에서 반복 연결되는 글로벌 의존성에 사용하세요.
-                      뱃지를 클릭하면 테스트 상태를 변경할 수 있습니다.
-                    </p>
+                    {(() => {
+                      const isGlobalAllowed = ['Component', 'Data', 'TestCase'].includes(editFormData.label);
+                      return (
+                        <>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', opacity: isGlobalAllowed ? 1 : 0.5 }}>
+                            <input type="checkbox" id="nodeIsGlobal" disabled={!isGlobalAllowed} checked={editFormData.properties?.is_global === 'true'} onChange={e => {
+                              const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
+                              setEditFormData({...editFormData, properties: newProps});
+                            }} style={{ cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }} />
+                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)</label>
+                          </div>
+                          {!isGlobalAllowed && (
+                            <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: 'var(--danger-color)' }}>
+                              System, Screen, Feature 등 큰 단위의 노드는 전역 노드화할 수 없습니다.
+                            </p>
+                          )}
+                          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                            체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 <strong>뱃지(Pill)</strong> 형태로 표시됩니다.
+                            다국어(I18N), 공통 데이터 등 여러 노드에서 반복 연결되는 글로벌 의존성에 사용하세요.
+                            뱃지를 클릭하면 테스트 상태를 변경할 수 있습니다.
+                          </p>
+                        </>
+                      );
+                    })()}
                     {editFormData.properties?.is_global === 'true' && (
                       <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div className="form-group" style={{ margin: 0 }}>
@@ -1692,7 +1865,94 @@ export default function App() {
             </div>
           </div>
         </Panel>
+
+        <Panel position="bottom-right" style={{ margin: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--panel-bg)', padding: '6px 12px', borderRadius: '16px', border: '1px solid var(--panel-border)', backdropFilter: 'blur(12px)', boxShadow: 'var(--panel-shadow)' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: healthStatus === 'ok' ? '#22c55e' : (healthStatus === 'error' ? '#ef4444' : '#f59e0b'), boxShadow: `0 0 8px ${healthStatus === 'ok' ? '#22c55e' : (healthStatus === 'error' ? '#ef4444' : '#f59e0b')}` }}></div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-main)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {healthStatus === 'ok' ? 'System Online' : (healthStatus === 'error' ? 'System Offline' : 'Checking...')}
+            </span>
+          </div>
+        </Panel>
+
       </ReactFlow>
+
+      {/* Context Menu */}
+      {contextMenu?.show && (
+        <div 
+          className="context-menu" 
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onMouseLeave={() => setContextMenu(null)}
+        >
+          <div className="context-menu-item" onClick={() => {
+            setSelectedNode(null);
+            setSelectedEdge(null);
+            setIsCreatingNode(true);
+            // contextMenu.show is still true to let initialPos capture its position
+          }}>
+            ➕ 새 노드 추가
+          </div>
+          <div className="context-menu-divider"></div>
+          <div className="context-menu-item" onClick={() => {
+            if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 800 });
+            setContextMenu(null);
+          }}>
+            ⤢ 전체 화면 맞춤
+          </div>
+          <div className="context-menu-item" onClick={() => {
+            triggerRefresh();
+            setContextMenu(null);
+          }}>
+            🔄 새로고침
+          </div>
+        </div>
+      )}
+
+      {/* Workspace Manager Modal */}
+      {showWorkspaceManager && (
+        <div className="workspace-manager-modal" onClick={() => setShowWorkspaceManager(false)}>
+          <div className="glass-panel" style={{ width: '500px', maxWidth: '90%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>Workspace 관리자</h2>
+              <button onClick={() => setShowWorkspaceManager(false)} style={{ background: 'none', border: 'none', color: 'var(--text-main)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+            </div>
+            <div className="workspace-list">
+              {aliases.map(a => (
+                <div key={a} className="workspace-item">
+                  <span style={{ fontWeight: 500 }}>{a}</span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="primary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={async () => {
+                      const newAlias = prompt(`'${a}'의 새 이름을 입력하세요:`, a);
+                      if (newAlias && newAlias.trim() && newAlias.trim() !== a) {
+                        if (confirm(`'${a}' 태그를 가진 모든 노드의 태그가 '${newAlias.trim()}'(으)로 변경됩니다. 계속하시겠습니까?`)) {
+                          try {
+                            const res = await fetch(`/api/aliases/${encodeURIComponent(a)}?new_alias=${encodeURIComponent(newAlias.trim())}`, { method: 'PUT' });
+                            if (res.ok) triggerRefresh();
+                            else alert('Failed to rename workspace');
+                          } catch (e) { alert('Error renaming workspace'); }
+                        }
+                      }
+                    }}>수정</button>
+                    <button className="danger" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={async () => {
+                      if (confirm(`'${a}' 태그를 모든 노드에서 삭제합니다. 계속하시겠습니까?`)) {
+                        try {
+                          const res = await fetch(`/api/aliases/${encodeURIComponent(a)}`, { method: 'DELETE' });
+                          if (res.ok) {
+                            if (filterText === a) { setFilterText(''); localStorage.removeItem('savedWorkspace'); }
+                            triggerRefresh();
+                          }
+                          else alert('Failed to delete workspace');
+                        } catch (e) { alert('Error deleting workspace'); }
+                      }
+                    }}>삭제</button>
+                  </div>
+                </div>
+              ))}
+              {aliases.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>No workspaces found.</div>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Impact Overlay Stats Bar */}
       {impactMode && (
@@ -1776,6 +2036,13 @@ export default function App() {
               <li><strong>다중 선택 하이라이트</strong>: 우측 패널의 <code>Search Highlight</code>에 단어(예: Arena)를 검색하면 해당 그룹의 의존성 흐름을 한눈에 볼 수 있습니다.</li>
               <li><strong>깊이 조절 (Max Depth)</strong>: 선택한 노드로부터 몇 단계(Depth)까지의 연관 관계를 볼 것인지 슬라이더로 조절할 수 있습니다.</li>
               <li><strong>Undo (되돌리기)</strong>: <kbd>Ctrl + Z</kbd>를 눌러 최근 작업을 취소할 수 있습니다.</li>
+            </ul>
+            
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>🌐 전역 노드 (Global Node) 정책</h3>
+            <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
+              <li><strong>타입 제약</strong>: <code>Component</code>, <code>Data</code>, <code>TestCase</code> 등 세부 단위의 노드만 전역 노드로 변환(Badge화)할 수 있습니다. <code>System</code>, <code>Screen</code> 등 그룹 단위의 노드는 전역 노드가 될 수 없습니다.</li>
+              <li><strong>삭제 제약 (Borrow Checker)</strong>: 전역 노드가 하나 이상의 노드에 배지로 부착되어 사용 중일 경우, 원본을 삭제할 수 없습니다. 연결을 먼저 해제해야 합니다.</li>
+              <li><strong>사용 방법</strong>: 우측 패널에서 노드를 전역 노드화한 뒤, 캔버스에서 부착할 다른 대상 노드를 선택하고 우측 패널의 <code>Globals</code> 탭에서 <code>[+] Attach</code> 버튼을 누르면 배지로 부착됩니다.</li>
             </ul>
             
             <div style={{ textAlign: 'right', marginTop: '30px' }}>

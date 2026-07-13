@@ -190,6 +190,12 @@ def convert_to_response(G: nx.MultiDiGraph, debounce_id: Optional[str] = None) -
 from models import NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate
 
 def create_node(session, node_data: NodeCreate) -> str:
+    # Check for duplicate name
+    check_query = "MATCH (n) WHERE n.name = $name RETURN elementId(n) as id LIMIT 1"
+    check_result = session.run(check_query, name=node_data.name).single()
+    if check_result:
+        raise ValueError("중복된 이름입니다. 기존 노드를 재사용하시거나, 구분하려면 해시태그를 붙여주세요 (예: 타이틀 화면 #상점)")
+
     query = f"""
     CREATE (n:`{node_data.label}`)
     SET n.name = $name,
@@ -276,6 +282,15 @@ def _recalc_target_node_status(session, target_id: str):
     session.run(query, target_id=target_id)
 
 def delete_node(session, node_id: str):
+    check_query = """
+    MATCH (n) WHERE elementId(n) = $id
+    OPTIONAL MATCH (n)-[r]-(target)
+    RETURN n.is_global AS is_global, count(r) AS rel_count
+    """
+    check_result = session.run(check_query, id=node_id).single()
+    if check_result and check_result["is_global"] == 'true' and check_result["rel_count"] > 0:
+        raise ValueError(f"현재 {check_result['rel_count']}개의 노드에서 배지로 사용 중입니다. 먼저 배지 연결을 해제하세요.")
+
     find_targets_query = """
     MATCH (n)-[r]->(target) WHERE elementId(n) = $id
     RETURN elementId(target) AS target_id
@@ -421,4 +436,24 @@ def get_impact_nodes(session, global_node_id: str) -> dict:
         "total": len(connected),
         "stats": stats
     }
+
+def delete_alias(session, alias_name: str):
+    """Delete an alias from all nodes that contain it."""
+    query = """
+    MATCH (n) WHERE $alias_name IN n.aliases
+    SET n.aliases = [a IN n.aliases WHERE a <> $alias_name]
+    """
+    session.run(query, alias_name=alias_name)
+
+def rename_alias(session, old_alias: str, new_alias: str):
+    """Rename an alias across all nodes."""
+    query = """
+    MATCH (n) WHERE $old_alias IN n.aliases
+    // Only add new_alias if it doesn't already exist in the remaining list to prevent duplicates
+    SET n.aliases = CASE
+        WHEN $new_alias IN [a IN n.aliases WHERE a <> $old_alias] THEN [a IN n.aliases WHERE a <> $old_alias]
+        ELSE [a IN n.aliases WHERE a <> $old_alias] + $new_alias
+    END
+    """
+    session.run(query, old_alias=old_alias, new_alias=new_alias)
 

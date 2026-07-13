@@ -26,6 +26,14 @@ app.add_middleware(
 def shutdown_event():
     close_driver()
 
+@app.get("/api/health")
+def api_health(session = Depends(get_db)):
+    try:
+        session.run("RETURN 1")
+        return {"status": "ok", "db": "ok"}
+    except Exception as e:
+        return {"status": "error", "db": "error", "message": str(e)}
+
 @app.get("/api/graph", response_model=GraphResponse)
 def get_graph(
     max_depth: Optional[int] = Query(None, ge=0, description="Maximum depth for graph traversal"),
@@ -54,6 +62,24 @@ def get_aliases(session = Depends(get_db)):
             for n_alias in _normalize_aliases(alias):
                 aliases.add(n_alias)
     return sorted(list(aliases))
+
+@app.put("/api/aliases/{old_alias}")
+def api_rename_alias(old_alias: str, new_alias: str = Query(...), session = Depends(get_db)):
+    try:
+        from graph_service import rename_alias
+        rename_alias(session, old_alias, new_alias)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/aliases/{alias_name}")
+def api_delete_alias(alias_name: str, session = Depends(get_db)):
+    try:
+        from graph_service import delete_alias
+        delete_alias(session, alias_name)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/nodes", response_model=str)
 def api_create_node(node: NodeCreate, session = Depends(get_db)):
