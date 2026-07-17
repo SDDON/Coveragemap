@@ -34,7 +34,8 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
 
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>
-      <Handle type="target" position={Position.Top} id="top" className="react-flow__handle-top" />
+      <Handle type="target" position={Position.Top} id="target" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0, width: '1px', height: '1px', zIndex: -2 }} />
+      <Handle type="source" position={Position.Bottom} id="source" className="halo-handle" />
       <div className="custom-node" style={customNodeStyle}>
         {/* Collapse/Expand button for parent nodes */}
         {data.hasChildren && (
@@ -168,7 +169,6 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
           </div>
         )}
       </div>
-      <Handle type="source" position={Position.Bottom} id="bottom" className="react-flow__handle-bottom" />
     </div>
   );
 }

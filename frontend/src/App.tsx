@@ -81,6 +81,8 @@ export default function App() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, show: boolean } | null>(null);
   const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
+  const [showCypherExport, setShowCypherExport] = useState(false);
+  const [cypherQuery, setCypherQuery] = useState('');
 
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -1427,19 +1429,27 @@ export default function App() {
                 {filterText ? filterText : (showAllDomains ? '전체 워크스페이스' : 'None')}
               </span>
             </div>
-            <button 
-              className="primary"
-              style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
-              title="워크스페이스(도메인) 선택 화면 열기"
-              onClick={() => {
-                setFilterText('');
-                setShowAllDomains(false);
-                localStorage.removeItem('savedWorkspace');
-                localStorage.removeItem('savedShowAll');
-              }}
-            >
-              Switch Workspace
-            </button>
+              <button 
+                className="primary"
+                style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
+                title="워크스페이스(도메인) 선택 화면 열기"
+                onClick={() => {
+                  setFilterText('');
+                  setShowAllDomains(false);
+                  localStorage.removeItem('savedWorkspace');
+                  localStorage.removeItem('savedShowAll');
+                }}
+              >
+                Switch Workspace
+              </button>
+              <button 
+                className="primary"
+                style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
+                title="현재 그래프를 Cypher 쿼리로 내보냅니다."
+                onClick={generateCypher}
+              >
+                Export Cypher
+              </button>
             <button 
               style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '50%', fontWeight: 'bold' }}
               title="도움말 및 범례 (Help & Legend)"
@@ -1692,6 +1702,85 @@ export default function App() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  <div className="form-group" style={{ marginTop: '16px' }}>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: 'var(--text-main)' }}>Custom Properties</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {Object.entries(editFormData.properties || {})
+                        .filter(([k]) => !['is_global', 'description', 'issue_link'].includes(k))
+                        .map(([k, v]) => (
+                          <div key={k} style={{ display: 'flex', gap: '8px' }}>
+                            <input 
+                              type="text" 
+                              value={k} 
+                              readOnly
+                              style={{ width: '30%', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                            />
+                            <input 
+                              type="text" 
+                              value={v as string} 
+                              onChange={e => {
+                                const newProps = { ...editFormData.properties, [k]: e.target.value };
+                                setEditFormData({...editFormData, properties: newProps});
+                              }}
+                              style={{ flex: 1, border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                            />
+                            <button 
+                              onClick={() => {
+                                const newProps = { ...editFormData.properties };
+                                delete newProps[k];
+                                setEditFormData({...editFormData, properties: newProps});
+                              }}
+                              style={{ background: 'var(--danger-color)', border: 'none', color: 'white', padding: '0 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                      ))}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                        <input 
+                          type="text" 
+                          placeholder="Key" 
+                          id="newPropKey"
+                          style={{ width: '30%', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                        />
+                        <input 
+                          type="text" 
+                          placeholder="Value" 
+                          id="newPropVal"
+                          style={{ flex: 1, border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              const keyInput = document.getElementById('newPropKey') as HTMLInputElement;
+                              const valInput = document.getElementById('newPropVal') as HTMLInputElement;
+                              if (keyInput.value && !editFormData.properties?.[keyInput.value]) {
+                                const newProps = { ...(editFormData.properties || {}), [keyInput.value]: valInput.value };
+                                setEditFormData({...editFormData, properties: newProps});
+                                keyInput.value = '';
+                                valInput.value = '';
+                              }
+                            }
+                          }}
+                        />
+                        <button 
+                          className="primary"
+                          onClick={() => {
+                            const keyInput = document.getElementById('newPropKey') as HTMLInputElement;
+                            const valInput = document.getElementById('newPropVal') as HTMLInputElement;
+                            if (keyInput.value && !editFormData.properties?.[keyInput.value]) {
+                              const newProps = { ...(editFormData.properties || {}), [keyInput.value]: valInput.value };
+                              setEditFormData({...editFormData, properties: newProps});
+                              keyInput.value = '';
+                              valInput.value = '';
+                            }
+                          }}
+                          style={{ padding: '0 12px', fontSize: '1rem', fontWeight: 'bold' }}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
