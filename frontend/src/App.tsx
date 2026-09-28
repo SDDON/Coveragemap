@@ -17,6 +17,7 @@ import {
 } from '@xyflow/react';
 import { getLayoutedElements, getGridLayoutedElements } from './layout';
 import { PresetManagerModal } from './components/PresetManagerModal';
+import { AutoIngestModal } from './components/AutoIngestModal';
 
 const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
   const edgeBundles: Record<string, Edge[]> = {};
@@ -89,6 +90,7 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, show: boolean } | null>(null);
   const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
   const [showPresetManager, setShowPresetManager] = useState(false);
+  const [showAutoIngest, setShowAutoIngest] = useState(false);
   const [showCypherExport, setShowCypherExport] = useState(false);
   const [cypherQuery, setCypherQuery] = useState('');
 
@@ -1540,6 +1542,14 @@ export default function App() {
               </button>
               <button 
                 className="primary"
+                style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', backgroundColor: '#4f46e5' }}
+                title="기획서 텍스트 또는 엑셀/CSV로부터 그래프를 일괄 자동 생성합니다."
+                onClick={() => setShowAutoIngest(true)}
+              >
+                ⚡ Auto Ingest
+              </button>
+              <button 
+                className="primary"
                 style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
                 title="현재 그래프를 Cypher 쿼리로 내보냅니다."
                 onClick={generateCypher}
@@ -2230,6 +2240,20 @@ export default function App() {
         isOpen={showPresetManager}
         onClose={() => setShowPresetManager(false)}
         onPresetLoaded={() => {
+          setFilterText('');
+          setShowAllDomains(true);
+          triggerRefresh();
+          setTimeout(() => {
+            if (rfInstance) rfInstance.fitView({ padding: 0.15, duration: 600 });
+          }, 300);
+        }}
+      />
+
+      {/* Auto Ingest Modal (AI Spec & CSV Parser) */}
+      <AutoIngestModal
+        isOpen={showAutoIngest}
+        onClose={() => setShowAutoIngest(false)}
+        onSuccess={() => {
           setFilterText('');
           setShowAllDomains(true);
           triggerRefresh();

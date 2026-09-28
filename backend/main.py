@@ -219,6 +219,37 @@ def api_qa_next_targets(session = Depends(get_db)):
     from graph_service import get_next_test_targets
     return get_next_test_targets(session)
 
+# ─── Ingestion Endpoints ───────────────────────────────────────────
+
+from models import CsvIngestRequest, SpecIngestRequest, ApplyIngestRequest
+
+@app.post("/api/ingest/parse-csv")
+def api_parse_csv(req: CsvIngestRequest):
+    """CSV 텍스트를 파싱하여 Screen, Feature, TestCase, Edges 구조로 변환합니다."""
+    from ingest_service import parse_spreadsheet_to_graph
+    try:
+        return parse_spreadsheet_to_graph(req.csv_text)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/ingest/parse-spec")
+def api_parse_spec(req: SpecIngestRequest):
+    """기획서 텍스트를 분석하여 구조화된 그래프 JSON으로 변환합니다."""
+    from ingest_service import parse_spec_text_to_graph
+    try:
+        return parse_spec_text_to_graph(req.spec_text)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/ingest/apply")
+def api_apply_ingested(req: ApplyIngestRequest, clean: bool = Query(False, description="Clear existing database before applying"), session = Depends(get_db)):
+    """파싱된 노드와 엣지를 Neo4j에 일괄 적용합니다."""
+    from ingest_service import apply_ingested_graph_to_neo4j
+    try:
+        return apply_ingested_graph_to_neo4j(session, req.model_dump(), clean=clean)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8190, reload=True)
 

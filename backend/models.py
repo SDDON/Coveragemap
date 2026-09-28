@@ -111,4 +111,17 @@ class NextTestTarget(BaseModel):
     incoming_requirements_met: bool
     untested_reasons: List[str]
 
+# ─── Ingestion Models ──────────────────────────────────────────────
+
+class CsvIngestRequest(BaseModel):
+    csv_text: str
+
+class SpecIngestRequest(BaseModel):
+    spec_text: str
+
+class ApplyIngestRequest(BaseModel):
+    nodes: List[Dict[str, Any]]
+    edges: List[Dict[str, Any]]
+
+
 
