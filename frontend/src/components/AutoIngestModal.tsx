@@ -66,6 +66,7 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
   const [apiKey, setApiKey] = useState<string>(() => {
     return localStorage.getItem('coveragemap_gemini_api_key') || '';
   });
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.8-flash');
   const [showApiKey, setShowApiKey] = useState<boolean>(false);
   const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -98,7 +99,8 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           spec_text: specInput,
-          api_key: apiKey.trim() || undefined
+          api_key: apiKey.trim() || undefined,
+          model: selectedModel
         })
       });
       if (!res.ok) throw new Error(await res.text());
@@ -312,7 +314,7 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
                       color: apiKey ? '#15803d' : '#64748b',
                       fontWeight: 600
                     }}>
-                      {apiKey ? '🟢 Gemini LLM 분석 모드' : '⚪ 로컬 규칙 파서 모드'}
+                      {apiKey ? `🟢 ${selectedModel} 활성화` : '⚪ 로컬 규칙 파서 모드'}
                     </span>
                   </div>
                   <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
@@ -373,6 +375,28 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
                           삭제
                         </button>
                       )}
+                    </div>
+                    <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                        Gemini 모델:
+                      </label>
+                      <select 
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        style={{
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '0.8rem',
+                          backgroundColor: '#f8fafc',
+                          color: '#1e293b',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value="gemini-3.8-flash">gemini-3.8-flash (2026 최신 추천 - 초고속 / 고품질)</option>
+                        <option value="gemini-2.5-flash">gemini-2.5-flash (안정화 모델)</option>
+                        <option value="gemini-1.5-flash">gemini-1.5-flash (레거시 모델)</option>
+                      </select>
                     </div>
                   </div>
                 )}
@@ -443,8 +467,8 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
                 }}
               >
                 {isLoading 
-                  ? (apiKey ? '⏳ Gemini LLM 모델이 기획서를 정밀 분석 중...' : '⏳ 기획서 구조 분석 중...') 
-                  : (apiKey ? '✨ Gemini LLM 기획서 정밀 분석 실행' : '⚡ 로컬 마크다운 구조 분석 실행')}
+                  ? (apiKey ? `⏳ ${selectedModel} 모델이 기획서를 정밀 분석 중...` : '⏳ 기획서 구조 분석 중...') 
+                  : (apiKey ? `✨ ${selectedModel} 기획서 정밀 분석 실행` : '⚡ 로컬 마크다운 구조 분석 실행')}
               </button>
             </div>
           ) : (

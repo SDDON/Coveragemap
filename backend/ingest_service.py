@@ -161,19 +161,26 @@ def parse_spreadsheet_to_graph(csv_text: str) -> Dict[str, Any]:
     }
 
 
-def parse_spec_text_to_graph(spec_text: str, api_key: Optional[str] = None) -> Dict[str, Any]:
+def parse_spec_text_to_graph(spec_text: str, api_key: Optional[str] = None, model_name: Optional[str] = "gemini-3.8-flash") -> Dict[str, Any]:
     """
     기획서/기능 명세서 텍스트를 구조화하여 Screen, Feature, TestCase, Edges로 자동 변환합니다.
     - 사용자가 API 키를 설정한 경우(또는 시스템 GEMINI_API_KEY 환경변수 설정 시):
-      Google Gemini LLM을 호출하여 자연어 비정형 기획서를 고품질 그래프로 정밀 분석합니다.
+      Google Gemini LLM(gemini-3.8-flash 최신 모델 등)을 호출하여 자연어 비정형 기획서를 고품질 그래프로 정밀 분석합니다.
     - API 키가 없거나 비어있는 경우:
       100% 로컬 인하우스 규칙 기반 휴리스틱 파서로 안전하게 동작합니다.
     """
     key = (api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    target_model = (model_name or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")).strip()
     if key:
         try:
-            return _parse_with_gemini(spec_text, key)
+            return _parse_with_gemini(spec_text, key, target_model)
         except Exception as e:
+            # Fallback to gemini-1.5-flash if target model fails
+            if target_model != "gemini-1.5-flash":
+                try:
+                    return _parse_with_gemini(spec_text, key, "gemini-1.5-flash")
+                except Exception:
+                    pass
             print(f"[WARN] Gemini API spec parsing failed ({e}), falling back to heuristic parser.")
             
     return _parse_with_heuristics(spec_text)
@@ -303,10 +310,11 @@ def _parse_with_heuristics(text: str) -> Dict[str, Any]:
     }
 
 
-def _parse_with_gemini(spec_text: str, api_key: str) -> Dict[str, Any]:
+def _parse_with_gemini(spec_text: str, api_key: str, model_name: str = "gemini-3.8-flash") -> Dict[str, Any]:
     """Gemini API를 사용하여 비정형 기획서에서 고품질 그래프 구조를 추출합니다."""
     import httpx
     
+    clean_model = model_name.replace("models/", "").strip() or "gemini-3.8-flash"
     prompt = f"""
 당신은 모바일 게임 전문 QA 리드이자 그래프 모델링 아키텍트입니다.
 제공된 게임 기능 기획서를 분석하여 CoverageMap 그래프 규격의 JSON을 작성해주세요.
@@ -340,16 +348,16 @@ def _parse_with_gemini(spec_text: str, api_key: str) -> Dict[str, Any]:
   ]
 }}
 """
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"response_mime_type": "application/json"}
     }
     
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=35) as client:
         r = client.post(url, json=payload)
         if r.status_code >= 400:
-            raise Exception(f"Gemini API error {r.status_code}: {r.text}")
+            raise Exception(f"Gemini API error ({clean_model}) {r.status_code}: {r.text}")
         data = r.json()
         raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
         return json.loads(raw_text)

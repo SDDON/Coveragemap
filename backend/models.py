@@ -119,6 +119,7 @@ class CsvIngestRequest(BaseModel):
 class SpecIngestRequest(BaseModel):
     spec_text: str
     api_key: Optional[str] = None
+    model: Optional[str] = "gemini-3.8-flash"
 
 class ApplyIngestRequest(BaseModel):
     nodes: List[Dict[str, Any]]

@@ -237,7 +237,7 @@ def api_parse_spec(req: SpecIngestRequest):
     """기획서 텍스트를 분석하여 구조화된 그래프 JSON으로 변환합니다."""
     from ingest_service import parse_spec_text_to_graph
     try:
-        return parse_spec_text_to_graph(req.spec_text, req.api_key)
+        return parse_spec_text_to_graph(req.spec_text, req.api_key, req.model)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
