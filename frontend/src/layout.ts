@@ -3,8 +3,17 @@ const elk = new ELK();
 import { Node, Edge, Position } from '@xyflow/react';
 
 // Base dimensions for a single node (matches .custom-node min-width + padding)
-const nodeWidth = 240;
+const nodeWidth = 280;
 const nodeHeight = 120;
+
+// Helper to estimate dynamic node width based on label text length
+const estimateNodeWidth = (node: Node): number => {
+  const name = (node.data as any)?.name || '';
+  const textLen = name.length;
+  // Estimate ~16px per character for Korean/English mixed text + padding
+  const calculated = Math.max(280, textLen * 16 + 70);
+  return Math.min(520, calculated);
+};
 
 /**
  * Dagre-based layout with parent-child (subflow) support.
@@ -23,8 +32,8 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': isHorizontal ? 'RIGHT' : 'DOWN',
-      'elk.spacing.nodeNode': '160',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '200',
+      'elk.spacing.nodeNode': '220',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '260',
     },
     children: [],
     edges: []
@@ -44,12 +53,12 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
   const nodeDimensions: Record<string, { w: number; h: number }> = {};
 
   // Grid layout parameters for children inside a parent
-  const CHILD_W = nodeWidth;
-  const CHILD_GAP_X = 120;  // Increased to give horizontal edges more breathing room
-  const CHILD_GAP_Y = 120;  // Increased to prevent tight vertical gaps
-  const PAD_LEFT = 40;      // Increased padding
-  const PAD_RIGHT = 40;
-  const PAD_BOTTOM = 60;    // Increased bottom padding
+  const CHILD_W = 320;      // Expanded so children comfortably contain longer feature titles
+  const CHILD_GAP_X = 140;  // Ample horizontal gap between child nodes for clean edge routing
+  const CHILD_GAP_Y = 130;  // Ample vertical gap between rows
+  const PAD_LEFT = 50;      // Generous side padding
+  const PAD_RIGHT = 50;
+  const PAD_BOTTOM = 70;    // Generous bottom padding
   const COLS = 2;           // Number of columns in the child grid
 
   newNodes.forEach(n => {
@@ -60,15 +69,15 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
       const numCols = Math.min(children.length, COLS);
       
       const badgesCount = (n.data as any)?.badges?.length || 0;
-      // Calculate dynamic top padding based on parent badges
-      const PAD_TOP = badgesCount > 0 ? 100 + (badgesCount * 30) : 100;
+      // Generous top padding so child nodes never encroach on parent title, type, and tags
+      const PAD_TOP = badgesCount > 0 ? 170 + (badgesCount * 36) : 160;
 
       // Calculate dynamic row heights based on children's badges
       const rowHeights: number[] = Array(numRows).fill(180);
       children.forEach((child, i) => {
         const row = Math.floor(i / COLS);
         const childBadgesCount = (child.data as any)?.badges?.length || 0;
-        // 140px base + ~40px per badge (assuming 1 badge per row for safety as names can be long)
+        // 140px base + ~40px per badge
         const childH = 140 + (childBadgesCount * 40);
         if (childH > rowHeights[row]) {
           rowHeights[row] = childH;
@@ -105,17 +114,19 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
 
       nodeDimensions[n.id] = { w: parentW, h: parentH };
 
-      // Apply visual styling to the parent node
+      // Apply Clean Light theme visual styling to the parent node
       if (!n.style) n.style = {};
       n.style.width = parentW;
       n.style.height = parentH;
       n.style.padding = '0px';
-      n.style.backgroundColor = 'rgba(30, 41, 59, 0.35)';
-      n.style.border = '1px solid rgba(148, 163, 184, 0.25)';
+      n.style.backgroundColor = '#f8fafc';
+      n.style.border = '1.5px solid #cbd5e1';
       n.style.borderRadius = '16px';
+      n.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)';
     } else if (!n.parentId) {
-      // Regular root node (no children)
-      nodeDimensions[n.id] = { w: nodeWidth, h: nodeHeight };
+      // Regular root node (e.g. TestCase)
+      const estimatedW = estimateNodeWidth(n);
+      nodeDimensions[n.id] = { w: estimatedW, h: nodeHeight };
     }
   });
 
