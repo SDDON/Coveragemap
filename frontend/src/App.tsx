@@ -41,6 +41,12 @@ const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
   return bundledEdges;
 };
 
+// System reserved keys that have dedicated UI form controls and must be excluded from Custom Properties
+const SYSTEM_RESERVED_KEYS = new Set([
+  'name', 'label', 'aliases', 'test_status', 'id',
+  'is_global', 'description', 'issue_link', 'x', 'y'
+]);
+
 
 type ApiNode = {
   id: string;
@@ -587,7 +593,17 @@ export default function App() {
   useEffect(() => {
     if (selectedNode) {
       const n = selectedNode.data as ApiNode;
-      setEditFormData({ type: 'node', id: selectedNode.id, label: n.label || 'Node', name: n.name, aliases: (n.aliases || []).join(', '), status: n.test_status || 'Untested', properties: n.properties || {} });
+      const cleanProps = { ...(n.properties || {}) };
+      SYSTEM_RESERVED_KEYS.forEach(k => delete cleanProps[k]);
+      setEditFormData({ 
+        type: 'node', 
+        id: selectedNode.id, 
+        label: n.label || 'Node', 
+        name: n.name, 
+        aliases: (n.aliases || []).join(', '), 
+        status: n.test_status || 'Untested', 
+        properties: cleanProps 
+      });
     } else if (selectedEdge) {
       const e = selectedEdge.data as ApiEdge;
       setEditFormData({ type: 'edge', id: selectedEdge.id, edgeType: e.type, action: e.action || '', status: e.test_status || 'Untested', properties: e.properties || {} });
@@ -824,12 +840,14 @@ export default function App() {
   const handleSaveStatus = async (newStatus: string) => {
     if (editFormData.type === 'node') {
       const node = nodes.find(n => n.id === editFormData.id);
+      const cleanProps = { ...(editFormData.properties || {}) };
+      SYSTEM_RESERVED_KEYS.forEach(k => delete cleanProps[k]);
       const payload = {
         label: editFormData.label,
         name: editFormData.name,
         aliases: typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         test_status: newStatus,
-        properties: editFormData.properties || {}
+        properties: cleanProps
       };
       if (isCreatingNode) {
         const res = await fetch('/api/nodes', {
@@ -883,8 +901,17 @@ export default function App() {
         
         // Update className: replace old status-xxx with new one
         const cls = (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newStatus.toLowerCase();
-        return { ...n, data: { ...(n.data || {}), test_status: newStatus, badges: newBadges }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newStatus === 'Passed' ? '#c8e6c9' : (newStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
+        return { 
+          ...n, 
+          className: cls.trim(), 
+          data: { 
+            ...(n.data || {}), 
+            test_status: newStatus, 
+            badges: newBadges 
+          } 
+        };
       }));
+      setEditFormData({ ...editFormData, status: newStatus, properties: cleanProps });
     } else if (editFormData.type === 'edge') {
       const edge = edges.find(e => e.id === editFormData.id);
       if (!edge) return;
@@ -922,8 +949,8 @@ export default function App() {
         }));
         return nextEds;
       });
+      setEditFormData({ ...editFormData, status: newStatus });
     }
-    setEditFormData({ ...editFormData, status: newStatus });
   };
 
   const handleSave = async () => {
@@ -931,11 +958,10 @@ export default function App() {
       const node = nodes.find(n => n.id === editFormData.id);
       
       // Extract description and issue_link to top-level for the backend
-      const props = { ...editFormData.properties };
+      const props = { ...(editFormData.properties || {}) };
       const description = props.description;
       const issue_link = props.issue_link;
-      delete props.description;
-      delete props.issue_link;
+      SYSTEM_RESERVED_KEYS.forEach(k => delete props[k]);
       
       const payload = {
         label: editFormData.label,
@@ -972,6 +998,7 @@ export default function App() {
           id: newId,
           type: 'custom',
           position: initialPos,
+          className: `status-${(payload.test_status || 'untested').toLowerCase()}`,
           data: {
             id: newId,
             label: payload.label,
@@ -1003,7 +1030,38 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        setNodes(nds => nds.map(n => n.id === editFormData.id ? { ...n, data: { ...n.data, label: editFormData.label, name: editFormData.name, aliases: payload.aliases, properties: { ...payload.properties, description: payload.description, issue_link: payload.issue_link } } } : n));
+        setNodes(nds => nds.map(n => n.id === editFormData.id ? { 
+          ...n, 
+          className: (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (editFormData.status || 'untested').toLowerCase(),
+          data: { 
+            ...n.data, 
+            label: editFormData.label, 
+            name: editFormData.name, 
+            test_status: editFormData.status, 
+            aliases: payload.aliases, 
+            properties: { 
+              ...payload.properties, 
+              description: payload.description, 
+              issue_link: payload.issue_link 
+            } 
+          } 
+        } : n));
+        setSelectedNode(prev => prev && prev.id === editFormData.id ? {
+          ...prev,
+          className: (prev.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (editFormData.status || 'untested').toLowerCase(),
+          data: {
+            ...prev.data,
+            label: editFormData.label,
+            name: editFormData.name,
+            test_status: editFormData.status,
+            aliases: payload.aliases,
+            properties: {
+              ...payload.properties,
+              description: payload.description,
+              issue_link: payload.issue_link
+            }
+          }
+        } : prev);
       }
     } else if (editFormData.type === 'edge') {
       const edge = edges.find(e => e.id === editFormData.id);
@@ -1732,23 +1790,48 @@ export default function App() {
                     <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: '#0f172a', fontWeight: 600 }}>Custom Properties</h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {Object.entries(editFormData.properties || {})
-                        .filter(([k]) => !['is_global', 'description', 'issue_link'].includes(k))
+                        .filter(([k]) => !SYSTEM_RESERVED_KEYS.has(k))
                         .map(([k, v]) => (
-                          <div key={k} style={{ display: 'flex', gap: '8px' }}>
+                          <div key={k} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             <input 
                               type="text" 
                               value={k} 
                               readOnly
-                              style={{ width: '30%', backgroundColor: '#f1f5f9', border: '1.5px solid #cbd5e1', color: '#334155', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600 }}
+                              title={k}
+                              style={{ 
+                                flex: '0 0 110px', 
+                                maxWidth: '120px', 
+                                backgroundColor: '#f1f5f9', 
+                                border: '1.5px solid #cbd5e1', 
+                                color: '#334155', 
+                                padding: '6px 8px', 
+                                borderRadius: '6px', 
+                                fontSize: '0.85rem', 
+                                fontWeight: 600,
+                                textOverflow: 'ellipsis',
+                                overflow: 'hidden',
+                                whiteSpace: 'nowrap'
+                              }}
                             />
                             <input 
                               type="text" 
                               value={v as string} 
+                              title={String(v)}
                               onChange={e => {
                                 const newProps = { ...editFormData.properties, [k]: e.target.value };
                                 setEditFormData({...editFormData, properties: newProps});
                               }}
-                              style={{ flex: 1, border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem' }}
+                              style={{ 
+                                flex: 1, 
+                                minWidth: 0,
+                                border: '1.5px solid #cbd5e1', 
+                                backgroundColor: '#ffffff', 
+                                color: '#0f172a', 
+                                padding: '6px 8px', 
+                                borderRadius: '6px', 
+                                fontSize: '0.85rem',
+                                textOverflow: 'ellipsis'
+                              }}
                             />
                             <button 
                               onClick={() => {
@@ -1756,24 +1839,35 @@ export default function App() {
                                 delete newProps[k];
                                 setEditFormData({...editFormData, properties: newProps});
                               }}
-                              style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#b91c1c', padding: '0 8px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
+                              title="속성 삭제"
+                              style={{ 
+                                background: '#fee2e2', 
+                                border: '1px solid #fca5a5', 
+                                color: '#b91c1c', 
+                                padding: '0 8px', 
+                                borderRadius: '6px', 
+                                cursor: 'pointer', 
+                                fontSize: '0.85rem', 
+                                fontWeight: 600,
+                                height: '32px'
+                              }}
                             >
                               ✕
                             </button>
                           </div>
                       ))}
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
                         <input 
                           type="text" 
                           placeholder="Key" 
                           id="newPropKey"
-                          style={{ width: '30%', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem' }}
+                          style={{ flex: '0 0 110px', maxWidth: '120px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 8px', borderRadius: '6px', fontSize: '0.85rem' }}
                         />
                         <input 
                           type="text" 
                           placeholder="Value" 
                           id="newPropVal"
-                          style={{ flex: 1, border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem' }}
+                          style={{ flex: 1, minWidth: 0, border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 8px', borderRadius: '6px', fontSize: '0.85rem' }}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
                               const keyInput = document.getElementById('newPropKey') as HTMLInputElement;
@@ -1799,7 +1893,7 @@ export default function App() {
                               valInput.value = '';
                             }
                           }}
-                          style={{ padding: '0 12px', fontSize: '1rem', fontWeight: 'bold' }}
+                          style={{ padding: '0 12px', fontSize: '1rem', fontWeight: 'bold', height: '32px' }}
                         >
                           +
                         </button>
@@ -1841,6 +1935,54 @@ export default function App() {
                 <button className="danger" style={{flex: 1}} onClick={handleDelete}>Delete</button>
                 <button className="primary" style={{flex: 1}} onClick={handleSave}>Save</button>
               </div>
+
+              {/* Debug: Real-time Node System Metadata Inspector */}
+              <details style={{ marginTop: '16px', padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '0.8rem', color: '#475569' }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#2563eb', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🔍 Node Raw Inspector (Debug)</span>
+                </summary>
+                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
+                    <span style={{ fontWeight: 600, color: '#64748b' }}>Status (Current):</span>
+                    <span style={{ fontWeight: 700, color: editFormData.status === 'Passed' ? '#16a34a' : (editFormData.status === 'Failed' ? '#dc2626' : '#d97706') }}>
+                      {editFormData.status || 'Untested'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
+                    <span style={{ fontWeight: 600, color: '#64748b' }}>Node ID:</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#0f172a' }}>{editFormData.id}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
+                    <span style={{ fontWeight: 600, color: '#64748b' }}>Label / Name:</span>
+                    <span style={{ color: '#0f172a' }}>[{editFormData.label}] {editFormData.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
+                    <span style={{ fontWeight: 600, color: '#64748b' }}>Category (Aliases):</span>
+                    <span style={{ color: '#0f172a' }}>{editFormData.aliases || '(none)'}</span>
+                  </div>
+                  {selectedNode && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
+                      <span style={{ fontWeight: 600, color: '#64748b' }}>Parent Node:</span>
+                      <span style={{ color: '#0f172a' }}>{selectedNode.parentId ? selectedNode.parentId : '(Root / None)'}</span>
+                    </div>
+                  )}
+                  <div style={{ marginTop: '4px' }}>
+                    <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Active Properties Payload:</span>
+                    <pre style={{ margin: 0, padding: '8px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.7rem', maxHeight: '140px', overflowY: 'auto', color: '#0f172a' }}>
+                      {JSON.stringify({
+                        id: editFormData.id,
+                        label: editFormData.label,
+                        name: editFormData.name,
+                        test_status: editFormData.status,
+                        aliases: editFormData.aliases,
+                        custom_properties: Object.fromEntries(
+                          Object.entries(editFormData.properties || {}).filter(([k]) => !SYSTEM_RESERVED_KEYS.has(k))
+                        )
+                      }, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              </details>
             </div>
             ) : (
               <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
