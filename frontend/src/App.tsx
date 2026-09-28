@@ -210,6 +210,49 @@ export default function App() {
 
   const triggerRefresh = () => setRefreshKey(k => k + 1);
 
+  const generateCypher = useCallback(() => {
+    const lines: string[] = ['// Generated Cypher Script from CoverageMap', ''];
+    const visibleNodes = nodes.filter(n => !n.hidden);
+    const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+
+    // Create Nodes
+    visibleNodes.forEach(node => {
+      const data = node.data as any;
+      const label = data.label || 'Node';
+      const props: Record<string, any> = {
+        name: data.name || '',
+        test_status: data.test_status || 'Untested',
+        ...(data.properties || {})
+      };
+      if (data.aliases && Array.isArray(data.aliases)) {
+        props.aliases = data.aliases;
+      }
+      const safeVar = `n_${node.id.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+      lines.push(`CREATE (${safeVar}:${label} ${JSON.stringify(props)})`);
+    });
+
+    lines.push('');
+    // Create Relationships
+    edges.forEach(edge => {
+      if (visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)) {
+        const data = edge.data as any;
+        const edgeType = (edge.label || data?.type || 'RELATES_TO').toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+        const edgeProps: Record<string, any> = {
+          test_status: data?.test_status || 'Untested',
+          ...(data?.properties || {})
+        };
+        if (data?.action) edgeProps.action = data.action;
+        const propsStr = Object.keys(edgeProps).length > 0 ? ` ${JSON.stringify(edgeProps)}` : '';
+        const sourceVar = `n_${edge.source.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+        const targetVar = `n_${edge.target.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+        lines.push(`CREATE (${sourceVar})-[:${edgeType}${propsStr}]->(${targetVar})`);
+      }
+    });
+
+    setCypherQuery(lines.join('\n'));
+    setShowCypherExport(true);
+  }, [nodes, edges]);
+
 
   // Undo Stack
   const actionHistory = useRef<any[]>([]);
@@ -2138,6 +2181,46 @@ export default function App() {
             
             <div style={{ textAlign: 'right', marginTop: '30px' }}>
               <button onClick={() => setShowHelp(false)} className="success">확인</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showCypherExport && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', justifyContent: 'center', alignItems: 'center'
+        }}>
+          <div className="glass-panel" style={{
+            backgroundColor: 'var(--bg-color)', color: 'var(--text-main)',
+            padding: '24px', borderRadius: '12px', width: '650px', maxWidth: '90%',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)', maxHeight: '85vh', display: 'flex', flexDirection: 'column'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Export Cypher Query</h2>
+              <button onClick={() => setShowCypherExport(false)} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: '1.5rem', color: 'var(--text-main)' }}>&times;</button>
+            </div>
+            <textarea
+              readOnly
+              value={cypherQuery}
+              style={{
+                flex: 1, minHeight: '320px', backgroundColor: 'rgba(0,0,0,0.3)',
+                color: '#e2e8f0', fontFamily: 'monospace', padding: '12px',
+                borderRadius: '6px', border: '1px solid var(--panel-border)',
+                resize: 'none', fontSize: '0.85rem'
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button 
+                className="primary" 
+                onClick={() => {
+                  navigator.clipboard.writeText(cypherQuery);
+                  alert('Cypher query copied to clipboard!');
+                }}
+              >
+                Copy to Clipboard
+              </button>
+              <button onClick={() => setShowCypherExport(false)}>Close</button>
             </div>
           </div>
         </div>
