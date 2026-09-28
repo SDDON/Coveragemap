@@ -1,37 +1,37 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* Dark Theme Colors (Glassmorphism) */
-  --bg-color: #0b0f19;
-  --bg-color-grid: #0f1626;
-  --text-main: #e2e8f0;
-  --text-muted: #94a3b8;
+  /* Clean Light Theme Colors (Miro / Linear Enterprise Style) */
+  --bg-color: #f8fafc;          /* Slate 50: Clean Off-White Canvas */
+  --bg-color-grid: #e2e8f0;     /* Slate 200: Soft Grid Dots */
+  --text-main: #0f172a;         /* Slate 900: High-contrast Dark Slate Text */
+  --text-muted: #64748b;        /* Slate 500: Clear Secondary Text */
   
-  --panel-bg: rgba(15, 23, 42, 0.65);
-  --panel-border: rgba(51, 65, 85, 0.5);
-  --panel-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  --panel-bg: rgba(255, 255, 255, 0.9);
+  --panel-border: #e2e8f0;
+  --panel-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
   
-  --node-bg: rgba(30, 41, 59, 0.75);
-  --node-border: rgba(71, 85, 105, 0.6);
-  --node-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --node-shadow-hover: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 15px rgba(59, 130, 246, 0.2);
+  --node-bg: #ffffff;
+  --node-border: #cbd5e1;
+  --node-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --node-shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.1), 0 0 0 1px #3b82f6;
   
-  /* Status Colors */
-  --status-passed-bg: rgba(22, 101, 52, 0.25);
+  /* 4-Stage Status Colors (Soft Pastel for Light Theme) */
+  --status-passed-bg: #f0fdf4;
   --status-passed-border: #22c55e;
-  --status-passed-text: #4ade80;
+  --status-passed-text: #15803d;
   
-  --status-failed-bg: rgba(153, 27, 27, 0.25);
+  --status-failed-bg: #fef2f2;
   --status-failed-border: #ef4444;
-  --status-failed-text: #f87171;
+  --status-failed-text: #b91c1c;
 
-  --status-blocked-bg: rgba(245, 158, 11, 0.25);
+  --status-blocked-bg: #fffbeb;
   --status-blocked-border: #f59e0b;
-  --status-blocked-text: #fbbf24;
+  --status-blocked-text: #b45309;
 
-  --status-untested-bg: rgba(30, 41, 59, 0.4);
-  --status-untested-border: rgba(100, 116, 139, 0.6);
-  --status-untested-text: #e2e8f0;
+  --status-untested-bg: #f8fafc;
+  --status-untested-border: #cbd5e1;
+  --status-untested-text: #475569;
 
   /* 12-Tier Standard Z-Index Layering Tokens (Single Source of Truth) */
   --z-canvas-bg: 0;          /* 캔버스 배경 그리드 */
@@ -50,17 +50,17 @@
 
   /* Handle Colors */
   --handle-color: rgba(59, 130, 246, 0.15); 
-  --handle-hover: rgba(96, 165, 250, 0.9);
+  --handle-hover: #3b82f6;
 
-  --accent-incoming: #3b82f6; /* Blue */
-  --accent-outgoing: #f59e0b; /* Amber */
+  --accent-incoming: #2563eb; /* Blue */
+  --accent-outgoing: #d97706; /* Amber */
   
-  --primary-btn: #3b82f6;
-  --primary-btn-hover: #60a5fa;
-  --danger-btn: #ef4444;
-  --danger-btn-hover: #f87171;
-  --success-btn: #10b981;
-  --success-btn-hover: #34d399;
+  --primary-btn: #2563eb;
+  --primary-btn-hover: #1d4ed8;
+  --danger-btn: #dc2626;
+  --danger-btn-hover: #b91c1c;
+  --success-btn: #16a34a;
+  --success-btn-hover: #15803d;
 }
 
 body {
@@ -78,19 +78,19 @@ body {
   height: 100vh;
 }
 
-/* Custom React Flow Background for Dark Mode */
+/* Custom React Flow Background for Clean Light Mode */
 .react-flow__background {
   background-color: var(--bg-color);
 }
 .react-flow__background pattern circle {
-  fill: rgba(255, 255, 255, 0.1) !important;
+  fill: #cbd5e1 !important;
 }
 
 /* Glassmorphism Panels */
 .glass-panel {
   background: var(--panel-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--panel-border);
   box-shadow: var(--panel-shadow);
   border-radius: 16px;
@@ -119,12 +119,12 @@ body {
   overflow: hidden;
   border: 1px solid var(--node-border);
   transition: all 0.2s ease;
-  color: #ffffff;
+  color: var(--text-main);
 }
 
 .custom-node:hover {
   box-shadow: var(--node-shadow-hover);
-  border-color: rgba(148, 163, 184, 0.8);
+  border-color: #94a3b8;
 }
 
 /* Parent Node (Subflow) Styling override */
@@ -136,6 +136,8 @@ body {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
+  background: rgba(241, 245, 249, 0.65);
+  border: 1.5px dashed #94a3b8;
 }
 
 /* Status-based styles for Nodes */
@@ -190,18 +192,19 @@ body {
 }
 
 .alias-tag {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 0.7rem;
+  color: #475569;
 }
 
 /* Dependencies (Badges) Section */
 .node-badges-section {
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid #e2e8f0;
 }
 .node-badges-title {
   font-size: 0.7rem;
@@ -226,7 +229,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #fff;
+  color: var(--text-main);
   transition: transform 0.1s, box-shadow 0.1s;
   backdrop-filter: blur(4px);
 }
@@ -353,32 +356,36 @@ body {
 .react-flow__edge.status-failed path.react-flow__edge-path { stroke: var(--status-failed-border) !important; }
 .react-flow__edge.status-failed .custom-marker-path { fill: var(--status-failed-border) !important; }
 
-.react-flow__edge.active path.react-flow__edge-path { stroke-width: 3.5 !important; stroke: #60a5fa !important; }
-.react-flow__edge.active .custom-marker-path { transform: scale(1.2); fill: #60a5fa !important; }
+.react-flow__edge.active path.react-flow__edge-path { stroke-width: 3.5 !important; stroke: #2563eb !important; }
+.react-flow__edge.active .custom-marker-path { transform: scale(1.2); fill: #2563eb !important; }
 
-/* Focus + Context Dimming */
+/* Focus + Context Dimming (Pure CSS) */
 .has-selection .react-flow__node:not(.active):not(.related):not(.hovered-global-neighbor),
 .has-selection .react-flow__edge:not(.active):not(.related):not(.hovered-global-neighbor) {
-  opacity: 0.5;
-  filter: grayscale(100%) brightness(1.1);
+  opacity: 0.35;
+  filter: grayscale(80%) contrast(0.9);
 }
 .react-flow__node.active, .react-flow__edge.active,
 .react-flow__node.related, .react-flow__edge.related,
 .react-flow__node.hovered-global-neighbor, .react-flow__edge.hovered-global-neighbor {
   opacity: 1;
+  filter: none;
 }
-/* Directional Highlights */
-.react-flow__node.active .custom-node {
-  box-shadow: 0 0 0 2px #fff, 0 0 20px rgba(255, 255, 255, 0.6);
-  transform: scale(1.05);
+/* Directional Highlights - Pure Focus Ring without transform scale to protect Subflow coordinates */
+.react-flow__node.active > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2.5px #2563eb, 0 10px 25px rgba(37, 99, 235, 0.25) !important;
+  border-color: #2563eb !important;
+  transform: none !important;
   transition: all 0.2s ease;
 }
 
-.react-flow__node.highlight-incoming .custom-node {
-  box-shadow: 0 0 0 2px var(--accent-incoming), 0 0 15px rgba(59, 130, 246, 0.4);
+.react-flow__node.highlight-incoming > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2px var(--accent-incoming), 0 4px 14px rgba(37, 99, 235, 0.25);
+  border-color: var(--accent-incoming) !important;
 }
-.react-flow__node.highlight-outgoing .custom-node {
-  box-shadow: 0 0 0 2px var(--accent-outgoing), 0 0 15px rgba(245, 158, 11, 0.4);
+.react-flow__node.highlight-outgoing > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2px var(--accent-outgoing), 0 4px 14px rgba(217, 119, 6, 0.25);
+  border-color: var(--accent-outgoing) !important;
 }
 
 /* Root Cause Backtracking Animation */
@@ -411,15 +418,15 @@ body {
 
 /* Controls */
 .react-flow__controls-button {
-  background-color: #1e293b !important;
-  border-bottom: 1px solid #334155 !important;
-  color: #e2e8f0 !important;
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  color: #334155 !important;
 }
 .react-flow__controls-button svg {
-  fill: #e2e8f0 !important;
+  fill: #334155 !important;
 }
 .react-flow__controls-button:hover {
-  background-color: #334155 !important;
+  background-color: #f1f5f9 !important;
 }
 
 .form-group { margin-bottom: 16px; }
@@ -434,18 +441,18 @@ input, select, textarea {
   font-family: inherit;
   font-size: 0.95rem;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid #cbd5e1;
   padding: 10px 14px;
   outline: none;
   width: 100%;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.2);
-  color: white;
+  background: #ffffff;
+  color: var(--text-main);
   transition: all 0.2s;
 }
 input:focus, select:focus, textarea:focus {
   border-color: var(--primary-btn);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 button {
@@ -455,26 +462,44 @@ button {
   font-weight: 600;
   border-radius: 8px;
   padding: 10px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: white;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: var(--text-main);
   transition: all 0.2s;
 }
-button:hover { background: rgba(255, 255, 255, 0.1); }
-button.primary { background: var(--primary-btn); border: none; }
+button:hover { background: #f1f5f9; }
+button.primary { background: var(--primary-btn); border: none; color: #ffffff; }
 button.primary:hover { background: var(--primary-btn-hover); }
-button.danger { background: var(--danger-btn); border: none; }
+button.danger { background: var(--danger-btn); border: none; color: #ffffff; }
 button.danger:hover { background: var(--danger-btn-hover); }
-button.success { background: var(--success-btn); border: none; }
+button.success { background: var(--success-btn); border: none; color: #ffffff; }
 button.success:hover { background: var(--success-btn-hover); }
 
 /* Collapse Button */
 .collapse-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: var(--z-node-badge);
+  font-size: 16px;
+  font-weight: bold;
+  padding: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
   transition: all 0.2s ease;
+  background: #ffffff !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
 }
 .collapse-btn:hover {
-  background: rgba(255,255,255,0.15) !important;
-  transform: scale(1.1);
+  background: #f1f5f9 !important;
+  transform: scale(1.05);
 }
 
 /* Fix native select options dropdown visibility */

@@ -35,6 +35,10 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
 9. **Inner Content vs Outer Rim Isolation (Halo Handle):**
    - Halo handles (`.halo-handle`) MUST strictly remain on the outer boundary (outer rim) and NEVER encroach on the node's inner content area (0px inward) to prevent click stealing on badges (✔/✖/⊘) and collapse buttons.
    - The handle's stacking level must stay at or below `z-index: var(--z-canvas-bg)` (0), strictly below `.custom-node` (1) and badges (50).
+10. **Parent Scale Immutability & Clean Light Theme:**
+   - Active parent nodes must NEVER use `transform: scale` to prevent child coordinate detachment. Highlight using `box-shadow` and direct child (`>`) selectors only.
+   - Subflows are strictly limited to Max Depth = 1. Cross-cutting concerns (Localization) must be flattened into attribute checkboxes/chips.
+   - Default theme is Clean Light (Slate-50 background, white cards, slate-900 text) for readability.
 
 ## 3-Tier Verification Pipeline
 Before concluding any task, the AI agent MUST execute:

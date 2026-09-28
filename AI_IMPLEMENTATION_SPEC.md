@@ -213,6 +213,24 @@ AI 모델은 코드에 임의의 숫자(`z-index: 99`, `z-index: 9999`)를 직�
 - **외곽 림(Outer Rim)**: 핸들(`.halo-handle`)의 히트 영역은 노드 외곽 테두리선(Border 0px 기준)으로부터 **바깥쪽으로만 균일한 완충 두께(Rim)**를 형성해야 하며, 노드 내부(0px 안쪽)로는 단 1px도 침범하지 않는 외곽 도넛 링 형태로 존재해야 합니다.
 - **Z-Index 계층 보장**: 핸들의 계층은 항상 `z-index: var(--z-canvas-bg)`(0) 이하로 머물러야 하며, 노드 본체(`z-index: 1`) 및 뱃지(`--z-node-badge: 50`)보다 상위로 올라와 내부 클릭 이벤트를 덮어서는 안 됩니다.
 
+### 🌟 Rule 6: 단일 부모 트리 제약, 부모 노드 스케일 불변 및 클린 라이트 테마 표준 (Parent Constraints & Light Theme)
+
+#### 1. 단일 부모 트리 제약 (Single Parent Constraint)
+- 2D 시각적 평면 캔버스(Subflow)에서 하나의 자식 노드는 **물리적으로 오직 1개의 부모 노드에만 속할 수 있습니다 (in-degree(CONTAINS) <= 1).**
+- 여러 부모가 공통으로 참조해야 하는 다대다 기능(공통 팝업, 세션 모듈, 네트워크 에러 처리 등)은 특정 부모 내부에 가두지 않고, 독립 리프 노드로 배치하여 화살표(Edge)로 연결하거나 **동적 뱃지 칩(`Dependencies Badge Pills`)**으로 흡수합니다.
+
+#### 2. 물리적 중첩 깊이 제한 (Max Nesting Depth = 1) 및 반복 관심사 체크박스화
+- 캔버스 박스 인 박스(Subflow)의 물리적 중첩은 **최대 1단계(부모 ➔ 자식)**로 엄격히 제한합니다 (`Depth > 1` 금지).
+- 다국어(Localization), 플랫폼(AOS/iOS), 사운드 On/Off 등 반복되는 횡단 관심사는 새로운 자식 노드로 분기시키지 않고, **노드 내부의 속성 체크리스트(Checklist) 또는 동적 이슈 칩(Dynamic Chips)**으로 평탄화(Flattening)하여 그래프 폭발을 방지합니다.
+
+#### 3. 부모 노드 스케일 불변 원칙 (Parent Immutable Scale)
+- 자식 노드들을 품고 있는 부모 노드는 내부 2차원 기준 좌표계의 원점(Origin)이므로, 선택(`active`)되거나 호버되어도 **`transform: scale`을 1px도 변경해서는 안 됩니다.**
+- 부모 노드의 선택 강조는 오직 **`box-shadow`(외곽 포커스 링)와 `border-color`로만 표현**하며, CSS 선택자는 반드시 직계 자식(`>`)으로 한정하여 자식 노드로의 스타일 누수(Bleeding)를 원천 차단합니다.
+
+#### 4. 엔터프라이즈 클린 라이트 테마 표준 (Clean Light Theme Default)
+- 장시간 테스트 케이스 검토와 QA 실무 가독성을 위해, 시스템의 기본 테마는 **Miro / Linear 스타일의 산뜻하고 눈이 편안한 밝은 톤(Clean Light Theme)**을 기본값으로 채택합니다.
+- 배경 그리드는 연회색 도트, 노드는 순백색 카드(#ffffff)와 미세 테두리(#cbd5e1), 텍스트는 선명한 흑청색(#0f172a), 상태 뱃지는 부드러운 파스텔 톤을 적용합니다.
+
 ---
 
 ## 6. 3-Tier Quality Verification Pipeline (품질 검증 게이트)

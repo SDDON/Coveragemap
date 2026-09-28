@@ -43,13 +43,6 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                onClick={(e) => {
                  e.stopPropagation();
                  window.dispatchEvent(new CustomEvent('toggleCollapseNode', { detail: id }));
-               }}
-               style={{
-                 position: 'absolute', top: '12px', right: '12px', width: '28px', height: '28px',
-                 backgroundColor: 'rgba(30,41,59,0.8)', border: '1px solid rgba(255,255,255,0.3)', 
-                 borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                 cursor: 'pointer', zIndex: 'var(--z-node-badge)', fontSize: '16px', fontWeight: 'bold', 
-                 color: 'rgba(255,255,255,0.9)', padding: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
                }}>
             {data.isCollapsed ? '+' : '−'}
           </button>
@@ -103,8 +96,8 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                          window.dispatchEvent(new CustomEvent('unhoverGlobalBadge'));
                        }}
                        style={{ border: `1px solid ${borderColor}`, backgroundColor: bgColor, ...highlightStyle }}>
-                    {isPassed && <span style={{ color: '#4ade80', fontSize: '0.7rem' }}>✔</span>}
-                    {isFailed && <span style={{ color: '#f87171', fontSize: '0.7rem' }}>✖</span>}
+                    {isPassed && <span style={{ color: 'var(--status-passed-text)', fontSize: '0.7rem' }}>✔</span>}
+                    {isFailed && <span style={{ color: 'var(--status-failed-text)', fontSize: '0.7rem' }}>✖</span>}
                     <span style={{flex: 1}}>{badge.name}</span>
                     <div className="badge-actions" style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
                       <button 
@@ -113,15 +106,15 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                            e.stopPropagation();
                            window.dispatchEvent(new CustomEvent('markBadgeStatus', { detail: { edgeId: badge.edgeId, status: 'Passed' } }));
                         }}
-                        style={{ background: 'transparent', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '0 2px', fontSize: '11px', display: 'flex', alignItems: 'center' }}>✓</button>
+                        style={{ background: 'transparent', border: 'none', color: 'var(--status-passed-text)', cursor: 'pointer', padding: '0 2px', fontSize: '11px', display: 'flex', alignItems: 'center' }}>✓</button>
                       <button 
                         title="Mark Failed"
                         onClick={(e) => {
                            e.stopPropagation();
                            window.dispatchEvent(new CustomEvent('markBadgeStatus', { detail: { edgeId: badge.edgeId, status: 'Failed' } }));
                         }}
-                        style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '0 2px', fontSize: '11px', display: 'flex', alignItems: 'center' }}>✕</button>
-                      <div style={{ width: '1px', height: '10px', background: 'rgba(255,255,255,0.2)', margin: '0 2px' }}></div>
+                        style={{ background: 'transparent', border: 'none', color: 'var(--status-failed-text)', cursor: 'pointer', padding: '0 2px', fontSize: '11px', display: 'flex', alignItems: 'center' }}>✕</button>
+                      <div style={{ width: '1px', height: '10px', background: 'rgba(0,0,0,0.15)', margin: '0 2px' }}></div>
                       <button 
                         title="Disconnect Dependency (Edge only)"
                         onClick={(e) => {

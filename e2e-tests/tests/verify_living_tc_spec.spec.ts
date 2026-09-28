@@ -60,10 +60,10 @@ test.describe('Living TC & Specification Integrity Verification (Tier 2-B)', () 
       };
     });
 
-    expect(statusColors.passedText).toBe('#4ade80');
-    expect(statusColors.failedText).toBe('#f87171');
-    expect(statusColors.blockedText).toBe('#fbbf24');
-    expect(statusColors.untestedText).toBe('#e2e8f0');
+    expect(statusColors.passedText).toBe('#15803d');
+    expect(statusColors.failedText).toBe('#b91c1c');
+    expect(statusColors.blockedText).toBe('#b45309');
+    expect(statusColors.untestedText).toBe('#475569');
   });
 
   test('3. Inner Content vs Outer Rim Isolation (Halo Handle Click Stealing Prevention)', async ({ page }) => {
