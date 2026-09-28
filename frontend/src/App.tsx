@@ -1301,13 +1301,36 @@ export default function App() {
     return calculateEdgeBundling(Array.from(edgeMap.values()));
   }, [edges, nodes]);
 
+  const generateCypher = useCallback(() => {
+    let query = "// Exported Cypher Queries from CoverageMap\n";
+    nodes.forEach(n => {
+      const data = n.data as any;
+      const label = data.label || 'Node';
+      const name = (data.name || n.id).replace(/'/g, "\\'");
+      const aliases = JSON.stringify(data.aliases || []);
+      const status = data.test_status || 'Untested';
+      query += `MERGE (n:\`${label}\` {name: '${name}'}) ON CREATE SET n.aliases = ${aliases}, n.test_status = '${status}' ON MATCH SET n.aliases = ${aliases}, n.test_status = '${status}';\n`;
+    });
+    edges.forEach(e => {
+      const type = (e.label || (e.data as any)?.type || 'RELATED').replace(/[^a-zA-Z0-9_]/g, '_');
+      const sourceNode = nodes.find(n => n.id === e.source);
+      const targetNode = nodes.find(n => n.id === e.target);
+      const sourceName = ((sourceNode?.data as any)?.name || e.source).replace(/'/g, "\\'");
+      const targetName = ((targetNode?.data as any)?.name || e.target).replace(/'/g, "\\'");
+      const status = (e.data as any)?.test_status || 'Untested';
+      query += `MATCH (s {name: '${sourceName}'}), (t {name: '${targetName}'}) MERGE (s)-[r:\`${type}\`]->(t) ON CREATE SET r.test_status = '${status}';\n`;
+    });
+    setCypherQuery(query);
+    setShowCypherExport(true);
+  }, [nodes, edges]);
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       {/* Workspace Selector Overlay */}
       {filterText === '' && !showAllDomains && aliases.length > 0 && (
         <div style={{
           position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-          backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1000,
+          backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 'var(--z-modal)',
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
         }}>
           <div className="glass-panel" style={{ padding: '40px', width: '600px', textAlign: 'center', backgroundColor: 'var(--panel-bg)', borderRadius: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
@@ -1390,7 +1413,7 @@ export default function App() {
                 ...n,
                 hidden: false,
                 position: center,
-                style: { ...n.style, zIndex: 2000, boxShadow: '0 0 20px rgba(0, 229, 255, 0.5)' },
+                style: { ...n.style, zIndex: 'var(--z-active-node)', boxShadow: '0 0 20px rgba(0, 229, 255, 0.5)' },
                 className: `${n.className || ''} hovered-global-neighbor`,
               };
             }
@@ -2090,7 +2113,7 @@ export default function App() {
 
       {/* Impact Overlay Stats Bar */}
       {impactMode && (
-        <div className="impact-stats-bar" style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
+        <div className="impact-stats-bar" style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 'var(--z-floating-panel)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '1.1rem' }}>🔍</span>
             <div>
@@ -2117,18 +2140,18 @@ export default function App() {
       )}
       
       {error && (
-        <div className="error-toast glass-panel" style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', color: 'var(--status-failed-text)', background: 'var(--status-failed-bg)', border: '1px solid var(--status-failed-border)', zIndex: 50 }}>
+        <div className="error-toast glass-panel" style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', color: 'var(--status-failed-text)', background: 'var(--status-failed-bg)', border: '1px solid var(--status-failed-border)', zIndex: 'var(--z-toast)' }}>
           Error: {error}
         </div>
       )}
       
       {nodes.length === 0 && !loading && (
-        <div className="empty-state-message glass-panel" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10 }}>
+        <div className="empty-state-message glass-panel" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 'var(--z-canvas-controls)' }}>
           No nodes found.
         </div>
       )}
       {loading && (
-        <div data-testid="loading-overlay" style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(248, 250, 252, 0.85)', zIndex: 10, display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'auto' }}>
+        <div data-testid="loading-overlay" style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(248, 250, 252, 0.85)', zIndex: 'var(--z-loading-overlay)', display: 'flex', justifyContent: 'center', alignItems: 'center', pointerEvents: 'auto' }}>
           <div className="glass-panel" style={{ fontWeight: '600', fontSize: '1.2rem', padding: '16px 32px' }}>
             Loading Graph...
           </div>
@@ -2137,7 +2160,7 @@ export default function App() {
       {showHelp && (
         <div style={{
           position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 'var(--z-modal)',
           display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
           <div className="glass-panel" style={{
@@ -2188,7 +2211,7 @@ export default function App() {
       {showCypherExport && (
         <div style={{
           position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 'var(--z-modal)',
           display: 'flex', justifyContent: 'center', alignItems: 'center'
         }}>
           <div className="glass-panel" style={{
@@ -2205,7 +2228,7 @@ export default function App() {
               value={cypherQuery}
               style={{
                 flex: 1, minHeight: '320px', backgroundColor: 'rgba(0,0,0,0.3)',
-                color: '#e2e8f0', fontFamily: 'monospace', padding: '12px',
+                color: '#4ade80', fontFamily: 'monospace', padding: '12px',
                 borderRadius: '6px', border: '1px solid var(--panel-border)',
                 resize: 'none', fontSize: '0.85rem'
               }}
@@ -2215,7 +2238,7 @@ export default function App() {
                 className="primary" 
                 onClick={() => {
                   navigator.clipboard.writeText(cypherQuery);
-                  alert('Cypher query copied to clipboard!');
+                  alert('Cypher 쿼리가 클립보드에 복사되었습니다.');
                 }}
               >
                 Copy to Clipboard

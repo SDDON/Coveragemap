@@ -25,9 +25,28 @@
   --status-failed-border: #ef4444;
   --status-failed-text: #f87171;
 
+  --status-blocked-bg: rgba(245, 158, 11, 0.25);
+  --status-blocked-border: #f59e0b;
+  --status-blocked-text: #fbbf24;
+
   --status-untested-bg: rgba(30, 41, 59, 0.4);
   --status-untested-border: rgba(100, 116, 139, 0.6);
   --status-untested-text: #e2e8f0;
+
+  /* 12-Tier Standard Z-Index Layering Tokens (Single Source of Truth) */
+  --z-canvas-bg: 0;          /* 캔버스 배경 그리드 */
+  --z-edge: 10;              /* 연결선 (Floating Edges) */
+  --z-parent-node: 20;       /* 부모 그룹 컨테이너 */
+  --z-child-node: 30;        /* 일반 자식/기능 노드 */
+  --z-active-node: 40;       /* 선택/포커스된 활성 노드 및 연결 핸들 */
+  --z-node-badge: 50;        /* 노드 내부 뱃지 및 액션 버튼 */
+  --z-canvas-controls: 100;  /* 줌 인/아웃, 미니맵, 컨트롤 */
+  --z-floating-panel: 200;   /* 우측 인스펙터 패널, 헤더 바 */
+  --z-context-menu: 500;     /* 마우스 우클릭 메뉴, 드롭다운 */
+  --z-tooltip: 1000;         /* 뱃지 및 인라인 툴팁 (Portal) */
+  --z-loading-overlay: 2000; /* 네트워크/연산 로딩 오버레이 */
+  --z-modal: 3000;           /* 워크스페이스 관리자, 모달 창 */
+  --z-toast: 9999;           /* 최상위 알림 토스트 */
 
   /* Handle Colors */
   --handle-color: rgba(59, 130, 246, 0.15); 
@@ -138,6 +157,13 @@ body {
 }
 .react-flow__node.status-untested .node-type { color: var(--text-muted); }
 
+.react-flow__node.status-blocked .custom-node {
+  background: var(--status-blocked-bg);
+  border-color: var(--status-blocked-border);
+  border-style: dashed;
+}
+.react-flow__node.status-blocked .node-type { color: var(--status-blocked-text); }
+
 /* Node Text */
 .node-label {
   font-weight: 600;
@@ -227,7 +253,7 @@ body {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
   transition: all 0.2s ease-in-out;
   pointer-events: none;
-  z-index: 2000;
+  z-index: var(--z-tooltip);
   white-space: normal;
   text-align: left;
 }
@@ -269,7 +295,7 @@ body {
   font-size: 0.75rem !important;
   line-height: 1.4 !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
-  z-index: 9999 !important;
+  z-index: var(--z-tooltip) !important;
   white-space: pre-wrap !important;
 }
 
@@ -288,7 +314,7 @@ body {
   top: 0 !important; 
   left: 0 !important;
   border-radius: 12px !important;
-  z-index: 0 !important;
+  z-index: var(--z-canvas-bg) !important;
   transform: none !important;
 }
 
@@ -302,7 +328,7 @@ body {
   background-color: #3b82f6 !important;
   border: 2px solid #ffffff !important;
   border-radius: 50% !important;
-  z-index: 10 !important;
+  z-index: var(--z-edge) !important;
   box-shadow: 0 0 6px rgba(59, 130, 246, 0.6) !important;
 }
 .react-flow__handle-bottom:hover {
@@ -353,6 +379,34 @@ body {
 }
 .react-flow__node.highlight-outgoing .custom-node {
   box-shadow: 0 0 0 2px var(--accent-outgoing), 0 0 15px rgba(245, 158, 11, 0.4);
+}
+
+/* Root Cause Backtracking Animation */
+@keyframes pulse-root-cause {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    border-color: #ef4444;
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    border-color: #f87171;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    border-color: #ef4444;
+  }
+}
+
+.react-flow__node.highlight-root-cause .custom-node {
+  animation: pulse-root-cause 1.5s infinite;
+  border-width: 2px !important;
+  border-color: #ef4444 !important;
+}
+.react-flow__edge.highlight-root-cause path.react-flow__edge-path {
+  stroke: #ef4444 !important;
+  stroke-width: 4 !important;
+  stroke-dasharray: 6 4;
+  animation: dash 1s linear infinite;
 }
 
 /* Controls */
@@ -531,7 +585,7 @@ select option {
 /* Context Menu */
 .context-menu {
   position: absolute;
-  z-index: 1000;
+  z-index: var(--z-context-menu);
   background: var(--panel-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -565,7 +619,7 @@ select option {
 /* Workspace Manager Modal */
 .workspace-manager-modal {
   position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-  background-color: rgba(0,0,0,0.85); z-index: 2000;
+  background-color: rgba(0,0,0,0.85); z-index: var(--z-modal);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 .workspace-list {

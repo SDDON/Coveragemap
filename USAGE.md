@@ -18,7 +18,7 @@ bin\neo4j.bat console
 ### 2. 백엔드 (FastAPI)
 ```bash
 cd backend
-uv run uvicorn main:app --port 8001 --reload
+uv run uvicorn main:app --port 8190 --reload
 ```
 
 ### 3. 프론트엔드 (React + Vite)
@@ -123,23 +123,28 @@ npm run dev
 
 | 상태 | 색상 | 의미 |
 |------|------|------|
-| **Untested** | 흰색 (기본) | 아직 테스트하지 않음 |
+| **Untested** | 흰색/회색 (기본) | 아직 테스트하지 않음 |
 | **Passed** | 🟢 연두색 | 테스트 통과 |
-| **Failed** | 🔴 빨간색 | 테스트 실패 |
+| **Failed** | 🔴 빨간색 | 결함 발생 (테스트 실패) |
+| **Blocked** | 🟡 주황/노란색 (점선) | 선행 조건/흐름 결함으로 인해 테스트 진행 차단됨 |
 
 ### 상태 변경 방법
 1. 노드 또는 엣지 클릭
 2. 오른쪽 패널의 Status 영역에서:
    - `Mark Passed` → 통과 처리
-   - `Mark Failed` → 실패 처리
+   - `Mark Failed` → 결함 처리
    - `Reset Status` → 초기화
+3. **수동 오버라이드(📌 Manual Override)**:
+   - 선행 조건이 결함(Blocked)이더라도 UI 렌더링을 임시 검증 완료 처리할 때 사유 코멘트(비고)를 입력하고 고정할 수 있습니다.
+   - 고정된 노드는 입력 엣지가 변경되어도 자동 덮어쓰기 되지 않습니다.
 
-> **Passed Nodes** 카운트가 오른쪽 상단에 실시간으로 표시됩니다.
+### 근본 원인 역추적 (Root Cause Tracing)
+- 결함(Failed)이나 차단(Blocked)된 노드를 선택하고 우측 패널의 `Trace Root Cause` 버튼을 누르면, **최초 결함 발생 지점까지의 경로가 붉은색 펄스 애니메이션**으로 시각화됩니다.
 
 ### 상태 자동 전파 (Automated Status Propagation)
-그래프의 특성을 살려, 타겟 노드(예: Component, Data)의 상태는 자신을 가리키는 모든 **입력 엣지(Incoming Edges)**의 상태에 따라 자동으로 결정됩니다.
+그래프의 특성을 살려, 타겟 노드의 상태는 자신을 가리키는 모든 **입력 엣지(Incoming Edges)**의 상태에 따라 자동으로 결정됩니다:
 - 입력 엣지가 모두 `Passed`일 때만 노드가 `Passed`로 변합니다.
-- 하나라도 `Failed`인 엣지가 있으면 즉시 노드가 `Failed`로 변합니다.
+- 하나라도 `Failed`인 엣지가 있으면 후속 노드는 자동으로 `Blocked(🟡)`로 변합니다.
 - 모두 `Untested`이거나 입력 엣지가 없으면 `Untested` 상태가 됩니다.
 
 > 상태 전파는 엣지를 생성, 수정, 삭제할 때 백엔드에서 실시간으로 재계산되어 즉각 프론트엔드에 동기화됩니다.

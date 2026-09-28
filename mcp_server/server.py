@@ -1,7 +1,8 @@
 # CoverageMap MCP Server
-# FastAPI 백엔드(localhost:8001)를 래핑하여 AI 에이전트가 그래프를 조작할 수 있게 합니다.
+# FastAPI 백엔드(localhost:8190)를 래핑하여 AI 에이전트가 그래프를 조작할 수 있게 합니다.
 # 실행: uv run python server.py
 
+import os
 import json
 import sys
 import httpx
@@ -9,7 +10,8 @@ from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-BASE_URL = "http://localhost:8001"
+BACKEND_PORT = os.getenv("PORT", "8190")
+BASE_URL = os.getenv("BACKEND_URL", f"http://localhost:{BACKEND_PORT}")
 
 server = Server("coveragemap")
 

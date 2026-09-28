@@ -48,7 +48,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                  position: 'absolute', top: '12px', right: '12px', width: '28px', height: '28px',
                  backgroundColor: 'rgba(30,41,59,0.8)', border: '1px solid rgba(255,255,255,0.3)', 
                  borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                 cursor: 'pointer', zIndex: 1000, fontSize: '16px', fontWeight: 'bold', 
+                 cursor: 'pointer', zIndex: 'var(--z-node-badge)', fontSize: '16px', fontWeight: 'bold', 
                  color: 'rgba(255,255,255,0.9)', padding: 0, boxShadow: '0 2px 4px rgba(0,0,0,0.3)'
                }}>
             {data.isCollapsed ? '+' : '−'}
@@ -72,7 +72,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
 
         {/* Dependencies section (Badge pills for global common nodes) */}
         {data.badges && data.badges.length > 0 && (
-          <div className="node-badges-section" style={{ position: 'relative', zIndex: 1000 }}>
+          <div className="node-badges-section" style={{ position: 'relative', zIndex: 'var(--z-node-badge)' }}>
             <div className="node-badges-title">Dependencies</div>
             <div className="node-badges">
               {data.badges.map((badge: any, i: number) => {

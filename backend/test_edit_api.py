@@ -9,7 +9,11 @@ client = TestClient(app)
 
 def test_api_create_node():
     mock_session = Mock()
-    mock_session.run.return_value.single.return_value = {"id": "n1"}
+    mock_check_result = Mock()
+    mock_check_result.single.return_value = None  # No duplicate
+    mock_create_result = Mock()
+    mock_create_result.single.return_value = {"id": "n1"}
+    mock_session.run.side_effect = [mock_check_result, mock_create_result]
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
