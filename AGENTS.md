@@ -32,6 +32,9 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
    - Parent nodes use `isCollapsed` to contain 10+ child features into a single summary progress bar.
    - Unlimited perspectives (Localization, Audio, Network) display as dynamic issue chips only when faults occur, keeping nodes compact.
 8. **Port Standardization:** The default port is `8190`. Always read `PORT` and `BACKEND_PORT` from environment variables before falling back.
+9. **Inner Content vs Outer Rim Isolation (Halo Handle):**
+   - Halo handles (`.halo-handle`) MUST strictly remain on the outer boundary (outer rim) and NEVER encroach on the node's inner content area (0px inward) to prevent click stealing on badges (✔/✖/⊘) and collapse buttons.
+   - The handle's stacking level must stay at or below `z-index: var(--z-canvas-bg)` (0), strictly below `.custom-node` (1) and badges (50).
 
 ## 3-Tier Verification Pipeline
 Before concluding any task, the AI agent MUST execute:

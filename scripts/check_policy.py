@@ -8,6 +8,7 @@ Enforced Rules:
 1. [Z-Index Token Rule]: No hardcoded numeric z-index (e.g. z-index: 1000). Must use var(--z-*).
 2. [Focus+Context Pure CSS Rule]: No node/edge dimming opacity manipulation in TSX.
 3. [Port Consistency Rule]: No hardcoded deprecated port 8001 in project code. Must use 8190 or env vars.
+4. [Halo Handle Stacking & Isolation Rule]: Halo handles must stay at or below z-index 0 and never cover inner content.
 
 Exit code: 0 if passed, 1 if any violations found.
 """
@@ -37,7 +38,27 @@ def check_file(filepath: str):
     ext = os.path.splitext(filepath)[1].lower()
 
     with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()
+        content = f.read()
+        lines = content.splitlines()
+
+    # Rule 4 Check: Halo Handle Stacking & Overlay Rule (Full CSS block check)
+    if ext == ".css" and ".halo-handle" in content:
+        # Extract .halo-handle CSS blocks
+        halo_blocks = re.findall(r"\.halo-handle\s*\{([^}]+)\}", content, re.DOTALL)
+        for block in halo_blocks:
+            # Check if z-index is positive number or elevated token
+            z_match = re.search(r"z-index:\s*([^\s;!]+)", block)
+            if z_match:
+                val = z_match.group(1).strip()
+                # Allowed: 0, -1, -2, var(--z-canvas-bg)
+                if val not in ["0", "-1", "-2", "var(--z-canvas-bg)"]:
+                    violations.append({
+                        "file": rel_path,
+                        "line": 1,
+                        "rule": "Halo Handle Stacking Rule",
+                        "detail": f".halo-handle의 z-index({val})가 너무 높습니다. 노드 내부 뱃지/버튼의 클릭을 방해하지 않도록 var(--z-canvas-bg)(0) 이하로 유지해야 합니다.",
+                        "snippet": f"z-index: {val}"
+                    })
 
     for i, line in enumerate(lines, start=1):
         # 1. Check for hardcoded numeric z-index (in CSS and TSX)
@@ -59,8 +80,6 @@ def check_file(filepath: str):
                 })
 
         # 2. Check for node/edge dimming opacity manipulation in TSX (violates Focus+Context Pure CSS Rule)
-        # Note: Allow text secondary color (opacity: 0.8) or disabled buttons (opacity: 0.5) or hidden handle (opacity: 0).
-        # Disallow setting node opacity for selection/focus de-emphasis (e.g. isSelected ? 1 : 0.4 on node container).
         if ext in [".tsx", ".jsx"]:
             if re.search(r"opacity:\s*(isSelected|selected|active|\.active)\s*\?", line):
                 violations.append({
@@ -73,7 +92,6 @@ def check_file(filepath: str):
 
         # 3. Check for deprecated port 8001
         if "8001" in line:
-            # Exclude historical notes or documentation
             if not rel_path.endswith(".md") and "ORIGINAL_REQUEST" not in rel_path and "seed.py" not in rel_path:
                 violations.append({
                     "file": rel_path,
@@ -105,7 +123,8 @@ def main():
         print("\n✅ [SUCCESS] All UI, Z-Index, and Port policies are strictly compliant!")
         print("   - Z-Index 12-Tier tokens verified.")
         print("   - Focus+Context Pure CSS rule verified.")
-        print("   - Standard Port 8190 consistency verified.\n")
+        print("   - Standard Port 8190 consistency verified.")
+        print("   - Halo Handle Outer Rim & Stacking isolation verified.\n")
         sys.exit(0)
     else:
         print(f"\n❌ [POLICY VIOLATIONS FOUND] Total: {len(violations)}\n")

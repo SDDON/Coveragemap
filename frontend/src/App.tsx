@@ -210,48 +210,6 @@ export default function App() {
 
   const triggerRefresh = () => setRefreshKey(k => k + 1);
 
-  const generateCypher = useCallback(() => {
-    const lines: string[] = ['// Generated Cypher Script from CoverageMap', ''];
-    const visibleNodes = nodes.filter(n => !n.hidden);
-    const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
-
-    // Create Nodes
-    visibleNodes.forEach(node => {
-      const data = node.data as any;
-      const label = data.label || 'Node';
-      const props: Record<string, any> = {
-        name: data.name || '',
-        test_status: data.test_status || 'Untested',
-        ...(data.properties || {})
-      };
-      if (data.aliases && Array.isArray(data.aliases)) {
-        props.aliases = data.aliases;
-      }
-      const safeVar = `n_${node.id.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-      lines.push(`CREATE (${safeVar}:${label} ${JSON.stringify(props)})`);
-    });
-
-    lines.push('');
-    // Create Relationships
-    edges.forEach(edge => {
-      if (visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)) {
-        const data = edge.data as any;
-        const edgeType = (edge.label || data?.type || 'RELATES_TO').toUpperCase().replace(/[^A-Z0-9_]/g, '_');
-        const edgeProps: Record<string, any> = {
-          test_status: data?.test_status || 'Untested',
-          ...(data?.properties || {})
-        };
-        if (data?.action) edgeProps.action = data.action;
-        const propsStr = Object.keys(edgeProps).length > 0 ? ` ${JSON.stringify(edgeProps)}` : '';
-        const sourceVar = `n_${edge.source.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-        const targetVar = `n_${edge.target.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-        lines.push(`CREATE (${sourceVar})-[:${edgeType}${propsStr}]->(${targetVar})`);
-      }
-    });
-
-    setCypherQuery(lines.join('\n'));
-    setShowCypherExport(true);
-  }, [nodes, edges]);
 
 
   // Undo Stack
