@@ -352,6 +352,9 @@ body {
 }
 
 /* Edges */
+.react-flow__edges {
+  z-index: var(--z-edge) !important;
+}
 .react-flow__edge {
   transition: opacity 0.3s, stroke 0.3s;
 }

@@ -54,3 +54,9 @@ class GraphResponse(BaseModel):
     nodes: List[NodeModel]
     edges: List[EdgeModel]
     debounce_id: Optional[str] = None
+
+class PresetCreate(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = ""
+

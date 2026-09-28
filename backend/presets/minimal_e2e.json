@@ -1,0 +1,55 @@
+{
+  "id": "minimal_e2e",
+  "name": "E2E 테스트용 기본 미니멀 맵 (Minimal Baseline)",
+  "description": "기본 테스트 및 가벼운 동작 확인을 위한 3개 노드(Root, Child, TC1) 기준 맵",
+  "created_at": "2026-09-29T04:15:00Z",
+  "nodes": [
+    {
+      "id": "Game_Root",
+      "label": "Feature",
+      "name": "Game Testing Root",
+      "aliases": ["Root", "valid_category", "synonym_xyz"],
+      "description": "최상위 게임 기능 노드",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "id": "Game_Child",
+      "label": "Feature",
+      "name": "Game Testing Child",
+      "aliases": ["Sub"],
+      "description": "하위 의존성 기능 노드",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "id": "TC1",
+      "label": "TestCase",
+      "name": "Initial TC",
+      "aliases": [],
+      "description": "기본 테스트케이스",
+      "test_status": "Untested",
+      "properties": {
+        "title": "Initial TC"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "Game_Root",
+      "target": "Game_Child",
+      "type": "Depends_On",
+      "action": "기능 하위 의존",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "TC1",
+      "target": "Game_Root",
+      "type": "Tests",
+      "action": "기능 테스트 검증",
+      "test_status": "Untested",
+      "properties": {}
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import {
   ConnectionMode,
 } from '@xyflow/react';
 import { getLayoutedElements, getGridLayoutedElements } from './layout';
+import { PresetManagerModal } from './components/PresetManagerModal';
 
 const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
   const edgeBundles: Record<string, Edge[]> = {};
@@ -87,6 +88,7 @@ export default function App() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, show: boolean } | null>(null);
   const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
+  const [showPresetManager, setShowPresetManager] = useState(false);
   const [showCypherExport, setShowCypherExport] = useState(false);
   const [cypherQuery, setCypherQuery] = useState('');
 
@@ -561,14 +563,10 @@ export default function App() {
         setEdges(layoutedEdges);
         setError(null);
         
-        // Auto-fit view when the graph is loaded, but only if the workspace filter changed
-        // We track the last fitted filter on the window object to avoid a ref for now
-        if ((window as any).lastFittedFilter !== filterText) {
-          (window as any).lastFittedFilter = filterText;
-          setTimeout(() => {
-            if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 800 });
-          }, 150);
-        }
+        // Auto-fit view when the graph is loaded to center all elements nicely
+        setTimeout(() => {
+          if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 600 });
+        }, 150);
       } catch (err: any) {
         if (err instanceof Error) {
           setError(err.message);
@@ -1401,6 +1399,14 @@ export default function App() {
                 ⚙️ Workspace 관리자
               </button>
               <button 
+                onClick={() => setShowPresetManager(true)} 
+                style={{ padding: '12px 24px', background: '#eff6ff', color: '#2563eb', border: '1.5px solid #93c5fd', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 600 }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#dbeafe'; }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#eff6ff'; }}
+              >
+                📂 샘플 프리셋 로드
+              </button>
+              <button 
                 onClick={() => {
                   setShowAllDomains(true);
                   if ((document.getElementById('rememberWorkspace') as HTMLInputElement)?.checked) {
@@ -1523,6 +1529,14 @@ export default function App() {
                 }}
               >
                 Switch Workspace
+              </button>
+              <button 
+                className="primary"
+                style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', backgroundColor: '#0284c7' }}
+                title="샘플 프리셋 및 데이터셋 관리자를 엽니다."
+                onClick={() => setShowPresetManager(true)}
+              >
+                📂 Presets
               </button>
               <button 
                 className="primary"
@@ -2210,6 +2224,20 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Preset Manager Modal */}
+      <PresetManagerModal
+        isOpen={showPresetManager}
+        onClose={() => setShowPresetManager(false)}
+        onPresetLoaded={() => {
+          setFilterText('');
+          setShowAllDomains(true);
+          triggerRefresh();
+          setTimeout(() => {
+            if (rfInstance) rfInstance.fitView({ padding: 0.15, duration: 600 });
+          }, 300);
+        }}
+      />
 
       {/* Impact Overlay Stats Bar */}
       {impactMode && (

@@ -2,12 +2,15 @@ from fastapi import FastAPI, Depends, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from database import get_db, close_driver
-from models import GraphResponse, NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate
+from models import GraphResponse, NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate, PresetCreate
 from graph_service import (
     fetch_graph_from_neo4j, process_graph, convert_to_response,
     create_node, update_node, delete_node,
     create_edge, update_edge, delete_edge,
     get_impact_nodes
+)
+from preset_service import (
+    list_presets, get_preset, load_preset_to_neo4j, save_current_graph_as_preset
 )
 import uvicorn
 
@@ -155,6 +158,35 @@ def api_get_impact(node_id: str, session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.get("/api/presets")
+def api_list_presets():
+    """List all available presets (sample datasets)."""
+    try:
+        return list_presets()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/presets/{preset_id}")
+def api_get_preset(preset_id: str):
+    """Get full details of a specific preset."""
+    return get_preset(preset_id)
+
+@app.post("/api/presets/{preset_id}/load")
+def api_load_preset(preset_id: str, clean: bool = Query(True, description="Clear existing database before loading"), session = Depends(get_db)):
+    """Load a preset into Neo4j."""
+    try:
+        return load_preset_to_neo4j(session, preset_id, clean=clean)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/presets")
+def api_save_preset(preset: PresetCreate, session = Depends(get_db)):
+    """Export current Neo4j graph into a new preset JSON file."""
+    try:
+        return save_current_graph_as_preset(session, preset.id, preset.name, preset.description or "")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8190, reload=True)
 
@@ -167,3 +199,4 @@ def api_reset_seed():
     import subprocess, sys, os
     subprocess.run([sys.executable, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts', 'seed.py'))], check=True)
     return {"status": "success"}
+
