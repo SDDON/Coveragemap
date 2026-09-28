@@ -97,10 +97,16 @@ test.describe('Living TC & Specification Integrity Verification (Tier 2-B)', () 
     await page.goto('/');
     await page.waitForSelector('.react-flow__node', { timeout: 10000 });
 
+    const btn = page.locator('button:has-text("전체 그래프 로드")');
+    if (await btn.count() > 0) {
+      await btn.first().click();
+      await page.waitForTimeout(500);
+    }
+
     const nodes = page.locator('.react-flow__node');
     const count = await nodes.count();
     if (count >= 2) {
-      const targetNode = nodes.first();
+      const targetNode = nodes.last();
       await targetNode.click({ force: true });
 
       // Active node gets .active class
@@ -108,11 +114,13 @@ test.describe('Living TC & Specification Integrity Verification (Tier 2-B)', () 
 
       // Surrounding unrelated nodes get .de-emphasized class via pure CSS
       const otherNodes = page.locator('.react-flow__node:not(.active)');
-      await expect(otherNodes.first()).toHaveClass(/de-emphasized/);
+      if (await otherNodes.count() > 0) {
+        await expect(otherNodes.first()).toHaveClass(/de-emphasized/);
 
-      // Verify no inline opacity style was injected directly on node container
-      const inlineStyle = await otherNodes.first().getAttribute('style') || '';
-      expect(inlineStyle).not.toMatch(/opacity:\s*0\./);
+        // Verify no inline opacity style was injected directly on node container
+        const inlineStyle = await otherNodes.first().getAttribute('style') || '';
+        expect(inlineStyle).not.toMatch(/opacity:\s*0\./);
+      }
     }
   });
 

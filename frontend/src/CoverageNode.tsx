@@ -24,13 +24,17 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
   }, []);
 
   const isParent = data.hasChildren;
-  const wrapperStyle = isParent 
-    ? { position: 'relative' as const, pointerEvents: 'auto' as const, width: '100%', height: '100%' }
-    : { position: 'relative' as const, pointerEvents: 'auto' as const, width: '240px' };
+  const wrapperStyle = {
+    position: 'relative' as const,
+    pointerEvents: 'auto' as const,
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box' as const,
+  };
 
   const customNodeStyle = isParent 
     ? { position: 'relative' as const, zIndex: 1, width: '100%', height: '100%', padding: '16px', boxSizing: 'border-box' as const }
-    : { position: 'relative' as const, zIndex: 1 };
+    : { position: 'relative' as const, zIndex: 1, width: '100%', boxSizing: 'border-box' as const };
 
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>

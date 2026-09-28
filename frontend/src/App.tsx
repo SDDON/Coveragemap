@@ -1554,23 +1554,23 @@ export default function App() {
           </div>
         </Panel>
 
-        <Panel position="top-right" className="metrics-panel details-panel glass-panel" style={{ pointerEvents: 'none', maxWidth: '320px', margin: '20px', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
-          <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto', overflowY: 'auto', flex: 1, paddingRight: '8px' }}>
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--panel-border)', marginBottom: '16px', position: 'sticky', top: 0, backgroundColor: 'transparent', backdropFilter: 'blur(10px)', zIndex: 5 }}>
+        <Panel position="top-right" className="metrics-panel details-panel glass-panel" style={{ pointerEvents: 'none', width: '340px', maxWidth: '360px', margin: '20px', maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', border: '1.5px solid #cbd5e1', boxShadow: '0 20px 40px -15px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(0,0,0,0.05)', backgroundColor: 'rgba(255, 255, 255, 0.98)' }}>
+          <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto', overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
+            <div style={{ display: 'flex', gap: '4px', padding: '4px', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px', position: 'sticky', top: 0, zIndex: 5 }}>
               <button 
-                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'view' ? '#e2e8f0' : 'transparent', color: rightPanelTab === 'view' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'view' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: rightPanelTab === 'view' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                style={{ flex: 1, padding: '8px 12px', background: rightPanelTab === 'view' ? '#ffffff' : 'transparent', color: rightPanelTab === 'view' ? '#2563eb' : '#64748b', border: 'none', fontWeight: rightPanelTab === 'view' ? 700 : 500, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.15s ease', borderRadius: '6px', boxShadow: rightPanelTab === 'view' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
                 onClick={() => setRightPanelTab('view')}
               >
                 Filters
               </button>
               <button 
-                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'edit' ? '#e2e8f0' : 'transparent', color: rightPanelTab === 'edit' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'edit' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: rightPanelTab === 'edit' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                style={{ flex: 1, padding: '8px 12px', background: rightPanelTab === 'edit' ? '#ffffff' : 'transparent', color: rightPanelTab === 'edit' ? '#2563eb' : '#64748b', border: 'none', fontWeight: rightPanelTab === 'edit' ? 700 : 500, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.15s ease', borderRadius: '6px', boxShadow: rightPanelTab === 'edit' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
                 onClick={() => setRightPanelTab('edit')}
               >
                 Edit
               </button>
               <button 
-                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'globals' ? '#e2e8f0' : 'transparent', color: rightPanelTab === 'globals' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'globals' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: rightPanelTab === 'globals' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                style={{ flex: 1, padding: '8px 12px', background: rightPanelTab === 'globals' ? '#ffffff' : 'transparent', color: rightPanelTab === 'globals' ? '#2563eb' : '#64748b', border: 'none', fontWeight: rightPanelTab === 'globals' ? 700 : 500, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.15s ease', borderRadius: '6px', boxShadow: rightPanelTab === 'globals' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
                 onClick={() => setRightPanelTab('globals')}
               >
                 Globals
@@ -1579,8 +1579,8 @@ export default function App() {
 
             <div style={{ display: rightPanelTab === 'view' ? 'block' : 'none' }}>
               <div className="form-group">
-              <label htmlFor="filterGraph" className="form-label">Filter Graph<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="선택한 카테고리(Alias)에 해당하는 노드들만 캔버스에 표시합니다.">❓</span></label>
-              <div className="metrics" style={{ marginBottom: '8px', fontSize: '0.85rem' }}>Passed Nodes: <span className="metrics-passed-count" style={{fontWeight: 'bold', color: 'var(--status-passed-text)'}}>{nodes.filter(n => (n.data as any).test_status === 'Passed').length}</span></div>
+              <label htmlFor="filterGraph" className="form-label">Filter Graph<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="선택한 카테고리(Alias)에 해당하는 노드들만 캔버스에 표시합니다.">?</span></label>
+              <div className="metrics" style={{ marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Passed Nodes: <span className="metrics-passed-count" style={{fontWeight: 'bold', color: 'var(--status-passed-text)'}}>{nodes.filter(n => (n.data as any).test_status === 'Passed').length}</span></div>
               <select
                 id="filterGraph"
                 value={filterText}
@@ -1594,27 +1594,27 @@ export default function App() {
             </div>
             
             <div className="form-group" style={{ marginTop: '12px', marginBottom: '16px' }}>
-              <label className="form-label" style={{ marginBottom: '6px' }}>Search Highlight<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="검색어가 포함된 노드와 그 의존성 흐름을 하이라이트합니다.">❓</span></label>
+              <label className="form-label" style={{ marginBottom: '6px' }}>Search Highlight<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="검색어가 포함된 노드와 그 의존성 흐름을 하이라이트합니다.">?</span></label>
               <input 
                 type="text" 
                 placeholder="Type to highlight nodes..." 
                 value={searchQuery} 
                 onChange={(e) => setSearchQuery(e.target.value)} 
-                style={{ width: '100%', padding: '6px', fontSize: '0.9rem', borderRadius: '4px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)' }} 
+                style={{ width: '100%', padding: '8px 12px', fontSize: '0.9rem', borderRadius: '8px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a' }} 
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label" style={{ marginBottom: '6px' }}>Visibility Filter<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="체크한 타입의 노드들만 캔버스에 표시합니다.">❓</span></label>
+              <label className="form-label" style={{ marginBottom: '6px' }}>Visibility Filter<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="체크한 타입의 노드들만 캔버스에 표시합니다.">?</span></label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                 {['Screen', 'Component', 'TestCase', 'Data'].map(type => (
-                  <label key={type} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', cursor: 'pointer', color: 'var(--text-main)' }}>
+                  <label key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', cursor: 'pointer', color: '#1e293b', fontWeight: 500 }}>
                     <input type="checkbox" checked={visibleTypes.has(type)} onChange={e => {
                       const next = new Set(visibleTypes);
                       if (e.target.checked) next.add(type);
                       else next.delete(type);
                       setVisibleTypes(next);
-                    }} />
+                    }} style={{ cursor: 'pointer' }} />
                     {type}
                   </label>
                 ))}
@@ -1622,7 +1622,7 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="maxDepth" className="form-label">Max Depth<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="선택한 노드로부터 지정한 단계(Depth)까지만 연관 노드를 표시합니다.">❓</span></label>
+              <label htmlFor="maxDepth" className="form-label">Max Depth<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="선택한 노드로부터 지정한 단계(Depth)까지만 연관 노드를 표시합니다.">?</span></label>
               <input id="maxDepth" type="number"
                 min={1}
                 max={10}
@@ -1642,7 +1642,7 @@ export default function App() {
               
               {editFormData.type === 'node' && (
                 <>
-                  <div className="form-group"><label htmlFor="nodeLabel" className="form-label">Label:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="노드의 역할을 나타내는 주요 타입입니다. (예: Screen, Feature 등)">❓</span></label>
+                  <div className="form-group"><label htmlFor="nodeLabel" className="form-label">Label:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="노드의 역할을 나타내는 주요 타입입니다. (예: Screen, Feature 등)">?</span></label>
                     <select id="nodeLabel" value={editFormData.label || 'Node'} onChange={e => setEditFormData({...editFormData, label: e.target.value})}>
                       <option value="Feature">Feature (기능)</option>
                       <option value="Screen">Screen (화면)</option>
@@ -1654,9 +1654,9 @@ export default function App() {
                       <option value="Node">Node (기본)</option>
                     </select>
                   </div>
-                  <div className="form-group"><label htmlFor="nodeName" className="form-label">Name:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="노드에 표시될 실제 이름입니다.">❓</span></label><input id="nodeName" type="text" value={editFormData.name || ''} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></div>
+                  <div className="form-group"><label htmlFor="nodeName" className="form-label">Name:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="노드에 표시될 실제 이름입니다.">?</span></label><input id="nodeName" type="text" value={editFormData.name || ''} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></div>
                   <div className="form-group">
-                    <label htmlFor="nodeCategory" className="form-label">Node Category:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="그룹화나 검색에 쓰이는 카테고리 태그(Alias)입니다.">❓</span></label>
+                    <label htmlFor="nodeCategory" className="form-label">Node Category:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="그룹화나 검색에 쓰이는 카테고리 태그(Alias)입니다.">?</span></label>
                     <input 
                       id="nodeCategory" 
                       type="text" 
@@ -1671,8 +1671,8 @@ export default function App() {
                       ))}
                     </datalist>
                   </div>
-                  {editFormData.aliases === "invalid_free_text" && <div className="validation-error" style={{color: 'red', fontSize: '0.8rem', marginTop: '4px', marginBottom: '8px'}}>Invalid</div>}
-                  <div className="form-group" style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                  {editFormData.aliases === "invalid_free_text" && <div className="validation-error" style={{color: '#dc2626', fontSize: '0.8rem', marginTop: '4px', marginBottom: '8px', fontWeight: 600}}>Invalid</div>}
+                  <div className="form-group" style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1.5px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                     {(() => {
                       const isGlobalAllowed = ['Component', 'Data', 'TestCase'].includes(editFormData.label);
                       return (
@@ -1682,14 +1682,14 @@ export default function App() {
                               const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
                               setEditFormData({...editFormData, properties: newProps});
                             }} style={{ cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }} />
-                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem' }}>🌐 전역 공통 노드 (Badge화)<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.">❓</span></label>
+                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>🌐 전역 공통 노드 (Badge화)<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.">?</span></label>
                           </div>
                           {!isGlobalAllowed && (
-                            <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: 'var(--danger-color)' }}>
+                            <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: '#dc2626', fontWeight: 500 }}>
                               System, Screen, Feature 등 큰 단위의 노드는 전역 노드화할 수 없습니다.
                             </p>
                           )}
-                          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                          <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
                             체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 <strong>뱃지(Pill)</strong> 형태로 표시됩니다.
                             다국어(I18N), 공통 데이터 등 여러 노드에서 반복 연결되는 글로벌 의존성에 사용하세요.
                             뱃지를 클릭하면 테스트 상태를 변경할 수 있습니다.
@@ -1700,7 +1700,7 @@ export default function App() {
                     {editFormData.properties?.is_global === 'true' && (
                       <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div className="form-group" style={{ margin: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.8rem', color: 'var(--text-main)' }}>Verification Guide (Description)</label>
+                          <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>Verification Guide (Description)</label>
                           <textarea 
                             value={editFormData.properties?.description || ''} 
                             onChange={e => {
@@ -1708,11 +1708,11 @@ export default function App() {
                               setEditFormData({...editFormData, properties: newProps});
                             }}
                             placeholder="e.g. Verify that all language keys are translated properly."
-                            style={{ width: '100%', padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', minHeight: '60px', resize: 'vertical' }}
+                            style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', minHeight: '60px', resize: 'vertical' }}
                           />
                         </div>
                         <div className="form-group" style={{ margin: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.8rem', color: 'var(--text-main)' }}>Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능</label>
+                          <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능</label>
                           <textarea 
                             rows={3}
                             value={editFormData.properties?.issue_link || ''} 
@@ -1721,7 +1721,7 @@ export default function App() {
                               setEditFormData({...editFormData, properties: newProps});
                             }}
                             placeholder="https://jira...&#10;https://github..."
-                            style={{ width: '100%', padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', resize: 'vertical' }}
+                            style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', resize: 'vertical' }}
                           />
                         </div>
                       </div>
@@ -1729,7 +1729,7 @@ export default function App() {
                   </div>
 
                   <div className="form-group" style={{ marginTop: '16px' }}>
-                    <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: 'var(--text-main)' }}>Custom Properties</h4>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: '#0f172a', fontWeight: 600 }}>Custom Properties</h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {Object.entries(editFormData.properties || {})
                         .filter(([k]) => !['is_global', 'description', 'issue_link'].includes(k))
@@ -1739,7 +1739,7 @@ export default function App() {
                               type="text" 
                               value={k} 
                               readOnly
-                              style={{ width: '30%', backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid var(--panel-border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                              style={{ width: '30%', backgroundColor: '#f1f5f9', border: '1.5px solid #cbd5e1', color: '#334155', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600 }}
                             />
                             <input 
                               type="text" 
@@ -1748,7 +1748,7 @@ export default function App() {
                                 const newProps = { ...editFormData.properties, [k]: e.target.value };
                                 setEditFormData({...editFormData, properties: newProps});
                               }}
-                              style={{ flex: 1, border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                              style={{ flex: 1, border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem' }}
                             />
                             <button 
                               onClick={() => {
@@ -1756,7 +1756,7 @@ export default function App() {
                                 delete newProps[k];
                                 setEditFormData({...editFormData, properties: newProps});
                               }}
-                              style={{ background: 'var(--danger-color)', border: 'none', color: 'white', padding: '0 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}
+                              style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#b91c1c', padding: '0 8px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}
                             >
                               ✕
                             </button>
@@ -1767,13 +1767,13 @@ export default function App() {
                           type="text" 
                           placeholder="Key" 
                           id="newPropKey"
-                          style={{ width: '30%', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                          style={{ width: '30%', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem' }}
                         />
                         <input 
                           type="text" 
                           placeholder="Value" 
                           id="newPropVal"
-                          style={{ flex: 1, border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px', fontSize: '0.85rem' }}
+                          style={{ flex: 1, border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 10px', borderRadius: '6px', fontSize: '0.85rem' }}
                           onKeyDown={e => {
                             if (e.key === 'Enter') {
                               const keyInput = document.getElementById('newPropKey') as HTMLInputElement;
@@ -1829,11 +1829,11 @@ export default function App() {
               )}
 
               <div className="form-group">
-                <label className="form-label">Status:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="현재 테스트/개발 상태를 나타냅니다.">❓</span></label>
+                <label className="form-label">Status:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="현재 테스트/개발 상태를 나타냅니다.">?</span></label>
                 <div style={{display:"flex", gap:"8px", marginTop:"5px", flexWrap: 'wrap'}}>
                   <button className="success" onClick={(e) => { e.preventDefault(); handleSaveStatus("Passed"); }}>Mark Passed</button>
                   <button className="danger" onClick={(e) => { e.preventDefault(); handleSaveStatus("Failed"); }}>Mark Failed</button>
-                  <button onClick={(e) => { e.preventDefault(); handleSaveStatus("Untested"); }}>Reset Status</button>
+                  <button onClick={(e) => { e.preventDefault(); handleSaveStatus("Untested"); }} style={{ border: '1.5px solid #cbd5e1', backgroundColor: '#f8fafc', color: '#334155' }}>Reset Status</button>
                 </div>
               </div>
 
@@ -1851,7 +1851,7 @@ export default function App() {
 
             <div style={{ display: rightPanelTab === 'globals' ? 'block' : 'none', flex: 1 }}>
               <div style={{ padding: '0 0 16px 0', borderBottom: '1px solid var(--panel-border)', marginBottom: '16px' }}>
-                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600 }}>Global Nodes<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="전역 노드를 다른 노드에 부착(Attach)하거나, 해당 전역 노드에 의존하는 모든 노드(Impact)를 시각화합니다.">❓</span></h3>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600, color: '#0f172a' }}>Global Nodes<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="전역 노드를 다른 노드에 부착(Attach)하거나, 해당 전역 노드에 의존하는 모든 노드(Impact)를 시각화합니다.">?</span></h3>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   Attach global nodes as badges to the currently selected node.
                 </p>
@@ -1864,12 +1864,12 @@ export default function App() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {globalNodesList.map(g => (
-                    <div key={g.id} className="glass-panel" style={{ padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '6px' }}>
+                    <div key={g.id} style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: '#f8fafc', border: '1.5px solid #e2e8f0' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, overflow: 'hidden' }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={g.name}>{g.name}</span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{g.type}</span>
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={g.name}>{g.name}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{g.type}</span>
                       </div>
-                      <div style={{ display: 'flex', gap: '4px', marginLeft: '8px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
                         <button 
                           onClick={() => {
                             if (impactMode?.globalNodeId === g.id) {
@@ -1880,10 +1880,10 @@ export default function App() {
                           }}
                           title={`Show impact: which nodes are affected by ${g.name}`}
                           style={{ 
-                            padding: '4px 8px', fontSize: '12px', 
-                            background: impactMode?.globalNodeId === g.id ? 'rgba(167, 139, 250, 0.3)' : 'rgba(167, 139, 250, 0.1)',
-                            border: impactMode?.globalNodeId === g.id ? '1px solid #a78bfa' : '1px solid rgba(167, 139, 250, 0.3)',
-                            color: '#c4b5fd',
+                            padding: '5px 10px', fontSize: '12px', fontWeight: 600,
+                            background: impactMode?.globalNodeId === g.id ? '#ede9fe' : '#f5f3ff',
+                            border: impactMode?.globalNodeId === g.id ? '1.5px solid #7c3aed' : '1px solid #ddd6fe',
+                            color: impactMode?.globalNodeId === g.id ? '#6d28d9' : '#7c3aed',
                             borderRadius: '6px'
                           }}
                         >
