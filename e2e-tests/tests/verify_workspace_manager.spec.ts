@@ -9,8 +9,8 @@ test.describe('Workspace Manager & Context Menu Tests', () => {
       await page.locator('button:has-text("전체 그래프 로드")').click();
     }
 
-    // Right click on the pane
-    await page.locator('.react-flow__pane').click({ button: 'right' });
+    // Right click on the pane at empty coordinates to avoid hitting centered nodes
+    await page.locator('.react-flow__pane').click({ button: 'right', position: { x: 50, y: 150 } });
     
     // Context menu should be visible
     await expect(page.locator('.context-menu')).toBeVisible();

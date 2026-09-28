@@ -1,13 +1,17 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Literal
 
+TestStatus = Literal["Untested", "Passed", "Failed", "Blocked"]
+
 class NodeModel(BaseModel):
     id: str
     label: str
     name: str
     aliases: List[str] = Field(default_factory=list)
     properties: Dict[str, Any] = Field(default_factory=dict)
-    test_status: Literal["Untested", "Passed", "Failed"] = "Untested"
+    test_status: TestStatus = "Untested"
+    is_manual_override: Optional[bool] = None
+    override_reason: Optional[str] = None
 
 class EdgeModel(BaseModel):
     id: str
@@ -16,7 +20,7 @@ class EdgeModel(BaseModel):
     type: str
     action: Optional[str] = None
     properties: Dict[str, Any] = Field(default_factory=dict)
-    test_status: Literal["Untested", "Passed", "Failed"] = "Untested"
+    test_status: TestStatus = "Untested"
 
 class NodeCreate(BaseModel):
     label: str = Field(..., pattern=r"^.*$")
@@ -25,7 +29,9 @@ class NodeCreate(BaseModel):
     description: Optional[str] = None
     issue_link: Optional[str] = None
     properties: Dict[str, Any] = Field(default_factory=dict)
-    test_status: Literal["Untested", "Passed", "Failed"] = "Untested"
+    test_status: TestStatus = "Untested"
+    is_manual_override: Optional[bool] = None
+    override_reason: Optional[str] = None
 
 class NodeUpdate(BaseModel):
     label: Optional[str] = None
@@ -34,7 +40,9 @@ class NodeUpdate(BaseModel):
     description: Optional[str] = None
     issue_link: Optional[str] = None
     properties: Optional[Dict[str, Any]] = None
-    test_status: Optional[Literal["Untested", "Passed", "Failed"]] = None
+    test_status: Optional[TestStatus] = None
+    is_manual_override: Optional[bool] = None
+    override_reason: Optional[str] = None
 
 class EdgeCreate(BaseModel):
     source: str
@@ -42,13 +50,13 @@ class EdgeCreate(BaseModel):
     type: str = Field(..., pattern=r"^.*$")
     action: Optional[str] = None
     properties: Dict[str, Any] = Field(default_factory=dict)
-    test_status: Literal["Untested", "Passed", "Failed"] = "Untested"
+    test_status: TestStatus = "Untested"
 
 class EdgeUpdate(BaseModel):
     type: Optional[str] = None
     action: Optional[str] = None
     properties: Optional[Dict[str, Any]] = None
-    test_status: Optional[Literal["Untested", "Passed", "Failed"]] = None
+    test_status: Optional[TestStatus] = None
 
 class GraphResponse(BaseModel):
     nodes: List[NodeModel]
@@ -59,4 +67,48 @@ class PresetCreate(BaseModel):
     id: str
     name: str
     description: Optional[str] = ""
+
+# ─── QA Copilot Response Models ────────────────────────────────────
+
+class RootCauseInfo(BaseModel):
+    origin_node_id: str
+    origin_node_name: str
+    reason: str
+    path: List[str]
+
+class NodeStatusSummary(BaseModel):
+    id: str
+    name: str
+    label: str
+    test_status: TestStatus
+    is_manual_override: bool = False
+    override_reason: Optional[str] = None
+    description: Optional[str] = None
+    issue_link: Optional[str] = None
+    root_cause: Optional[RootCauseInfo] = None
+    incoming_statuses: Dict[str, int] = Field(default_factory=dict)
+
+class ImpactScopeResponse(BaseModel):
+    changed_node_id: str
+    changed_node_name: str
+    impacted_nodes: List[Dict[str, Any]]
+    impacted_edges: List[Dict[str, Any]]
+    total_impacted_nodes: int
+    recommended_regression_scope: List[str]
+
+class CrossCuttingAuditResponse(BaseModel):
+    aspect_queried: str
+    total_screens_features: int
+    covered_nodes: List[Dict[str, Any]]
+    missing_nodes: List[Dict[str, Any]]
+    coverage_rate: float
+    gap_summary: str
+
+class NextTestTarget(BaseModel):
+    id: str
+    name: str
+    label: str
+    incoming_requirements_met: bool
+    untested_reasons: List[str]
+
 

@@ -187,6 +187,38 @@ def api_save_preset(preset: PresetCreate, session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ─── QA Copilot Endpoints (Phase 1) ─────────────────────────────────
+
+@app.get("/api/qa/status-summary")
+def api_qa_status_summary(q: str = Query(..., description="Node name or element ID"), session = Depends(get_db)):
+    """특정 노드의 테스트 상태, 오버라이드 사유, 들어오는 엣지 분포 및 블로커 원인을 요약 조회합니다."""
+    from graph_service import get_node_status_summary
+    res = get_node_status_summary(session, q)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"'{q}'에 해당하는 노드를 찾을 수 없습니다.")
+    return res
+
+@app.get("/api/qa/impact-scope")
+def api_qa_impact_scope(q: str = Query(..., description="Changed node name or element ID"), session = Depends(get_db)):
+    """특정 노드/기능 변경 시 하류 방향으로 영향을 받는 모든 노드/엣지 및 추천 회귀 테스트 범위를 산출합니다."""
+    from graph_service import get_impact_scope
+    res = get_impact_scope(session, q)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"'{q}'에 해당하는 노드를 찾을 수 없습니다.")
+    return res
+
+@app.get("/api/qa/audit-cross-cutting")
+def api_qa_audit_cross_cutting(aspect: str = Query(..., description="Cross-cutting aspect (e.g. 다국어, 화면비, 사운드, i18n)"), session = Depends(get_db)):
+    """화면비, 다국어, 사운드 등 필수 횡단 관심사가 전체 UI에 누락 없이 매핑되어 있는지 전수 감사(Audit)합니다."""
+    from graph_service import audit_cross_cutting
+    return audit_cross_cutting(session, aspect)
+
+@app.get("/api/qa/next-targets")
+def api_qa_next_targets(session = Depends(get_db)):
+    """선행 조건이 모두 Passed되어 지금 즉시 검증을 시작할 수 있는 Untested 노드들을 추천합니다."""
+    from graph_service import get_next_test_targets
+    return get_next_test_targets(session)
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8190, reload=True)
 

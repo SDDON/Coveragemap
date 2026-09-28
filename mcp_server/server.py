@@ -5,6 +5,7 @@
 import os
 import json
 import sys
+import urllib.parse
 import httpx
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
@@ -127,7 +128,7 @@ async def list_tools():
         ),
         Tool(
             name="mark_status",
-            description="노드 또는 엣지의 테스트 상태를 변경합니다. (Passed, Failed, Untested)",
+            description="노드 또는 엣지의 테스트 상태를 변경합니다. (Passed, Failed, Blocked, Untested)",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -142,11 +143,69 @@ async def list_tools():
                     },
                     "status": {
                         "type": "string",
-                        "enum": ["Passed", "Failed", "Untested"],
+                        "enum": ["Passed", "Failed", "Blocked", "Untested"],
                         "description": "설정할 테스트 상태"
+                    },
+                    "is_manual_override": {
+                        "type": "boolean",
+                        "description": "수동 고정 여부 (자동 합성에 의해 덮어쓰기 방지)"
+                    },
+                    "override_reason": {
+                        "type": "string",
+                        "description": "수동 고정 사유 또는 비고 메모"
                     }
                 },
                 "required": ["target_type", "target_id", "status"]
+            }
+        ),
+        Tool(
+            name="ask_test_status",
+            description="특정 노드의 테스트 완료 여부, 상태, 수동 오버라이드 사유, 들어오는 엣지 분포 및 블로커 원인을 질의합니다. (예: '타이틀 화면 테스트 해봤어?')",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "조회할 노드 이름 또는 ID"
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="get_impact_scope",
+            description="특정 기능이 변경되었을 때 하류 방향으로 영향을 받는 화면/기능 목록과 추천 회귀 테스트 범위를 계산합니다. (예: '로그인이 바뀌었는데 어디까지 다시 테스트해야 해?')",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "변경된 노드 이름 또는 ID"
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="audit_cross_cutting",
+            description="다국어(i18n), 화면비(Aspect Ratio), 사운드 등 전체 UI에 걸친 필수 횡단 관심사의 적용 여부를 전수 감사하고 누락된 화면(Gap)을 찾습니다. (예: '화면비 처리가 UI 전반에 다 되어있는지 궁금해')",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "aspect": {
+                        "type": "string",
+                        "description": "감사할 횡단 관심사 키워드 (예: '다국어', '화면비', '사운드', 'Aspect', 'i18n')"
+                    }
+                },
+                "required": ["aspect"]
+            }
+        ),
+        Tool(
+            name="get_next_test_targets",
+            description="선행 의존성이 모두 Passed되어 지금 즉시 테스트를 시작할 수 있는 Untested 노드들을 추천합니다. (예: '지금 어느 테스트부터 시작하면 돼?')",
+            inputSchema={
+                "type": "object",
+                "properties": {}
             }
         ),
         Tool(
@@ -193,7 +252,7 @@ async def list_tools():
         ),
         Tool(
             name="get_coverage",
-            description="현재 테스트 커버리지 통계를 조회합니다. 노드/엣지별 Passed, Failed, Untested 수를 반환합니다.",
+            description="현재 테스트 커버리지 통계를 조회합니다. 노드/엣지별 Passed, Failed, Blocked, Untested 수를 반환합니다.",
             inputSchema={
                 "type": "object",
                 "properties": {}
@@ -298,17 +357,144 @@ async def call_tool(name: str, arguments: dict):
         target_type = arguments["target_type"]
         target_id = arguments["target_id"]
         status = arguments["status"]
+        is_override = arguments.get("is_manual_override")
+        override_reason = arguments.get("override_reason")
         
+        body = {"test_status": status}
+        if is_override is not None:
+            body["is_manual_override"] = is_override
+        if override_reason is not None:
+            body["override_reason"] = override_reason
+            
         if target_type == "node":
-            body = {"test_status": status}
             result = _api("PUT", f"/api/nodes/{target_id}", body)
         else:
-            body = {"test_status": status}
             result = _api("PUT", f"/api/edges/{target_id}", body)
         
-        icon = {"Passed": "✅", "Failed": "❌", "Untested": "⬜"}.get(status, "")
-        return [TextContent(type="text", text=f"{icon} {target_type} ({target_id}) → {status} 처리 완료")]
-    
+        icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(status, "")
+        override_msg = f" (📌 수동 고정: {override_reason})" if override_reason else ""
+        return [TextContent(type="text", text=f"{icon} {target_type} ({target_id}) → {status} 처리 완료{override_msg}")]
+
+    elif name == "ask_test_status":
+        query = arguments["query"]
+        data = _api("GET", f"/api/qa/status-summary?q={urllib.parse.quote(query)}")
+        if isinstance(data, str):
+            return [TextContent(type="text", text=data)]
+        
+        status_icons = {
+            "Passed": "✅ 검증 완료 (Passed)",
+            "Failed": "❌ 결함 발생 (Failed)",
+            "Blocked": "🟡 차단됨 (Blocked)",
+            "Untested": "⬜ 미검증 (Untested)"
+        }
+        status_str = status_icons.get(data.get("test_status"), data.get("test_status"))
+        
+        lines = [
+            f"🔍 [{data.get('label')}] '{data.get('name')}' 테스트 상태 브리핑",
+            f"• 현재 상태: {status_str}"
+        ]
+        
+        if data.get("is_manual_override"):
+            lines.append(f"• 📌 수동 고정(Manual Override) 적용됨: \"{data.get('override_reason') or '사유 미작성'}\"")
+            
+        if data.get("description"):
+            lines.append(f"• 기능 설명: {data['description']}")
+        if data.get("issue_link"):
+            lines.append(f"• 연결 이슈: {data['issue_link']}")
+            
+        # 들어오는 선행 조건 분포
+        in_stats = data.get("incoming_statuses", {})
+        if in_stats:
+            in_summary = ", ".join([f"{k}: {v}개" for k, v in in_stats.items()])
+            lines.append(f"• 선행 조건({sum(in_stats.values())}개) 현황: {in_summary}")
+        else:
+            lines.append("• 선행 조건: 없음 (최상위 진입점 화면)")
+            
+        # 차단/결함 원인 추적
+        rc = data.get("root_cause")
+        if rc:
+            lines.append(f"\n🚨 근본 원인(Root Cause):")
+            lines.append(f"  - 원인: {rc['reason']}")
+            lines.append(f"  - 결함 경로: {' → '.join(rc['path'])}")
+            
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    elif name == "get_impact_scope":
+        query = arguments["query"]
+        data = _api("GET", f"/api/qa/impact-scope?q={urllib.parse.quote(query)}")
+        if isinstance(data, str):
+            return [TextContent(type="text", text=data)]
+            
+        changed_name = data.get("changed_node_name", query)
+        total_impacted = data.get("total_impacted_nodes", 0)
+        scope = data.get("recommended_regression_scope", [])
+        
+        lines = [
+            f"⚡ 변경 영향도 분석 리포트: '{changed_name}'",
+            f"• 총 영향을 받는 하류(Downstream) 노드: {total_impacted}개",
+            f"• 총 영향 엣지: {len(data.get('impacted_edges', []))}개",
+            f"\n🎯 권장 회귀 테스트 범위 (Regression Scope):"
+        ]
+        
+        if scope:
+            for s in scope:
+                lines.append(f"  - {s}")
+        else:
+            lines.append("  (하류에 연결된 후속 화면/기능이 없습니다. 단일 기능 검증으로 충분합니다.)")
+            
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    elif name == "audit_cross_cutting":
+        aspect = arguments["aspect"]
+        data = _api("GET", f"/api/qa/audit-cross-cutting?aspect={urllib.parse.quote(aspect)}")
+        if isinstance(data, str):
+            return [TextContent(type="text", text=data)]
+            
+        lines = [
+            f"📋 횡단 관심사 전수 감사(Audit): '{data.get('aspect_queried')}'",
+            f"• 대상 화면/기능: 총 {data.get('total_screens_features')}개",
+            f"• 적용 커버리지: {data.get('coverage_rate')}%",
+            f"• 요약: {data.get('gap_summary')}\n"
+        ]
+        
+        missing = data.get("missing_nodes", [])
+        if missing:
+            lines.append("⚠️ 누락된 사각지대(Gap) 노드 목록:")
+            for m in missing:
+                lines.append(f"  - [{m['label']}] {m['name']} (id: {m['id']})")
+            lines.append("\n💡 조치 권장: 위 화면들에 해당 관심사(배지/속성)를 추가 검증 항목으로 연결하세요.")
+        else:
+            lines.append("🎉 축하합니다! 모든 대상 노드에 완벽하게 대응되어 있습니다.")
+            
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    elif name == "get_next_test_targets":
+        data = _api("GET", "/api/qa/next-targets")
+        if isinstance(data, str):
+            return [TextContent(type="text", text=data)]
+            
+        ready_targets = [t for t in data if t.get("incoming_requirements_met")]
+        waiting_targets = [t for t in data if not t.get("incoming_requirements_met")]
+        
+        lines = ["🎯 다음 테스트 대상 추천 리포트\n"]
+        lines.append(f"## 🟢 지금 즉시 테스트 가능 (Ready to Test): {len(ready_targets)}개")
+        if ready_targets:
+            for t in ready_targets:
+                reasons = ", ".join(t.get("untested_reasons", []))
+                lines.append(f"  • [{t['label']}] {t['name']}  ({reasons})")
+        else:
+            lines.append("  (현재 선행 조건을 모두 만족한 미검증 노드가 없습니다.)")
+            
+        if waiting_targets:
+            lines.append(f"\n## ⏳ 선행 조건 미충족 대기 중 (Waiting): {len(waiting_targets)}개")
+            for t in waiting_targets[:5]:
+                reasons = ", ".join(t.get("untested_reasons", []))
+                lines.append(f"  • [{t['label']}] {t['name']}  [대기 사유: {reasons}]")
+            if len(waiting_targets) > 5:
+                lines.append(f"  ... 외 {len(waiting_targets) - 5}개")
+                
+        return [TextContent(type="text", text="\n".join(lines))]
+
     elif name == "delete_node":
         result = _api("DELETE", f"/api/nodes/{arguments['node_id']}")
         return [TextContent(type="text", text=f"노드 삭제 완료: {arguments['node_id']}")]
@@ -329,7 +515,7 @@ async def call_tool(name: str, arguments: dict):
         
         lines = [f"검색 결과: {len(matches)}개\n"]
         for n in matches:
-            status_icon = {"Passed": "✅", "Failed": "❌", "Untested": "⬜"}.get(n["test_status"], "⬜")
+            status_icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(n.get("test_status"), "⬜")
             lines.append(f"  {status_icon} [{n['label']}] {n['name']}")
             lines.append(f"      id: {n['id']}")
         return [TextContent(type="text", text="\n".join(lines))]
@@ -342,8 +528,8 @@ async def call_tool(name: str, arguments: dict):
         nodes = data.get("nodes", [])
         edges = data.get("edges", [])
         
-        node_stats = {"Passed": 0, "Failed": 0, "Untested": 0}
-        edge_stats = {"Passed": 0, "Failed": 0, "Untested": 0}
+        node_stats = {"Passed": 0, "Failed": 0, "Blocked": 0, "Untested": 0}
+        edge_stats = {"Passed": 0, "Failed": 0, "Blocked": 0, "Untested": 0}
         
         for n in nodes:
             s = n.get("test_status", "Untested")
@@ -362,10 +548,12 @@ async def call_tool(name: str, arguments: dict):
             f"## 노드 ({total_nodes}개)",
             f"  ✅ Passed:   {node_stats['Passed']}  ({node_pct:.1f}%)",
             f"  ❌ Failed:   {node_stats['Failed']}",
+            f"  🟡 Blocked:  {node_stats['Blocked']}",
             f"  ⬜ Untested: {node_stats['Untested']}",
             f"\n## 엣지 ({total_edges}개)",
             f"  ✅ Passed:   {edge_stats['Passed']}  ({edge_pct:.1f}%)",
             f"  ❌ Failed:   {edge_stats['Failed']}",
+            f"  🟡 Blocked:  {edge_stats['Blocked']}",
             f"  ⬜ Untested: {edge_stats['Untested']}",
         ]
         return [TextContent(type="text", text="\n".join(lines))]

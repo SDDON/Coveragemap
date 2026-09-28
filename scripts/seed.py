@@ -30,7 +30,8 @@ def seed_data(tx):
     # Create minimal features for E2E tests to pass
     features = [
         {"id": "Game_Root", "name": "Game Testing Root", "aliases": ["Root", "valid_category", "synonym_xyz"]},
-        {"id": "Game_Child", "name": "Game Testing Child", "aliases": ["Sub"]}
+        {"id": "Game_Child", "name": "Game Testing Child", "aliases": ["Sub"]},
+        {"id": "Game_Settings", "name": "Game Settings", "aliases": ["Settings"]}
     ]
     
     for f in features:
