@@ -168,10 +168,10 @@ body {
 
 /* Node Text */
 .node-label {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 1.15rem;
   margin-bottom: 2px;
-  color: #ffffff;
+  color: var(--text-main);
   word-break: break-word;
 }
 
@@ -179,7 +179,8 @@ body {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 .node-aliases {

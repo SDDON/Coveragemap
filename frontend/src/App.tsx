@@ -1447,7 +1447,7 @@ export default function App() {
             >
               Add Node
             </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '4px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Current:</span>
               <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '0.95rem' }}>
                 {filterText ? filterText : (showAllDomains ? '전체 워크스페이스' : 'None')}
@@ -1558,19 +1558,19 @@ export default function App() {
           <div className="nowheel" style={{ display: 'flex', flexDirection: 'column', pointerEvents: 'auto', overflowY: 'auto', flex: 1, paddingRight: '8px' }}>
             <div style={{ display: 'flex', borderBottom: '1px solid var(--panel-border)', marginBottom: '16px', position: 'sticky', top: 0, backgroundColor: 'transparent', backdropFilter: 'blur(10px)', zIndex: 5 }}>
               <button 
-                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'view' ? 'rgba(255,255,255,0.1)' : 'transparent', color: rightPanelTab === 'view' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'view' ? '2px solid #3b82f6' : '2px solid transparent', fontWeight: rightPanelTab === 'view' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'view' ? '#e2e8f0' : 'transparent', color: rightPanelTab === 'view' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'view' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: rightPanelTab === 'view' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
                 onClick={() => setRightPanelTab('view')}
               >
                 Filters
               </button>
               <button 
-                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'edit' ? 'rgba(255,255,255,0.1)' : 'transparent', color: rightPanelTab === 'edit' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'edit' ? '2px solid #3b82f6' : '2px solid transparent', fontWeight: rightPanelTab === 'edit' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'edit' ? '#e2e8f0' : 'transparent', color: rightPanelTab === 'edit' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'edit' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: rightPanelTab === 'edit' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
                 onClick={() => setRightPanelTab('edit')}
               >
                 Edit
               </button>
               <button 
-                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'globals' ? 'rgba(255,255,255,0.1)' : 'transparent', color: rightPanelTab === 'globals' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'globals' ? '2px solid #3b82f6' : '2px solid transparent', fontWeight: rightPanelTab === 'globals' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
+                style={{ flex: 1, padding: '10px', background: rightPanelTab === 'globals' ? '#e2e8f0' : 'transparent', color: rightPanelTab === 'globals' ? 'var(--text-main)' : 'var(--text-muted)', border: 'none', borderBottom: rightPanelTab === 'globals' ? '2px solid #2563eb' : '2px solid transparent', fontWeight: rightPanelTab === 'globals' ? 'bold' : 'normal', cursor: 'pointer', transition: 'all 0.2s', borderRadius: '4px 4px 0 0' }}
                 onClick={() => setRightPanelTab('globals')}
               >
                 Globals

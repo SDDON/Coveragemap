@@ -72,15 +72,22 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                 // Badge border/background color based on test status
                 const isPassed = badge.test_status === 'Passed';
                 const isFailed = badge.test_status === 'Failed';
-                const borderColor = isPassed ? 'rgba(34, 197, 94, 0.5)' 
-                                  : isFailed ? 'rgba(239, 68, 68, 0.5)' 
-                                  : 'rgba(255,255,255,0.15)';
-                const bgColor = isPassed ? 'rgba(22, 101, 52, 0.4)' 
-                              : isFailed ? 'rgba(153, 27, 27, 0.4)' 
-                              : 'rgba(255,255,255,0.05)';
+                const isBlocked = badge.test_status === 'Blocked';
+                const borderColor = isPassed ? '#86efac' 
+                                  : isFailed ? '#fca5a5' 
+                                  : isBlocked ? '#fcd34d'
+                                  : '#cbd5e1';
+                const bgColor = isPassed ? '#dcfce7' 
+                              : isFailed ? '#fee2e2' 
+                              : isBlocked ? '#fef3c7'
+                              : '#f1f5f9';
+                const textColor = isPassed ? 'var(--status-passed-text)' 
+                                : isFailed ? 'var(--status-failed-text)' 
+                                : isBlocked ? 'var(--status-blocked-text)'
+                                : '#334155';
                 const isSelected = selectedBadgeId === badge.id;
                 const highlightStyle = isSelected 
-                  ? { boxShadow: '0 0 0 2px #60a5fa, 0 0 12px rgba(96, 165, 250, 0.6)', borderColor: '#60a5fa' } 
+                  ? { boxShadow: '0 0 0 2px #2563eb, 0 0 10px rgba(37, 99, 235, 0.4)', borderColor: '#2563eb' } 
                   : {};
 
                 return (
@@ -95,7 +102,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                        onMouseLeave={() => {
                          window.dispatchEvent(new CustomEvent('unhoverGlobalBadge'));
                        }}
-                       style={{ border: `1px solid ${borderColor}`, backgroundColor: bgColor, ...highlightStyle }}>
+                       style={{ border: `1px solid ${borderColor}`, backgroundColor: bgColor, color: textColor, ...highlightStyle }}>
                     {isPassed && <span style={{ color: 'var(--status-passed-text)', fontSize: '0.7rem' }}>✔</span>}
                     {isFailed && <span style={{ color: 'var(--status-failed-text)', fontSize: '0.7rem' }}>✖</span>}
                     <span style={{flex: 1}}>{badge.name}</span>
