@@ -43,7 +43,7 @@ Before concluding any task, the AI agent MUST execute:
 3. **Tier 3 (Human Signoff Checklist):** Verify against the 10-point checklist in `AI_IMPLEMENTATION_SPEC.md`.
 
 ## Running the Project
-1. **Database:** Run `run_db.bat` to start the local Neo4j Community Edition (located at `E:\neo4j-community-2026.02.2`).
+1. **Database:** Run `run_db.bat` (auto-detects local Neo4j in PATH/drives or saves custom path) or `docker compose up -d neo4j`.
 2. **Backend:** `cd backend && uv run uvicorn main:app --reload --port 8190`
 3. **Frontend:** `cd frontend && npm run dev`
 4. **MCP Server:** `cd mcp_server && uv run python server.py`

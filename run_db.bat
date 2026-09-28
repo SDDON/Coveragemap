@@ -1,4 +1,7 @@
 @echo off
-echo Starting Neo4j Database...
-E:\neo4j-community-2026.02.2\bin\neo4j.bat console
-pause
+setlocal
+cd /d "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\run_db.ps1" %*
+if %errorlevel% neq 0 (
+    pause
+)

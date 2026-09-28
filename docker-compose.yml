@@ -1,17 +1,17 @@
-version: '3.8'
-
 services:
   neo4j:
-    image: neo4j:5
-    container_name: living_graph_neo4j
+    image: neo4j:5.26-community
+    container_name: coveragemap-neo4j
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "7474:7474" # Neo4j Browser UI
+      - "7687:7687" # Bolt Protocol (FastAPI 연결)
     environment:
       - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc"]
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
+    restart: unless-stopped
 
 volumes:
   neo4j_data:
