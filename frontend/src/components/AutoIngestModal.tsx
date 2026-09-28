@@ -63,6 +63,11 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
   const [activeTab, setActiveTab] = useState<'spec' | 'csv'>('csv');
   const [specInput, setSpecInput] = useState<string>('');
   const [csvInput, setCsvInput] = useState<string>('');
+  const [apiKey, setApiKey] = useState<string>(() => {
+    return localStorage.getItem('coveragemap_gemini_api_key') || '';
+  });
+  const [showApiKey, setShowApiKey] = useState<boolean>(false);
+  const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [parsedGraph, setParsedGraph] = useState<ParsedGraph | null>(null);
@@ -70,6 +75,15 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
   const [isApplying, setIsApplying] = useState<boolean>(false);
 
   if (!isOpen) return null;
+
+  const handleApiKeyChange = (val: string) => {
+    setApiKey(val);
+    if (val.trim()) {
+      localStorage.setItem('coveragemap_gemini_api_key', val.trim());
+    } else {
+      localStorage.removeItem('coveragemap_gemini_api_key');
+    }
+  };
 
   const handleParseSpec = async () => {
     if (!specInput.trim()) {
@@ -82,7 +96,10 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
       const res = await fetch('/api/ingest/parse-spec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spec_text: specInput })
+        body: JSON.stringify({ 
+          spec_text: specInput,
+          api_key: apiKey.trim() || undefined
+        })
       });
       if (!res.ok) throw new Error(await res.text());
       const data: ParsedGraph = await res.json();
@@ -263,9 +280,110 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
 
           {activeTab === 'spec' ? (
             <div>
-              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>🛡️ <strong>100% 로컬 처리 (외부 유출 원천 차단):</strong> 외부 AI 클라우드 API를 호출하지 않으며, PC 내부의 규칙 기반 파서로 안전하게 구조화합니다.</span>
+              {/* Optional Gemini API Config */}
+              <div style={{
+                marginBottom: '14px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                backgroundColor: apiKey ? '#f0fdf4' : '#f8fafc',
+                overflow: 'hidden'
+              }}>
+                <div 
+                  onClick={() => setIsConfigOpen(!isConfigOpen)}
+                  style={{
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '1rem' }}>⚙️</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>
+                      Google Gemini API 설정 (선택 사항)
+                    </span>
+                    <span style={{
+                      fontSize: '0.75rem',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: apiKey ? '#dcfce7' : '#e2e8f0',
+                      color: apiKey ? '#15803d' : '#64748b',
+                      fontWeight: 600
+                    }}>
+                      {apiKey ? '🟢 Gemini LLM 분석 모드' : '⚪ 로컬 규칙 파서 모드'}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                    {isConfigOpen ? '▲ 접기' : '▼ 설정 열기'}
+                  </span>
+                </div>
+
+                {isConfigOpen && (
+                  <div style={{ padding: '0 14px 14px 14px', borderTop: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
+                    <p style={{ margin: '10px 0 8px 0', fontSize: '0.8rem', color: '#64748b', lineHeight: 1.4 }}>
+                      💡 <strong>API 키를 비워두면</strong> 외부 통신 없이 100% 로컬 규칙 기반 파서로 동작합니다.<br/>
+                      💡 Google AI Studio에서 발급받은 Gemini API 키를 입력하면 비정형 기획서 원문을 고품질 그래프로 정밀 분석합니다. (사내 보안 정책상 허용된 경우에만 사용하세요)
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input 
+                        type={showApiKey ? 'text' : 'password'}
+                        value={apiKey}
+                        onChange={(e) => handleApiKeyChange(e.target.value)}
+                        placeholder="AI Studio Gemini API Key 입력..."
+                        style={{
+                          flex: 1,
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          fontSize: '0.85rem',
+                          fontFamily: 'monospace'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        style={{
+                          padding: '8px 12px',
+                          backgroundColor: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '6px',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer',
+                          color: '#475569'
+                        }}
+                      >
+                        {showApiKey ? '숨기기' : '보기'}
+                      </button>
+                      {apiKey && (
+                        <button
+                          type="button"
+                          onClick={() => handleApiKeyChange('')}
+                          style={{
+                            padding: '8px 12px',
+                            backgroundColor: '#fee2e2',
+                            border: '1px solid #fecaca',
+                            borderRadius: '6px',
+                            fontSize: '0.8rem',
+                            cursor: 'pointer',
+                            color: '#b91c1c'
+                          }}
+                        >
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {!apiKey && (
+                <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🛡️ <strong>100% 로컬 처리 모드:</strong> API 키가 설정되지 않아 외부 서버 통신 없이 PC 내부 휴리스틱 파서로 안전하게 분석합니다.</span>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
                   게임 기획서 / 기능 명세서 텍스트 붙여넣기:
@@ -310,7 +428,7 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
                 style={{
                   marginTop: '10px',
                   width: '100%',
-                  backgroundColor: '#2563eb',
+                  backgroundColor: apiKey ? '#7c3aed' : '#2563eb',
                   color: '#ffffff',
                   padding: '10px',
                   borderRadius: '8px',
@@ -324,7 +442,9 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
                   gap: '8px'
                 }}
               >
-                {isLoading ? '⏳ 기획서 구조 분석 중...' : '⚡ 로컬 마크다운 구조 분석 실행'}
+                {isLoading 
+                  ? (apiKey ? '⏳ Gemini LLM 모델이 기획서를 정밀 분석 중...' : '⏳ 기획서 구조 분석 중...') 
+                  : (apiKey ? '✨ Gemini LLM 기획서 정밀 분석 실행' : '⚡ 로컬 마크다운 구조 분석 실행')}
               </button>
             </div>
           ) : (

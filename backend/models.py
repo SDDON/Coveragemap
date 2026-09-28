@@ -118,6 +118,7 @@ class CsvIngestRequest(BaseModel):
 
 class SpecIngestRequest(BaseModel):
     spec_text: str
+    api_key: Optional[str] = None
 
 class ApplyIngestRequest(BaseModel):
     nodes: List[Dict[str, Any]]

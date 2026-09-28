@@ -161,13 +161,21 @@ def parse_spreadsheet_to_graph(csv_text: str) -> Dict[str, Any]:
     }
 
 
-def parse_spec_text_to_graph(spec_text: str) -> Dict[str, Any]:
+def parse_spec_text_to_graph(spec_text: str, api_key: Optional[str] = None) -> Dict[str, Any]:
     """
     기획서/기능 명세서 텍스트를 구조화하여 Screen, Feature, TestCase, Edges로 자동 변환합니다.
-    [보안 규정 준수 - Zero Exfiltration]
-    미공개 신작 기획서 등 내부 대외비 문서의 외부 유출을 원천 방지하기 위해,
-    외부 클라우드 LLM API 호출을 전면 차단하고 100% 로컬 인하우스 휴리스틱 파서로만 안전하게 처리합니다.
+    - 사용자가 API 키를 설정한 경우(또는 시스템 GEMINI_API_KEY 환경변수 설정 시):
+      Google Gemini LLM을 호출하여 자연어 비정형 기획서를 고품질 그래프로 정밀 분석합니다.
+    - API 키가 없거나 비어있는 경우:
+      100% 로컬 인하우스 규칙 기반 휴리스틱 파서로 안전하게 동작합니다.
     """
+    key = (api_key or os.getenv("GEMINI_API_KEY") or "").strip()
+    if key:
+        try:
+            return _parse_with_gemini(spec_text, key)
+        except Exception as e:
+            print(f"[WARN] Gemini API spec parsing failed ({e}), falling back to heuristic parser.")
+            
     return _parse_with_heuristics(spec_text)
 
 
