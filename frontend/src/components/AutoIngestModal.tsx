@@ -60,7 +60,7 @@ const SAMPLE_CSV_TEXT = `Screen,Feature,TestCase,Prerequisite,CrossCutting,Descr
 `;
 
 export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClose, onSuccess }) => {
-  const [activeTab, setActiveTab] = useState<'spec' | 'csv'>('spec');
+  const [activeTab, setActiveTab] = useState<'spec' | 'csv'>('csv');
   const [specInput, setSpecInput] = useState<string>('');
   const [csvInput, setCsvInput] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -212,6 +212,26 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
         {/* Tab Navigation */}
         <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f1f5f9' }}>
           <button
+            onClick={() => { setActiveTab('csv'); setParsedGraph(null); }}
+            style={{
+              flex: 1,
+              padding: '12px 16px',
+              border: 'none',
+              borderBottom: activeTab === 'csv' ? '3px solid #0284c7' : '3px solid transparent',
+              background: activeTab === 'csv' ? '#ffffff' : 'transparent',
+              fontWeight: activeTab === 'csv' ? 700 : 500,
+              color: activeTab === 'csv' ? '#0369a1' : '#64748b',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              fontSize: '0.95rem'
+            }}
+          >
+            📊 엑셀/CSV 일괄 임포트 (보안 안전 / 로컬 100%)
+          </button>
+          <button
             onClick={() => { setActiveTab('spec'); setParsedGraph(null); }}
             style={{
               flex: 1,
@@ -229,27 +249,7 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
               fontSize: '0.95rem'
             }}
           >
-            🤖 AI 기획서 파서 (Spec-to-Graph)
-          </button>
-          <button
-            onClick={() => { setActiveTab('csv'); setParsedGraph(null); }}
-            style={{
-              flex: 1,
-              padding: '12px 16px',
-              border: 'none',
-              borderBottom: activeTab === 'csv' ? '3px solid #3b82f6' : '3px solid transparent',
-              background: activeTab === 'csv' ? '#ffffff' : 'transparent',
-              fontWeight: activeTab === 'csv' ? 700 : 500,
-              color: activeTab === 'csv' ? '#1e40af' : '#64748b',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              fontSize: '0.95rem'
-            }}
-          >
-            📊 엑셀/CSV 일괄 임포트 (Spreadsheet)
+            📝 로컬 기획서 파서 (마크다운 규칙 기반)
           </button>
         </div>
 
@@ -263,6 +263,9 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
 
           {activeTab === 'spec' ? (
             <div>
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>🛡️ <strong>100% 로컬 처리 (외부 유출 원천 차단):</strong> 외부 AI 클라우드 API를 호출하지 않으며, PC 내부의 규칙 기반 파서로 안전하게 구조화합니다.</span>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
                   게임 기획서 / 기능 명세서 텍스트 붙여넣기:
@@ -321,11 +324,14 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
                   gap: '8px'
                 }}
               >
-                {isLoading ? '⏳ 기획서 구조 분석 중...' : '⚡ AI 그래프 구조 분석 실행'}
+                {isLoading ? '⏳ 기획서 구조 분석 중...' : '⚡ 로컬 마크다운 구조 분석 실행'}
               </button>
             </div>
           ) : (
             <div>
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>🛡️ <strong>100% 로컬 인하우스 파싱:</strong> 어떠한 외부 AI API나 클라우드 서버도 호출하지 않습니다. 로컬 파이썬 엔진에서 테이블을 즉시 그래프로 매핑합니다.</span>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
                   CSV 내용 붙여넣기 (Screen, Feature, TestCase, Prerequisite, CrossCutting):

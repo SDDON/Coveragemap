@@ -39,6 +39,10 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
    - Active parent nodes must NEVER use `transform: scale` to prevent child coordinate detachment. Highlight using `box-shadow` and direct child (`>`) selectors only.
    - Subflows are strictly limited to Max Depth = 1. Cross-cutting concerns (Localization) must be flattened into attribute checkboxes/chips.
    - Default theme is Clean Light (Slate-50 background, white cards, slate-900 text) for readability.
+11. **Black-Box QA Environment (Zero-Code Access Policy):**
+   - CoverageMap operates strictly in a **pure black-box QA environment** where QA engineers have **NO ACCESS to game client source code, internal repositories, or game engine project files (Unity, Unreal)**.
+   - All white-box methods, engine asset parsers (Prefabs, Scenes, UMG), and source code reflection tools are strictly banned.
+   - Graph structures, verification points, and test results must be constructed exclusively from external test artifacts (Spreadsheet/CSV test cases, QA conversational flow prompts) and runtime black-box behavioral testing.
 
 ## 3-Tier Verification Pipeline
 Before concluding any task, the AI agent MUST execute:
