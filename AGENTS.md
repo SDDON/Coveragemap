@@ -43,7 +43,7 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
 11. **Black-Box QA Environment (Zero-Code Access Policy):**
    - CoverageMap operates strictly in a **pure black-box QA environment** where QA engineers have **NO ACCESS to game client source code, internal repositories, or game engine project files (Unity, Unreal)**.
    - All white-box methods, engine asset parsers (Prefabs, Scenes, UMG), and source code reflection tools are strictly banned.
-   - Graph structures, verification points, and test results must be constructed exclusively from external test artifacts (Spreadsheet/CSV test cases, QA conversational flow prompts) and runtime black-box behavioral testing.
+   - Graph structures, verification points, and test results must be constructed exclusively from external test artifacts (QA conversational flow prompts via MCP, preset JSON files; spreadsheet TCs serve only as reference material for those conversations) and runtime black-box behavioral testing. Bulk CSV import (Auto Ingest) and external-LLM spec parsing were removed (2026-10) as over-engineering.
 12. **Game Cycle & 3-Layer Modeling Separation (Room-Door-Furniture Rule):**
    - **No Dependency Cycles**: Never use `Depends_On` or progress `Transition` for backward/return navigation. Always use `type: "Return"` (Propagation Weight = 0) to prevent circular blocking deadlocks.
    - **3-Layer Verification Separation**: Strictly maintain Node (Context/Screen/Modal), Edge (Action/Transition Trigger), and Checklist (Static UI/Text/Dimmed Specs). Never nest sub-components beyond Max Depth = 1.

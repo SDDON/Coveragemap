@@ -230,46 +230,6 @@ def api_qa_next_targets(session = Depends(get_db)):
     from graph_service import get_next_test_targets
     return get_next_test_targets(session)
 
-# ─── Ingestion Endpoints ───────────────────────────────────────────
-
-from models import CsvIngestRequest, ApplyIngestRequest
-
-@app.post("/api/ingest/parse-csv")
-def api_parse_csv(req: CsvIngestRequest):
-    """CSV 텍스트를 파싱하여 Screen, Feature, TestCase, Edges 구조로 변환합니다."""
-    from ingest_service import parse_spreadsheet_to_graph
-    try:
-        return parse_spreadsheet_to_graph(req.csv_text)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/api/ingest/apply")
-def api_apply_ingested(
-    req: ApplyIngestRequest,
-    clean: bool = Query(False, description="Delete existing nodes tagged with the request workspace before applying"),
-    dry_run: bool = Query(False, description="Preview deletions/creations without writing"),
-    session = Depends(get_db)
-):
-    """
-    파싱된 노드와 엣지를 Neo4j에 일괄 적용합니다.
-    clean=True는 req.workspace 태그를 가진 노드만 삭제하며(DB 전체 삭제 아님), 실제 삭제 전 자동 백업을 생성합니다.
-    """
-    from ingest_service import apply_ingested_graph_to_neo4j, find_workspace_nodes
-    try:
-        payload = req.model_dump()
-        backup = None
-        if clean and not dry_run and req.workspace.strip() and find_workspace_nodes(session, req.workspace):
-            backup = create_auto_backup(session, f"워크스페이스 '{req.workspace}' CSV 가져오기(clean)")
-        result = apply_ingested_graph_to_neo4j(
-            session, payload, workspace=req.workspace, clean=clean, dry_run=dry_run
-        )
-        if backup:
-            result["backup_preset_id"] = backup["preset_id"]
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8190, reload=True)

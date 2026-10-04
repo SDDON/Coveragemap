@@ -114,36 +114,3 @@ class NextTestTarget(BaseModel):
     label: str
     incoming_requirements_met: bool
     untested_reasons: List[str]
-
-# ─── Ingestion Models ──────────────────────────────────────────────
-
-class CsvIngestRequest(BaseModel):
-    csv_text: str
-
-class ApplyIngestRequest(BaseModel):
-    nodes: List["IngestNode"]
-    edges: List["IngestEdge"]
-    # 가져온 노드에 붙일 워크스페이스(alias) 태그. 빈 문자열이면 '전체 보기' 상태이며 clean 적용이 금지됨
-    workspace: str = ""
-
-class IngestNode(BaseModel):
-    id: str
-    label: str = Field("Feature", pattern=IDENTIFIER_PATTERN)
-    name: str
-    aliases: List[str] = Field(default_factory=list)
-    description: Optional[str] = ""
-    test_status: TestStatus = "Untested"
-    properties: Dict[str, Any] = Field(default_factory=dict)
-
-class IngestEdge(BaseModel):
-    source: str
-    target: str
-    type: str = Field("Depends_On", pattern=IDENTIFIER_PATTERN)
-    action: Optional[str] = ""
-    test_status: TestStatus = "Untested"
-    properties: Dict[str, Any] = Field(default_factory=dict)
-
-ApplyIngestRequest.model_rebuild()
-
-
-

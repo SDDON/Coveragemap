@@ -17,7 +17,6 @@ import {
 } from '@xyflow/react';
 import { getLayoutedElements, getGridLayoutedElements } from './layout';
 import { PresetManagerModal } from './components/PresetManagerModal';
-import { AutoIngestModal } from './components/AutoIngestModal';
 import { t } from './locales/koKR';
 
 const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
@@ -91,7 +90,6 @@ export default function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, show: boolean } | null>(null);
   const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
   const [showPresetManager, setShowPresetManager] = useState(false);
-  const [showAutoIngest, setShowAutoIngest] = useState(false);
   const [showCypherExport, setShowCypherExport] = useState(false);
   const [cypherQuery, setCypherQuery] = useState('');
 
@@ -1546,14 +1544,6 @@ export default function App() {
               </button>
               <button 
                 className="primary"
-                style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', backgroundColor: '#4f46e5' }}
-                title={t.toolbar.autoIngest}
-                onClick={() => setShowAutoIngest(true)}
-              >
-                ⚡ Auto Ingest
-              </button>
-              <button 
-                className="primary"
                 style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
                 title={t.toolbar.exportCypher}
                 onClick={generateCypher}
@@ -2247,22 +2237,6 @@ export default function App() {
         onPresetLoaded={() => {
           setFilterText('');
           setShowAllDomains(true);
-          triggerRefresh();
-          setTimeout(() => {
-            if (rfInstance) rfInstance.fitView({ padding: 0.15, duration: 600 });
-          }, 300);
-        }}
-      />
-
-      {/* Auto Ingest Modal (CSV Parser) */}
-      <AutoIngestModal
-        isOpen={showAutoIngest}
-        onClose={() => setShowAutoIngest(false)}
-        workspace={filterText}
-        onSuccess={() => {
-          // 가져온 노드에는 현재 워크스페이스 태그가 붙으므로 워크스페이스를 유지하고,
-          // 워크스페이스가 없을 때만 전체 보기로 전환
-          if (!filterText) setShowAllDomains(true);
           triggerRefresh();
           setTimeout(() => {
             if (rfInstance) rfInstance.fitView({ padding: 0.15, duration: 600 });
