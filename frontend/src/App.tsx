@@ -1753,7 +1753,6 @@ export default function App() {
                       ))}
                     </datalist>
                   </div>
-                  {editFormData.aliases === "invalid_free_text" && <div className="validation-error" style={{color: '#dc2626', fontSize: '0.8rem', marginTop: '4px', marginBottom: '8px', fontWeight: 600}}>Invalid</div>}
                   <div className="form-group" style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1.5px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                     {(() => {
                       const isGlobalAllowed = ['Component', 'Data', 'TestCase'].includes(editFormData.label);

@@ -529,15 +529,6 @@ test.describe('F6: Alias Dictionary (Standardization)', () => {
       await expect(page.locator('datalist#category-aliases')).toHaveCount(1);
     });
 
-    // SKIP-REASON: 트리아지 ③ 후보(삭제 승인 대기): 커스텀 .autocomplete-suggestion UI는 존재하지 않고, 제안은 네이티브 <datalist>로 제공되어 DOM으로 검증 불가. datalist 연결은 'Standardized Input UI'가 검증함
-    test.skip('Autocomplete Suggestion', async ({ page }) => {
-      const categoryInput = page.locator('#nodeCategory');
-      await categoryInput.fill('synonym');
-      
-      const suggestion = page.locator('.autocomplete-suggestion').first();
-      await expect(suggestion).toBeVisible();
-    });
-
     test('Form Submission Validation', async ({ page }) => {
       const firstNode = page.locator('.react-flow__node').first();
       const categoryInput = page.locator('#nodeCategory');
@@ -558,14 +549,6 @@ test.describe('F6: Alias Dictionary (Standardization)', () => {
       const restorePromise = page.waitForResponse(res => res.url().includes('/api/') && res.request().method() !== 'GET');
       await page.getByRole('button', { name: /save/i }).click();
       await restorePromise;
-    });
-
-    test('Block Free Text', async ({ page }) => {
-      const categoryInput = page.locator('#nodeCategory');
-      await categoryInput.fill('invalid_free_text');
-      await page.getByRole('button', { name: /save/i }).click();
-      
-      await expect(page.locator('.validation-error')).toBeVisible();
     });
   });
 });
