@@ -120,8 +120,7 @@ flowchart TD
 ### 3.4. UI 문자열 중앙화 (단일 한국어 로케일)
 UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= `I18N_LOCALES.koKR`)로 참조합니다. **한국어만 유지**하며, 영어 로케일(enUS)은 필요해지면 같은 구조의 파일을 추가해 확장합니다.
 
-- 이관이 끝난 파일은 `scripts/check_policy.py`의 `I18N_MIGRATED_FILES`에 등록되어, 한글 UI 문자열 하드코딩이 Tier 1에서 차단됩니다. (주석은 허용)
-- 이관 대상이 아직 남아 있는 파일(예: `App.tsx`)은 점진적으로 옮깁니다.
+- `frontend/src` 전체(`locales/` 제외)에서 한글 UI 문자열 하드코딩이 Tier 1 규칙 6으로 차단됩니다. (주석은 허용)
 - 4단계 상태 라벨은 `t.status.{Untested|Passed|Failed|Blocked}`를 사용합니다.
 
 ---
@@ -242,7 +241,7 @@ graph LR
   3. 구버전 포트 `8001` 잔존 여부 (`8190` 및 환경변수 사용 강제).
   4. `.halo-handle`의 z-index가 `var(--z-canvas-bg)`(0) 이하인지 (Halo 핸들 격리).
   5. E2E의 모든 `test.skip`/`test.fixme` 바로 윗줄에 `// SKIP-REASON: <사유>` 주석이 있는지.
-  6. `I18N_MIGRATED_FILES`에 등록된 파일에 한글 UI 문자열 하드코딩이 없는지.
+  6. `frontend/src`(`locales/` 제외)에 한글 UI 문자열 하드코딩이 없는지.
 
 ### Tier 2: 자동화 테스트 (pytest + Playwright)
 - 백엔드 단위 테스트: `cd backend; uv run pytest -q` (실패 0건 필수. 수동 실행용 `test_e2e*.py`는 `conftest.py`에서 수집 제외)

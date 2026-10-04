@@ -10,7 +10,7 @@ Enforced Rules:
 3. [Port Consistency Rule]: No hardcoded deprecated port 8001 in project code. Must use 8190 or env vars.
 4. [Halo Handle Stacking & Isolation Rule]: Halo handles must stay at or below z-index 0 and never cover inner content.
 5. [Skip Reason Rule]: Every test.skip / test.fixme in e2e-tests/tests needs a '// SKIP-REASON: ...' comment on the line above.
-6. [i18n Centralization Rule]: Files listed in I18N_MIGRATED_FILES must not hardcode Hangul UI strings (use frontend/src/locales/).
+6. [i18n Centralization Rule]: No hardcoded Hangul UI strings in frontend/src (except frontend/src/locales/). Comments are allowed.
 
 Exit code: 0 if passed, 1 if any violations found.
 """
@@ -136,16 +136,23 @@ def check_test_skip_reasons(directory: str):
                             "snippet": line.strip()
                         })
 
-# Rule 6 [i18n Centralization Rule]: 이관이 끝난 파일은 UI 문자열을 frontend/src/locales/에서만 가져와야 합니다.
-# (단일 한국어 로케일 정책. 주석 속 한글은 허용) 이관이 끝날 때마다 이 목록에 파일을 추가합니다.
-I18N_MIGRATED_FILES = [os.path.join("frontend", "src", "components", "AutoIngestModal.tsx")]
+# Rule 6 [i18n Centralization Rule]: UI 문자열은 frontend/src/locales/에서만 가져와야 합니다.
+# (단일 한국어 로케일 정책. 주석 속 한글은 허용) 2026-10 전체 이관 완료 후 frontend/src 전체로 확대되었습니다.
+LOCALES_DIR = os.path.join(FRONTEND_SRC, "locales")
 HANGUL = re.compile(r"[가-힣]")
 
-def check_i18n_migrated_files():
-    for rel in I18N_MIGRATED_FILES:
-        path = os.path.join(WORKSPACE_ROOT, rel)
-        if not os.path.exists(path):
+def _i18n_target_files():
+    for root, dirs, files in os.walk(FRONTEND_SRC):
+        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+        if os.path.abspath(root).startswith(os.path.abspath(LOCALES_DIR)):
             continue
+        for f in files:
+            if f.endswith((".ts", ".tsx")):
+                yield os.path.relpath(os.path.join(root, f), WORKSPACE_ROOT)
+
+def check_i18n_migrated_files():
+    for rel in _i18n_target_files():
+        path = os.path.join(WORKSPACE_ROOT, rel)
         with open(path, "r", encoding="utf-8", errors="ignore") as fh:
             content = fh.read()
         # 블록 주석(/* */, {/* */})은 줄 수를 유지한 채 제거, 이어서 줄 주석(//) 제거

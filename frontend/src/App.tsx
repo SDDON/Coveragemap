@@ -18,6 +18,7 @@ import {
 import { getLayoutedElements, getGridLayoutedElements } from './layout';
 import { PresetManagerModal } from './components/PresetManagerModal';
 import { AutoIngestModal } from './components/AutoIngestModal';
+import { t } from './locales/koKR';
 
 const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
   const edgeBundles: Record<string, Edge[]> = {};
@@ -1352,7 +1353,7 @@ export default function App() {
           <div className="glass-panel" style={{ padding: '40px', width: '600px', textAlign: 'center', backgroundColor: 'var(--panel-bg)', borderRadius: '16px', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
             <h2 style={{ fontSize: '2rem', marginBottom: '16px', color: 'var(--text-main)', fontWeight: 600 }}>Select Workspace</h2>
             <p style={{ color: 'var(--text-main)', opacity: 0.8, marginBottom: '32px', lineHeight: '1.5' }}>
-              작업할 도메인(모듈)을 선택하세요. 선택한 도메인과 1~2 Depth 내의 경계 노드들만 로드되어 최적의 성능으로 작업할 수 있습니다.
+              {t.workspace.selectGuide}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '16px', maxHeight: '400px', overflowY: 'auto', padding: '10px' }}>
               {aliases.map(a => (
@@ -1388,7 +1389,7 @@ export default function App() {
                 style={{ cursor: 'pointer', width: '16px', height: '16px' }}
               />
               <label htmlFor="rememberWorkspace" style={{ cursor: 'pointer', color: 'var(--text-main)', fontSize: '0.9rem' }}>
-                다시 보지 않기 (자동 진입)
+                {t.workspace.dontShowAgain}
               </label>
             </div>
             <div style={{ marginTop: '24px', borderTop: '1px solid var(--panel-border)', paddingTop: '24px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
@@ -1398,7 +1399,7 @@ export default function App() {
                 onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-main)'; e.currentTarget.style.borderColor = 'var(--text-main)'; }}
                 onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--panel-border)'; }}
               >
-                ⚙️ Workspace 관리자
+                {t.workspace.openManager}
               </button>
               <button 
                 onClick={() => setShowPresetManager(true)} 
@@ -1406,7 +1407,7 @@ export default function App() {
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#dbeafe'; }}
                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#eff6ff'; }}
               >
-                📂 샘플 프리셋 로드
+                {t.workspace.loadPreset}
               </button>
               <button 
                 onClick={() => {
@@ -1419,7 +1420,7 @@ export default function App() {
                 onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-main)'; e.currentTarget.style.borderColor = 'var(--text-main)'; }}
                 onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--panel-border)'; }}
               >
-                전체 그래프 로드 (Heavy)
+                {t.workspace.loadAll}
               </button>
             </div>
           </div>
@@ -1516,13 +1517,13 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '4px 12px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Current:</span>
               <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: '0.95rem' }}>
-                {filterText ? filterText : (showAllDomains ? '전체 워크스페이스' : 'None')}
+                {filterText ? filterText : (showAllDomains ? t.workspace.all : 'None')}
               </span>
             </div>
               <button 
                 className="primary"
                 style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
-                title="워크스페이스(도메인) 선택 화면 열기"
+                title={t.toolbar.switchWorkspace}
                 onClick={() => {
                   setFilterText('');
                   setShowAllDomains(false);
@@ -1535,7 +1536,7 @@ export default function App() {
               <button 
                 className="primary"
                 style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', backgroundColor: '#0284c7' }}
-                title="샘플 프리셋 및 데이터셋 관리자를 엽니다."
+                title={t.toolbar.presets}
                 onClick={() => setShowPresetManager(true)}
               >
                 📂 Presets
@@ -1543,7 +1544,7 @@ export default function App() {
               <button 
                 className="primary"
                 style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', backgroundColor: '#4f46e5' }}
-                title="기획서 텍스트 또는 엑셀/CSV로부터 그래프를 일괄 자동 생성합니다."
+                title={t.toolbar.autoIngest}
                 onClick={() => setShowAutoIngest(true)}
               >
                 ⚡ Auto Ingest
@@ -1551,21 +1552,21 @@ export default function App() {
               <button 
                 className="primary"
                 style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
-                title="현재 그래프를 Cypher 쿼리로 내보냅니다."
+                title={t.toolbar.exportCypher}
                 onClick={generateCypher}
               >
                 Export Cypher
               </button>
             <button 
               style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '50%', fontWeight: 'bold' }}
-              title="도움말 및 범례 (Help & Legend)"
+              title={t.toolbar.help}
               onClick={() => setShowHelp(true)}
             >
               ?
             </button>
             <button 
               style={{ padding: 8, cursor: 'pointer' }}
-              title="선택된 노드만 또는 전체를 자동 정렬합니다"
+              title={t.toolbar.relayout}
               onClick={async () => {
                 // 1. Check if there is any active focus (selected or highlighted)
                 const focusedNodes = nodes.filter(n => 
@@ -1625,7 +1626,7 @@ export default function App() {
             </button>
             <button 
               style={{ padding: 8, cursor: 'pointer' }}
-              title="노드의 Category(Alias) 기준으로 그룹핑하여 격자(Grid) 형태로 정렬합니다"
+              title={t.toolbar.gridLayout}
               onClick={() => {
                 const { nodes: layoutedNodes } = getGridLayoutedElements(nodes);
                 setNodes(layoutedNodes);
@@ -1661,7 +1662,7 @@ export default function App() {
 
             <div style={{ display: rightPanelTab === 'view' ? 'block' : 'none' }}>
               <div className="form-group">
-              <label htmlFor="filterGraph" className="form-label">Filter Graph<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="선택한 카테고리(Alias)에 해당하는 노드들만 캔버스에 표시합니다.">?</span></label>
+              <label htmlFor="filterGraph" className="form-label">Filter Graph<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.filterGraph}>?</span></label>
               <div className="metrics" style={{ marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Passed Nodes: <span className="metrics-passed-count" style={{fontWeight: 'bold', color: 'var(--status-passed-text)'}}>{nodes.filter(n => (n.data as any).test_status === 'Passed').length}</span></div>
               <select
                 id="filterGraph"
@@ -1676,7 +1677,7 @@ export default function App() {
             </div>
             
             <div className="form-group" style={{ marginTop: '12px', marginBottom: '16px' }}>
-              <label className="form-label" style={{ marginBottom: '6px' }}>Search Highlight<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="검색어가 포함된 노드와 그 의존성 흐름을 하이라이트합니다.">?</span></label>
+              <label className="form-label" style={{ marginBottom: '6px' }}>Search Highlight<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.searchHighlight}>?</span></label>
               <input 
                 type="text" 
                 placeholder="Type to highlight nodes..." 
@@ -1687,7 +1688,7 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label className="form-label" style={{ marginBottom: '6px' }}>Visibility Filter<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="체크한 타입의 노드들만 캔버스에 표시합니다.">?</span></label>
+              <label className="form-label" style={{ marginBottom: '6px' }}>Visibility Filter<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.visibilityFilter}>?</span></label>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                 {['Screen', 'Component', 'TestCase', 'Data'].map(type => (
                   <label key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', cursor: 'pointer', color: '#1e293b', fontWeight: 500 }}>
@@ -1704,7 +1705,7 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="maxDepth" className="form-label">Max Depth<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="선택한 노드로부터 지정한 단계(Depth)까지만 연관 노드를 표시합니다.">?</span></label>
+              <label htmlFor="maxDepth" className="form-label">Max Depth<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.maxDepth}>?</span></label>
               <input id="maxDepth" type="number"
                 min={1}
                 max={10}
@@ -1724,21 +1725,21 @@ export default function App() {
               
               {editFormData.type === 'node' && (
                 <>
-                  <div className="form-group"><label htmlFor="nodeLabel" className="form-label">Label:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="노드의 역할을 나타내는 주요 타입입니다. (예: Screen, Feature 등)">?</span></label>
+                  <div className="form-group"><label htmlFor="nodeLabel" className="form-label">Label:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.nodeLabel}>?</span></label>
                     <select id="nodeLabel" value={editFormData.label || 'Node'} onChange={e => setEditFormData({...editFormData, label: e.target.value})}>
-                      <option value="Feature">Feature (기능)</option>
-                      <option value="Screen">Screen (화면)</option>
-                      <option value="Content">Content (콘텐츠)</option>
-                      <option value="System">System (시스템)</option>
-                      <option value="Component">Component (컴포넌트)</option>
-                      <option value="Data">Data (데이터)</option>
-                      <option value="TestCase">TestCase (테스트케이스)</option>
-                      <option value="Node">Node (기본)</option>
+                      <option value="Feature">{t.nodeLabel.Feature}</option>
+                      <option value="Screen">{t.nodeLabel.Screen}</option>
+                      <option value="Content">{t.nodeLabel.Content}</option>
+                      <option value="System">{t.nodeLabel.System}</option>
+                      <option value="Component">{t.nodeLabel.Component}</option>
+                      <option value="Data">{t.nodeLabel.Data}</option>
+                      <option value="TestCase">{t.nodeLabel.TestCase}</option>
+                      <option value="Node">{t.nodeLabel.Node}</option>
                     </select>
                   </div>
-                  <div className="form-group"><label htmlFor="nodeName" className="form-label">Name:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="노드에 표시될 실제 이름입니다.">?</span></label><input id="nodeName" type="text" value={editFormData.name || ''} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></div>
+                  <div className="form-group"><label htmlFor="nodeName" className="form-label">Name:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.nodeName}>?</span></label><input id="nodeName" type="text" value={editFormData.name || ''} onChange={e => setEditFormData({...editFormData, name: e.target.value})} /></div>
                   <div className="form-group">
-                    <label htmlFor="nodeCategory" className="form-label">Node Category:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="그룹화나 검색에 쓰이는 카테고리 태그(Alias)입니다.">?</span></label>
+                    <label htmlFor="nodeCategory" className="form-label">Node Category:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.nodeCategory}>?</span></label>
                     <input 
                       id="nodeCategory" 
                       type="text" 
@@ -1763,17 +1764,17 @@ export default function App() {
                               const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
                               setEditFormData({...editFormData, properties: newProps});
                             }} style={{ cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }} />
-                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>🌐 전역 공통 노드 (Badge화)<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.">?</span></label>
+                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>{t.globalNode.title}<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.globalNode}>?</span></label>
                           </div>
                           {!isGlobalAllowed && (
                             <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: '#dc2626', fontWeight: 500 }}>
-                              System, Screen, Feature 등 큰 단위의 노드는 전역 노드화할 수 없습니다.
+                              {t.globalNode.notAllowed}
                             </p>
                           )}
                           <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
-                            체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 <strong>뱃지(Pill)</strong> 형태로 표시됩니다.
-                            다국어(I18N), 공통 데이터 등 여러 노드에서 반복 연결되는 글로벌 의존성에 사용하세요.
-                            뱃지를 클릭하면 테스트 상태를 변경할 수 있습니다.
+                            {t.globalNode.hintBefore}<strong>{t.globalNode.hintBadge}</strong>{t.globalNode.hintAfter}
+                            {t.globalNode.hintUsage}
+                            {t.globalNode.hintClick}
                           </p>
                         </>
                       );
@@ -1793,7 +1794,7 @@ export default function App() {
                           />
                         </div>
                         <div className="form-group" style={{ margin: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능</label>
+                          <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>{t.nodeForm.issueLink}</label>
                           <textarea 
                             rows={3}
                             value={editFormData.properties?.issue_link || ''} 
@@ -1862,7 +1863,7 @@ export default function App() {
                                 delete newProps[k];
                                 setEditFormData({...editFormData, properties: newProps});
                               }}
-                              title="속성 삭제"
+                              title={t.nodeForm.deleteProperty}
                               style={{ 
                                 background: '#fee2e2', 
                                 border: '1px solid #fca5a5', 
@@ -1931,11 +1932,11 @@ export default function App() {
                   <div className="form-group">
                     <label className="form-label">Type:</label>
                     <select value={editFormData.edgeType || 'Transition'} onChange={e => setEditFormData({...editFormData, edgeType: e.target.value})}>
-                      <option value="Transition">Transition (화면 이동)</option>
-                      <option value="Contains">Contains (포함)</option>
-                      <option value="Displays">Displays (표시)</option>
-                      <option value="Depends_On">Depends_On (의존)</option>
-                      <option value="Triggers">Triggers (호출)</option>
+                      <option value="Transition">{t.edgeType.Transition}</option>
+                      <option value="Contains">{t.edgeType.Contains}</option>
+                      <option value="Displays">{t.edgeType.Displays}</option>
+                      <option value="Depends_On">{t.edgeType.Depends_On}</option>
+                      <option value="Triggers">{t.edgeType.Triggers}</option>
                     </select>
                   </div>
                   <div className="form-group">
@@ -1946,7 +1947,7 @@ export default function App() {
               )}
 
               <div className="form-group">
-                <label className="form-label">Status:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="현재 테스트/개발 상태를 나타냅니다.">?</span></label>
+                <label className="form-label">Status:<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.status}>?</span></label>
                 <div style={{display:"flex", gap:"8px", marginTop:"5px", flexWrap: 'wrap'}}>
                   <button className="success" onClick={(e) => { e.preventDefault(); handleSaveStatus("Passed"); }}>Mark Passed</button>
                   <button className="danger" onClick={(e) => { e.preventDefault(); handleSaveStatus("Failed"); }}>Mark Failed</button>
@@ -2016,7 +2017,7 @@ export default function App() {
 
             <div style={{ display: rightPanelTab === 'globals' ? 'block' : 'none', flex: 1 }}>
               <div style={{ padding: '0 0 16px 0', borderBottom: '1px solid var(--panel-border)', marginBottom: '16px' }}>
-                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600, color: '#0f172a' }}>Global Nodes<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content="전역 노드를 다른 노드에 부착(Attach)하거나, 해당 전역 노드에 의존하는 모든 노드(Impact)를 시각화합니다.">?</span></h3>
+                <h3 style={{ margin: '0 0 8px 0', fontSize: '1.1rem', fontWeight: 600, color: '#0f172a' }}>Global Nodes<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.globalNodes}>?</span></h3>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   Attach global nodes as badges to the currently selected node.
                 </p>
@@ -2170,20 +2171,20 @@ export default function App() {
             setIsCreatingNode(true);
             // contextMenu.show is still true to let initialPos capture its position
           }}>
-            ➕ 새 노드 추가
+            {t.contextMenu.addNode}
           </div>
           <div className="context-menu-divider"></div>
           <div className="context-menu-item" onClick={() => {
             if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 800 });
             setContextMenu(null);
           }}>
-            ⤢ 전체 화면 맞춤
+            {t.contextMenu.fitView}
           </div>
           <div className="context-menu-item" onClick={() => {
             triggerRefresh();
             setContextMenu(null);
           }}>
-            🔄 새로고침
+            {t.contextMenu.refresh}
           </div>
         </div>
       )}
@@ -2193,7 +2194,7 @@ export default function App() {
         <div className="workspace-manager-modal" onClick={() => setShowWorkspaceManager(false)}>
           <div className="glass-panel" style={{ width: '500px', maxWidth: '90%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>Workspace 관리자</h2>
+              <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>{t.workspaceManager.title}</h2>
               <button onClick={() => setShowWorkspaceManager(false)} style={{ background: 'none', border: 'none', color: 'var(--text-main)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
             </div>
             <div className="workspace-list">
@@ -2202,9 +2203,9 @@ export default function App() {
                   <span style={{ fontWeight: 500 }}>{a}</span>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button className="primary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={async () => {
-                      const newAlias = prompt(`'${a}'의 새 이름을 입력하세요:`, a);
+                      const newAlias = prompt(t.workspaceManager.renamePrompt(a), a);
                       if (newAlias && newAlias.trim() && newAlias.trim() !== a) {
-                        if (confirm(`'${a}' 태그를 가진 모든 노드의 태그가 '${newAlias.trim()}'(으)로 변경됩니다. 계속하시겠습니까?`)) {
+                        if (confirm(t.workspaceManager.renameConfirm(a, newAlias.trim()))) {
                           try {
                             const res = await fetch(`/api/aliases/${encodeURIComponent(a)}?new_alias=${encodeURIComponent(newAlias.trim())}`, { method: 'PUT' });
                             if (res.ok) triggerRefresh();
@@ -2212,9 +2213,9 @@ export default function App() {
                           } catch (e) { alert('Error renaming workspace'); }
                         }
                       }
-                    }}>수정</button>
+                    }}>{t.common.edit}</button>
                     <button className="danger" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={async () => {
-                      if (confirm(`'${a}' 태그를 모든 노드에서 삭제합니다. 계속하시겠습니까?`)) {
+                      if (confirm(t.workspaceManager.deleteConfirm(a))) {
                         try {
                           const res = await fetch(`/api/aliases/${encodeURIComponent(a)}`, { method: 'DELETE' });
                           if (res.ok) {
@@ -2224,7 +2225,7 @@ export default function App() {
                           else alert('Failed to delete workspace');
                         } catch (e) { alert('Error deleting workspace'); }
                       }
-                    }}>삭제</button>
+                    }}>{t.common.delete}</button>
                   </div>
                 </div>
               ))}
@@ -2271,7 +2272,7 @@ export default function App() {
             <span style={{ fontSize: '1.1rem' }}>🔍</span>
             <div>
               <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#c4b5fd' }}>{impactMode.globalNodeName}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>영향 받는 노드 {impactMode.total}개</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.impact.affected(impactMode.total)}</div>
             </div>
           </div>
           <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
@@ -2322,41 +2323,42 @@ export default function App() {
             boxShadow: '0 10px 30px rgba(0,0,0,0.3)', maxHeight: '90vh', overflowY: 'auto'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0 }}>CoverageMap 가이드</h2>
+              <h2 style={{ margin: 0 }}>{t.help.title}</h2>
               <button onClick={() => setShowHelp(false)} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: '1.5rem', color: 'var(--text-main)' }}>&times;</button>
             </div>
             
-            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>🌈 하이라이트 색상 (의존성 방향)</h3>
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px' }}>{t.help.highlightTitle}</h3>
             <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
-              <li><strong style={{ color: '#3b82f6' }}>🔵 파란색 테두리 (Incoming)</strong>: 선택/검색된 노드로 <strong>들어오는(진입하는)</strong> 흐름입니다. 즉, 이 노드가 동작하기 위한 <strong>선행 조건</strong>이나 상위 진입점을 의미합니다.</li>
-              <li><strong style={{ color: '#f59e0b' }}>🟠 주황색 테두리 (Outgoing)</strong>: 선택/검색된 노드에서 <strong>뻗어 나가는</strong> 흐름입니다. 해당 노드에서 파생되는 <strong>하위 결과물</strong>이나 다음 단계를 의미합니다.</li>
+              <li><strong style={{ color: '#3b82f6' }}>{t.help.incomingTitle}</strong>: {t.help.incomingBody}</li>
+              <li><strong style={{ color: '#f59e0b' }}>{t.help.outgoingTitle}</strong>: {t.help.outgoingBody}</li>
             </ul>
 
-            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>✅ 노드 테스트 상태 (Test Status)</h3>
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>{t.help.statusTitle}</h3>
             <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
-              <li><strong>⬜ 흰색 (Untested)</strong>: 아직 테스트되지 않은 항목입니다.</li>
-              <li><strong style={{ color: '#10b981' }}>🟢 초록색 (Passed)</strong>: 테스트를 성공적으로 통과한 항목입니다.</li>
-              <li><strong style={{ color: '#ef4444' }}>🔴 빨간색 (Failed)</strong>: 테스트에 실패한(버그가 발견된) 항목입니다.</li>
-              <li style={{ fontSize: '0.9rem', color: 'gray', marginTop: '5px' }}>※ 대상(Component/Data 등)을 검증하는 엣지들의 상태가 모두 Passed이면 자동으로 Passed로 변경됩니다.</li>
+              <li><strong>{t.help.untestedTitle}</strong>: {t.help.untestedBody}</li>
+              <li><strong style={{ color: '#10b981' }}>{t.help.passedTitle}</strong>: {t.help.passedBody}</li>
+              <li><strong style={{ color: '#ef4444' }}>{t.help.failedTitle}</strong>: {t.help.failedBody}</li>
+              <li><strong style={{ color: '#d97706' }}>{t.help.blockedTitle}</strong>: {t.help.blockedBody}</li>
+              <li style={{ fontSize: '0.9rem', color: 'gray', marginTop: '5px' }}>{t.help.statusNote}</li>
             </ul>
 
-            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>🛠 주요 기능 팁</h3>
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>{t.help.tipsTitle}</h3>
             <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
-              <li><strong>선 연결 (드래그)</strong>: 노드 아래쪽 파란 점(Handle)에서 다른 노드 위쪽 파란 점으로 드래그하면 선(Edge)이 생성됩니다.</li>
-              <li><strong>다중 선택 하이라이트</strong>: 우측 패널의 <code>Search Highlight</code>에 단어(예: Arena)를 검색하면 해당 그룹의 의존성 흐름을 한눈에 볼 수 있습니다.</li>
-              <li><strong>깊이 조절 (Max Depth)</strong>: 선택한 노드로부터 몇 단계(Depth)까지의 연관 관계를 볼 것인지 슬라이더로 조절할 수 있습니다.</li>
-              <li><strong>Undo (되돌리기)</strong>: <kbd>Ctrl + Z</kbd>를 눌러 최근 작업을 취소할 수 있습니다.</li>
+              <li><strong>{t.help.connectTitle}</strong>: {t.help.connectBody}</li>
+              <li><strong>{t.help.highlightTipTitle}</strong>: {t.help.highlightTipBody}</li>
+              <li><strong>{t.help.depthTitle}</strong>: {t.help.depthBody}</li>
+              <li><strong>{t.help.undoTitle}</strong>: {t.help.undoBody}</li>
             </ul>
             
-            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>🌐 전역 노드 (Global Node) 정책</h3>
+            <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>{t.help.globalTitle}</h3>
             <ul style={{ paddingLeft: '20px', lineHeight: '1.6' }}>
-              <li><strong>타입 제약</strong>: <code>Component</code>, <code>Data</code>, <code>TestCase</code> 등 세부 단위의 노드만 전역 노드로 변환(Badge화)할 수 있습니다. <code>System</code>, <code>Screen</code> 등 그룹 단위의 노드는 전역 노드가 될 수 없습니다.</li>
-              <li><strong>삭제 제약 (Borrow Checker)</strong>: 전역 노드가 하나 이상의 노드에 배지로 부착되어 사용 중일 경우, 원본을 삭제할 수 없습니다. 연결을 먼저 해제해야 합니다.</li>
-              <li><strong>사용 방법</strong>: 우측 패널에서 노드를 전역 노드화한 뒤, 캔버스에서 부착할 다른 대상 노드를 선택하고 우측 패널의 <code>Globals</code> 탭에서 <code>[+] Attach</code> 버튼을 누르면 배지로 부착됩니다.</li>
+              <li><strong>{t.help.globalTypeTitle}</strong>: {t.help.globalTypeBody}</li>
+              <li><strong>{t.help.globalDeleteTitle}</strong>: {t.help.globalDeleteBody}</li>
+              <li><strong>{t.help.globalUsageTitle}</strong>: {t.help.globalUsageBody}</li>
             </ul>
             
             <div style={{ textAlign: 'right', marginTop: '30px' }}>
-              <button onClick={() => setShowHelp(false)} className="success">확인</button>
+              <button onClick={() => setShowHelp(false)} className="success">{t.common.ok}</button>
             </div>
           </div>
         </div>
@@ -2391,7 +2393,7 @@ export default function App() {
                 className="primary" 
                 onClick={() => {
                   navigator.clipboard.writeText(cypherQuery);
-                  alert('Cypher 쿼리가 클립보드에 복사되었습니다.');
+                  alert(t.toolbar.cypherCopied);
                 }}
               >
                 Copy to Clipboard

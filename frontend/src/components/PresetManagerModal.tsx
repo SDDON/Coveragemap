@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { t } from '../locales/koKR';
 
 interface PresetItem {
   id: string;
@@ -46,11 +47,11 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
     try {
       setLoading(true);
       const res = await fetch('/api/presets');
-      if (!res.ok) throw new Error('프리셋 목록을 불러오지 못했습니다.');
+      if (!res.ok) throw new Error(t.preset.listLoadFailed);
       const data = await res.json();
       setPresets(data);
     } catch (err: any) {
-      setErrorMsg(err.message || '오류가 발생했습니다.');
+      setErrorMsg(err.message || t.preset.genericError);
     } finally {
       setLoading(false);
     }
@@ -67,11 +68,11 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || '프리셋 로드에 실패했습니다.');
+        throw new Error(errData.detail || t.preset.loadFailed);
       }
       
       const result = await res.json();
-      setSuccessMsg(`"${presetId}" 프리셋이 성공적으로 로드되었습니다! (노드 ${result.nodes_created}개, 엣지 ${result.edges_created}개)`);
+      setSuccessMsg(t.preset.loadSuccess(presetId, result.nodes_created, result.edges_created));
       
       // Trigger parent graph refresh
       onPresetLoaded();
@@ -81,7 +82,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
         onClose();
       }, 700);
     } catch (err: any) {
-      setErrorMsg(err.message || '프리셋 로드 중 오류가 발생했습니다.');
+      setErrorMsg(err.message || t.preset.loadError);
     } finally {
       setLoadingPresetId(null);
     }
@@ -90,7 +91,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
   const handleSaveCurrentGraph = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!saveId.trim() || !saveName.trim()) {
-      setErrorMsg('프리셋 ID와 이름을 모두 입력해주세요.');
+      setErrorMsg(t.preset.idNameRequired);
       return;
     }
 
@@ -108,17 +109,17 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || '프리셋 저장에 실패했습니다.');
+        throw new Error(errData.detail || t.preset.saveFailed);
       }
       
-      setSuccessMsg('현재 그래프가 새 프리셋으로 저장되었습니다!');
+      setSuccessMsg(t.preset.saveSuccess);
       setSaveId('');
       setSaveName('');
       setSaveDesc('');
       setShowSaveSection(false);
       fetchPresets();
     } catch (err: any) {
-      setErrorMsg(err.message || '프리셋 저장 중 오류가 발생했습니다.');
+      setErrorMsg(err.message || t.preset.saveError);
     } finally {
       setSaving(false);
     }
@@ -170,7 +171,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '1.4rem' }}>📂</span>
             <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
-              샘플 프리셋 관리자 (Presets)
+              {t.preset.title}
             </h2>
           </div>
           <button
@@ -251,10 +252,10 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                   onChange={(e) => setCleanLoad(e.target.checked)}
                   style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                 />
-                기존 그래프 지우고 새로 불러오기 (Clean Load)
+                {t.preset.cleanLoad}
               </label>
               <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px', marginLeft: '24px' }}>
-                체크 해제 시 현재 열려있는 캔버스 그래프에 프리셋 노드들을 병합(Merge)합니다.
+                {t.preset.cleanLoadHint}
               </div>
             </div>
           </div>
@@ -263,11 +264,11 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {loading && presets.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '30px 0', color: '#64748b' }}>
-                프리셋 목록을 불러오는 중...
+                {t.preset.listLoading}
               </div>
             ) : presets.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '30px 0', color: '#64748b' }}>
-                저장된 프리셋이 없습니다.
+                {t.preset.empty}
               </div>
             ) : (
               presets.map((preset) => (
@@ -298,7 +299,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                           color: '#0369a1',
                           borderRadius: '9999px'
                         }}>
-                          노드 {preset.node_count}개
+                          {t.preset.nodeCount(preset.node_count)}
                         </span>
                         <span style={{
                           padding: '2px 8px',
@@ -308,7 +309,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                           color: '#475569',
                           borderRadius: '9999px'
                         }}>
-                          엣지 {preset.edge_count}개
+                          {t.preset.edgeCount(preset.edge_count)}
                         </span>
                       </div>
                       <div style={{
@@ -317,7 +318,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                         marginTop: '6px',
                         lineHeight: '1.45'
                       }}>
-                        {preset.description || '(설명 없음)'}
+                        {preset.description || t.preset.noDescription}
                       </div>
                     </div>
 
@@ -337,7 +338,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                         boxShadow: '0 1px 2px rgba(37, 99, 235, 0.2)'
                       }}
                     >
-                      {loadingPresetId === preset.id ? '로딩 중...' : '불러오기'}
+                      {loadingPresetId === preset.id ? t.preset.loading : t.preset.load}
                     </button>
                   </div>
                 </div>
@@ -363,7 +364,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
               }}
             >
               <span>{showSaveSection ? '▼' : '▶'}</span>
-              <span>💾 현재 캔버스 그래프를 새 프리셋으로 저장</span>
+              <span>{t.preset.saveSection}</span>
             </button>
 
             {showSaveSection && (
@@ -371,11 +372,11 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '4px' }}>
-                      프리셋 고유 ID (영문/숫자/언더바):
+                      {t.preset.idLabel}
                     </label>
                     <input
                       type="text"
-                      placeholder="예: my_game_stage1"
+                      placeholder={t.preset.idPlaceholder}
                       value={saveId}
                       onChange={(e) => setSaveId(e.target.value)}
                       required
@@ -390,11 +391,11 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                   </div>
                   <div style={{ flex: 1.5 }}>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '4px' }}>
-                      프리셋 표시 이름:
+                      {t.preset.nameLabel}
                     </label>
                     <input
                       type="text"
-                      placeholder="예: 스테이지 1 전투 QA 맵"
+                      placeholder={t.preset.namePlaceholder}
                       value={saveName}
                       onChange={(e) => setSaveName(e.target.value)}
                       required
@@ -410,11 +411,11 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#64748b', marginBottom: '4px' }}>
-                    설명 (선택):
+                    {t.preset.descLabel}
                   </label>
                   <input
                     type="text"
-                    placeholder="프리셋에 대한 간략한 설명"
+                    placeholder={t.preset.descPlaceholder}
                     value={saveDesc}
                     onChange={(e) => setSaveDesc(e.target.value)}
                     style={{
@@ -441,7 +442,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                       cursor: saving ? 'not-allowed' : 'pointer'
                     }}
                   >
-                    {saving ? '저장 중...' : '프리셋 파일 저장'}
+                    {saving ? t.preset.saving : t.preset.save}
                   </button>
                 </div>
               </form>
@@ -470,7 +471,7 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
               cursor: 'pointer'
             }}
           >
-            닫기
+            {t.common.close}
           </button>
         </div>
       </div>

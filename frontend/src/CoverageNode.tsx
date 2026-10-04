@@ -1,5 +1,6 @@
 import { memo, useState, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
+import { t } from './locales/koKR';
 
 /**
  * CoverageNode: Custom React Flow node for the CoverageMap graph.
@@ -130,7 +131,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                         title="Disconnect Dependency (Edge only)"
                         onClick={(e) => {
                            e.stopPropagation();
-                           if (window.confirm("정말 이 뱃지와의 연결(Edge)을 해제하시겠습니까?\n(글로벌 뱃지 원본 데이터는 삭제되지 않습니다.)")) {
+                           if (window.confirm(t.globalNode.unlinkConfirm)) {
                              window.dispatchEvent(new CustomEvent('deleteBadge', { detail: { nodeId: id, edgeId: badge.edgeId } }));
                            }
                         }}

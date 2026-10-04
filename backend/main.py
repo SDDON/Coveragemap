@@ -276,8 +276,19 @@ if __name__ == "__main__":
 
 # trigger reload
 @app.post("/api/dev/reset-seed")
-def api_reset_seed():
+def api_reset_seed(session = Depends(get_db)):
     import subprocess, sys, os
+    # E2E 테스트용 시드 리셋은 DB 전체를 지웁니다(MATCH (n) DETACH DELETE n).
+    # 사용자 실데이터 유실을 막기 위해, 현재 DB가 '시드 그래프'가 아닐 때만 자동 백업을 남깁니다.
+    # - 시드 마커(Game_Root)가 이미 있으면: 이전 E2E 리셋 결과이므로 백업 생략 (E2E 반복 호출 시 백업 10개 로테이션 소진 방지)
+    # - 빈 DB면: 백업할 내용이 없으므로 생략
+    backup = None
+    record = session.run(
+        "MATCH (n) RETURN count(n) AS total, "
+        "count(CASE WHEN n.id = 'Game_Root' THEN 1 END) AS seed_marker"
+    ).single()
+    if record and record["total"] > 0 and record["seed_marker"] == 0:
+        backup = create_auto_backup(session, "E2E reset-seed 직전 자동 백업")
     subprocess.run([sys.executable, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts', 'seed.py'))], check=True)
-    return {"status": "success"}
+    return {"status": "success", "backup": backup}
 

@@ -20,7 +20,7 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
    - If incoming dependencies fail, downstream nodes automatically transition to `Blocked`.
    - Manual Override (📌) allows forcing a status with mandatory `override_reason` notes without being overwritten by synthesis.
    - Root Cause Tracing highlights the path to the original failing node with `.highlight-root-cause` pulsing animation.
-3. **i18n Localization (Korean single locale):** UI strings are centralized in `frontend/src/locales/` (`koKR.ts`, exported as `t` / `I18N_LOCALES`). Only Korean is maintained. Files listed in `I18N_MIGRATED_FILES` of `scripts/check_policy.py` must not hardcode Hangul UI strings; remaining files (e.g. `App.tsx`) are migrated incrementally.
+3. **i18n Localization (Korean single locale):** UI strings are centralized in `frontend/src/locales/` (`koKR.ts`, exported as `t` / `I18N_LOCALES`). Only Korean is maintained. No file under `frontend/src` (except `frontend/src/locales/`) may hardcode Hangul UI strings; this is enforced by Tier 1 (`scripts/check_policy.py` rule 6). Comments are allowed.
 4. **Focus+Context Pure CSS Rule (Zero-JS Styling):**
    - Clicking a node (Focus) dims surrounding unrelated nodes (Context) strictly via CSS classes: `.has-selection`, `.active`, `.highlight-incoming`, `.highlight-outgoing`.
    - NEVER inject inline opacity/grayscale calculations in TSX.
