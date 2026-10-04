@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Iteration 3 UI Enhancements Stress Test', () => {
-  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(locator).toBeVisible() failed). 기능 결함/스펙 변경/무효 여부 미판정
+  // SKIP-REASON: 트리아지 ③ 후보(삭제 승인 대기): 전 API를 목(mock)으로 대체한 Iteration 3 시점 테스트로 현재 노드 생성 흐름과 불일치. Focus+Context 클래스 규칙은 verify_living_tc_spec #4, Path Selection/Edge Highlighting이 검증함
   test.skip('verify Focus+Context, Directional Colors, and Full-boundary connections', async ({ page }) => {
     test.setTimeout(120000);
                 let fakeNodes = [];

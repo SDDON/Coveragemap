@@ -27,6 +27,7 @@
   - QA 엔지니어가 작성/보유한 **표준 테스트 사양서(스프레드시트 CSV/Excel TC)**.
   - QA 엔지니어의 **대화형 플로우 지시(Conversational Prompt via MCP)**.
   - 실제 구동 환경(화면, 버튼, 기능, 외부 인터랙션)에 대한 사용자 레벨의 동작 및 런타임 결과 데이터.
+- **범위 제외 (2026-10 결정)**: 외부 LLM API를 이용한 기획서/마크다운 명세 자동 분석은 제거되었습니다. 일괄 가져오기(Auto Ingest)는 **CSV 전용**이며, 가져온 노드는 현재 워크스페이스 alias로 태깅되고 clean 적용 시 해당 워크스페이스 노드만 삭제됩니다(삭제 전 이름 목록 확인 + `_autobackup_` 자동 백업).
 
 ---
 
@@ -116,32 +117,12 @@ flowchart TD
   - 역방향 incoming edges 중 `Failed`인 경로를 백트래킹하여 **최초 결함 발생 노드/엣지**까지 탐색합니다.
   - 해당 경로 상의 모든 노드와 엣지에 `.highlight-root-cause` CSS 클래스가 적용되어 붉은색 펄스 애니메이션 테두리로 하이라이트됩니다.
 
-### 3.4. 다국어 대응 (i18n Localization Dictionary)
-모든 상태명과 시스템 UI 라벨은 하드코딩되지 않으며, 아래의 단일 로케일 사전을 사용합니다:
+### 3.4. UI 문자열 중앙화 (단일 한국어 로케일)
+UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= `I18N_LOCALES.koKR`)로 참조합니다. **한국어만 유지**하며, 영어 로케일(enUS)은 필요해지면 같은 구조의 파일을 추가해 확장합니다.
 
-```typescript
-// frontend/src/i18n.ts (SSOT)
-export const I18N_LOCALES = {
-  koKR: {
-    statusUntested: '미검증',
-    statusPassed: '검증 완료',
-    statusFailed: '결함 발생',
-    statusBlocked: '차단됨',
-    manualOverride: '수동 고정됨 (비고 확인)',
-    traceRootCause: '근본 원인 추적',
-    reasonPlaceholder: '오버라이드 사유(비고)를 입력하세요...',
-  },
-  enUS: {
-    statusUntested: 'Untested',
-    statusPassed: 'Passed',
-    statusFailed: 'Failed',
-    statusBlocked: 'Blocked',
-    manualOverride: 'Manually Overridden',
-    traceRootCause: 'Trace Root Cause',
-    reasonPlaceholder: 'Enter override reason (notes)...',
-  }
-};
-```
+- 이관이 끝난 파일은 `scripts/check_policy.py`의 `I18N_MIGRATED_FILES`에 등록되어, 한글 UI 문자열 하드코딩이 Tier 1에서 차단됩니다. (주석은 허용)
+- 이관 대상이 아직 남아 있는 파일(예: `App.tsx`)은 점진적으로 옮깁니다.
+- 4단계 상태 라벨은 `t.status.{Untested|Passed|Failed|Blocked}`를 사용합니다.
 
 ---
 
@@ -259,9 +240,14 @@ graph LR
   1. CSS 및 TSX 내 하드코딩된 숫자 z-index(`z-index: \d{2,}`) 사용 여부 (CSS 토큰 강제).
   2. TSX 파일 내 인라인 `opacity` 조작 여부 (CSS Focus+Context 강제).
   3. 구버전 포트 `8001` 잔존 여부 (`8190` 및 환경변수 사용 강제).
+  4. `.halo-handle`의 z-index가 `var(--z-canvas-bg)`(0) 이하인지 (Halo 핸들 격리).
+  5. E2E의 모든 `test.skip`/`test.fixme` 바로 윗줄에 `// SKIP-REASON: <사유>` 주석이 있는지.
+  6. `I18N_MIGRATED_FILES`에 등록된 파일에 한글 UI 문자열 하드코딩이 없는지.
 
-### Tier 2: E2E 테스트 (Playwright)
-- 실행 명령: `cd e2e-tests && npm test`
+### Tier 2: 자동화 테스트 (pytest + Playwright)
+- 백엔드 단위 테스트: `cd backend; uv run pytest -q` (실패 0건 필수. 수동 실행용 `test_e2e*.py`는 `conftest.py`에서 수집 제외)
+- E2E: `cd e2e-tests; npm test` (실패 0건 필수. skip은 Tier 1 규칙 5의 사유 주석이 있어야 함)
+- 완료 보고에는 실제 로그의 passed/failed/skipped 수치를 그대로 인용합니다.
 - 캔버스 렌더링, 딤 클래스 부여 여부, 노드/엣지 CRUD, 툴팁 표시 및 오버랩 방지 검증.
 
 ### Tier 3: 휴먼 체크리스트 (Human-in-the-loop 10개 항)
@@ -271,7 +257,7 @@ graph LR
 4. [ ] 엣지가 Failed일 때 연결된 후속 노드가 자동으로 `Blocked(🟡)`로 전파되는가?
 5. [ ] 수동 오버라이드 시 사유 코멘트(비고)를 입력할 수 있고 📌 핀 아이콘이 유지되는가?
 6. [ ] Root Cause 추적 버튼을 눌렀을 때 최초 결함 원인까지 붉은색 펄스 애니메이션이 이어지는가?
-7. [ ] 다국어 번역 사전(`I18N_LOCALES`)을 통해 UI 라벨이 일관되게 표시되는가?
+7. [ ] UI 문자열이 `frontend/src/locales/koKR.ts`(`t`)를 통해 일관되게 표시되는가?
 8. [ ] 상태 마킹 시 화면 레이아웃이 덜컹거리거나 줌 배율이 초기화되지 않는가?
 9. [ ] 포트 8190 및 환경변수가 올바르게 연동되어 통신 실패가 발생하지 않는가?
 10. [ ] `python scripts/check_policy.py`가 에러 없이 0으로 종료되는가?

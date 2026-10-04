@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: No onscreen node found to test!). 기능 결함/스펙 변경/무효 여부 미판정
+// SKIP-REASON: 트리아지 ③ 후보(삭제 승인 대기): 상/하단 핸들 구조 기준 테스트. 현재는 외곽 Halo 핸들(소스) + 중앙 숨김 핸들(타깃) 구조라 전제가 무효. 엣지 생성은 'Add Edge', 외곽 격리는 verify_living_tc_spec #3이 검증함
 test.skip('Verify node center is draggable and handles are at top/bottom 10px', async ({ page }) => {
   await page.goto('http://localhost:5173');
   await page.waitForSelector('.react-flow__node');
