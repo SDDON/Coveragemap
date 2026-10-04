@@ -20,7 +20,7 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
    - If incoming dependencies fail, downstream nodes automatically transition to `Blocked`.
    - Manual Override (📌) allows forcing a status with mandatory `override_reason` notes without being overwritten by synthesis.
    - Root Cause Tracing highlights the path to the original failing node with `.highlight-root-cause` pulsing animation.
-3. **i18n Localization Dictionary:** All status labels and UI text must be referenced from `I18N_LOCALES` (koKR, enUS). Hardcoding UI strings is prohibited.
+3. **i18n Localization (Korean single locale):** UI strings are centralized in `frontend/src/locales/` (`koKR.ts`, exported as `t` / `I18N_LOCALES`). Only Korean is maintained. Files listed in `I18N_MIGRATED_FILES` of `scripts/check_policy.py` must not hardcode Hangul UI strings; remaining files (e.g. `App.tsx`) are migrated incrementally.
 4. **Focus+Context Pure CSS Rule (Zero-JS Styling):**
    - Clicking a node (Focus) dims surrounding unrelated nodes (Context) strictly via CSS classes: `.has-selection`, `.active`, `.highlight-incoming`, `.highlight-outgoing`.
    - NEVER inject inline opacity/grayscale calculations in TSX.
@@ -47,7 +47,7 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
 ## 3-Tier Verification Pipeline
 Before concluding any task, the AI agent MUST execute:
 1. **Tier 1 (Static Policy Checker):** `python scripts/check_policy.py` (Must exit with code 0).
-2. **Tier 2 (Automated E2E):** `cd e2e-tests && npm test`
+2. **Tier 2 (Automated Tests):** `cd backend; uv run pytest -q` (must pass) and `cd e2e-tests; npm test` (0 failed; every `test.skip`/`test.fixme` needs a `// SKIP-REASON:` comment on the line above, enforced by Tier 1). Reports must quote the actual passed/failed/skipped numbers.
 3. **Tier 3 (Human Signoff Checklist):** Verify against the 10-point checklist in `AI_IMPLEMENTATION_SPEC.md`.
 
 ## Running the Project

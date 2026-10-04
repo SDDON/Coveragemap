@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Adversarial Frontend Tests', () => {
+  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(received).toBe(expected) // Object.is equality). 기능 결함/스펙 변경/무효 여부 미판정
   test.skip('R1: Parent node stretches dynamically', async ({ page }) => {
     page.on('console', msg => console.log('PAGE LOG:', msg.text()));
     

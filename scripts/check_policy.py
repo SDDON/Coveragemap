@@ -9,6 +9,8 @@ Enforced Rules:
 2. [Focus+Context Pure CSS Rule]: No node/edge dimming opacity manipulation in TSX.
 3. [Port Consistency Rule]: No hardcoded deprecated port 8001 in project code. Must use 8190 or env vars.
 4. [Halo Handle Stacking & Isolation Rule]: Halo handles must stay at or below z-index 0 and never cover inner content.
+5. [Skip Reason Rule]: Every test.skip / test.fixme in e2e-tests/tests needs a '// SKIP-REASON: ...' comment on the line above.
+6. [i18n Centralization Rule]: Files listed in I18N_MIGRATED_FILES must not hardcode Hangul UI strings (use frontend/src/locales/).
 
 Exit code: 0 if passed, 1 if any violations found.
 """
@@ -109,6 +111,56 @@ def scan_directory(directory: str, extensions: list):
             if any(f.endswith(ext) for ext in extensions):
                 check_file(os.path.join(root, f))
 
+def check_test_skip_reasons(directory: str):
+    """
+    Rule 5 [Skip Reason Rule]: E2E 테스트의 test.skip / test.fixme 바로 윗줄에는
+    '// SKIP-REASON: <사유>' 주석이 있어야 합니다. (사유 없는 skip이 쌓여 실제 결함을 가리는 것 방지)
+    """
+    for root, dirs, files in os.walk(directory):
+        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+        for f in files:
+            if not f.endswith(".ts"):
+                continue
+            path = os.path.join(root, f)
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                lines = fh.read().splitlines()
+            for i, line in enumerate(lines):
+                if re.search(r"\btest(\.describe)?\.(skip|fixme)\s*\(", line):
+                    prev = lines[i - 1].strip() if i > 0 else ""
+                    if not re.match(r"//\s*SKIP-REASON:\s*\S", prev):
+                        violations.append({
+                            "file": os.path.relpath(path, WORKSPACE_ROOT),
+                            "line": i + 1,
+                            "rule": "Skip Reason Rule",
+                            "detail": "test.skip/test.fixme 바로 윗줄에 '// SKIP-REASON: <사유>' 주석이 필요합니다.",
+                            "snippet": line.strip()
+                        })
+
+# Rule 6 [i18n Centralization Rule]: 이관이 끝난 파일은 UI 문자열을 frontend/src/locales/에서만 가져와야 합니다.
+# (단일 한국어 로케일 정책. 주석 속 한글은 허용) 이관이 끝날 때마다 이 목록에 파일을 추가합니다.
+I18N_MIGRATED_FILES = [os.path.join("frontend", "src", "components", "AutoIngestModal.tsx")]
+HANGUL = re.compile(r"[가-힣]")
+
+def check_i18n_migrated_files():
+    for rel in I18N_MIGRATED_FILES:
+        path = os.path.join(WORKSPACE_ROOT, rel)
+        if not os.path.exists(path):
+            continue
+        with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+            content = fh.read()
+        # 블록 주석(/* */, {/* */})은 줄 수를 유지한 채 제거, 이어서 줄 주석(//) 제거
+        content = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), content, flags=re.DOTALL)
+        for i, line in enumerate(content.splitlines(), start=1):
+            code = re.sub(r"(^|[^:])//.*$", r"\1", line)
+            if HANGUL.search(code):
+                violations.append({
+                    "file": rel,
+                    "line": i,
+                    "rule": "i18n Centralization Rule",
+                    "detail": "i18n 이관 완료 파일에 한글 UI 문자열이 하드코딩되어 있습니다. frontend/src/locales/koKR.ts의 t를 사용하세요.",
+                    "snippet": line.strip()
+                })
+
 def main():
     print("=" * 65)
     print(" 🛡️  CoverageMap Tier 1 Static Policy Checker")
@@ -118,6 +170,8 @@ def main():
     scan_directory(FRONTEND_SRC, [".css", ".tsx", ".ts"])
     scan_directory(BACKEND_DIR, [".py"])
     scan_directory(MCP_DIR, [".py"])
+    check_test_skip_reasons(os.path.join(WORKSPACE_ROOT, "e2e-tests", "tests"))
+    check_i18n_migrated_files()
 
     if not violations:
         print("\n✅ [SUCCESS] All UI, Z-Index, and Port policies are strictly compliant!")

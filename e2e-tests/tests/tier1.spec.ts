@@ -47,6 +47,7 @@ test.describe('F1: Local Data Pipeline (Neo4j Seed)', () => {
     expect(Array.isArray(body.edges)).toBeTruthy();
   });
 
+  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(locator).toBeVisible() failed). 기능 결함/스펙 변경/무효 여부 미판정
   test.skip('API Failure Degradation', async ({ page }) => {
     await page.route('**/api/graph', async route => await route.abort('failed'));
     await page.goto('/');
@@ -76,6 +77,7 @@ test.describe('F2: Core Visualization (Focus+Context)', () => {
     await expect(nodes.first()).not.toHaveClass(/de-emphasized/);
   });
 
+  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(locator).toHaveClass(expected) failed). 기능 결함/스펙 변경/무효 여부 미판정
   test.skip('Shift Focus', async ({ page }) => {
     await page.goto('/');
     const nodes = page.locator('.react-flow__node');
@@ -108,7 +110,7 @@ test.describe('F2: Core Visualization (Focus+Context)', () => {
     await expect(edge).toHaveClass(/de-emphasized/);
   });
 
-  test.skip('Path Selection (Coverage scope view)', async ({ page }) => {
+  test('Path Selection (Coverage scope view)', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('.react-flow__node')).not.toHaveCount(0);
     const edge = page.locator('.react-flow__edge').first();
@@ -184,7 +186,7 @@ test.describe('F3: Living TC (Test Coverage Marking)', () => {
     // Ignore flaky class check on edge
   });
 
-  test.skip('Reset Status', async ({ page }) => {
+  test('Reset Status', async ({ page }) => {
     await expect(page.locator('.react-flow__node')).not.toHaveCount(0);
     const node = page.locator('.react-flow__node').first();
     const nodeId = await node.getAttribute('data-id');
@@ -292,6 +294,7 @@ test.describe('F4: Graph Editing (Nodes & Edges)', () => {
     await expect(page.locator(`.react-flow__node[data-id="${nodeId}"]`)).toBeHidden();
   });
 
+  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Test timeout of 30000ms exceeded.). 기능 결함/스펙 변경/무효 여부 미판정
   test.skip('Add Edge', async ({ page }) => {
     const nodes = page.locator('.react-flow__node');
     const edges = page.locator('.react-flow__edge');
@@ -314,6 +317,7 @@ test.describe('F4: Graph Editing (Nodes & Edges)', () => {
     await expect(newEdge).toBeVisible();
   });
 
+  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Test timeout of 30000ms exceeded.). 기능 결함/스펙 변경/무효 여부 미판정
   test.skip('Delete Edge', async ({ page }) => {
     const nodes = page.locator('.react-flow__node');
 
@@ -342,6 +346,7 @@ test.describe('F4: Graph Editing (Nodes & Edges)', () => {
 });
 
 test.describe('F5: Config Panel & Loading UI', () => {
+  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(received).toBe(expected) // Object.is equality). 기능 결함/스펙 변경/무효 여부 미판정
   test.skip('Debounce API Call', async ({ page }) => {
     const responsePromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.goto('/');
@@ -486,6 +491,7 @@ test.describe('F6: Alias Dictionary (Standardization)', () => {
       await expect(page.locator('.details-panel')).toBeVisible({ timeout: 3000 });
     });
 
+    // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(received).not.toBe(expected) // Object.is equality). 기능 결함/스펙 변경/무효 여부 미판정
     test.skip('Standardized Input UI', async ({ page }) => {
       const categoryInput = page.locator('#nodeCategory');
       const tagName = await categoryInput.evaluate(el => el.tagName.toLowerCase());
@@ -495,6 +501,7 @@ test.describe('F6: Alias Dictionary (Standardization)', () => {
       expect(autocomplete).not.toBe('off');
     });
 
+    // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(locator).toBeVisible() failed). 기능 결함/스펙 변경/무효 여부 미판정
     test.skip('Autocomplete Suggestion', async ({ page }) => {
       const categoryInput = page.locator('#nodeCategory');
       await categoryInput.fill('synonym');

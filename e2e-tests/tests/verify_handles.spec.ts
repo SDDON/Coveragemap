@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 
+// SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: No onscreen node found to test!). 기능 결함/스펙 변경/무효 여부 미판정
 test.skip('Verify node center is draggable and handles are at top/bottom 10px', async ({ page }) => {
   await page.goto('http://localhost:5173');
   await page.waitForSelector('.react-flow__node');

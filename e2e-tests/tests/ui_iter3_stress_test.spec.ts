@@ -13,6 +13,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Iteration 3 UI Enhancements Stress Test', () => {
+  // SKIP-REASON: 트리아지 대기 - 2026-10-04 skip 해제 재실행 시 실패(Error: expect(locator).toBeVisible() failed). 기능 결함/스펙 변경/무효 여부 미판정
   test.skip('verify Focus+Context, Directional Colors, and Full-boundary connections', async ({ page }) => {
     test.setTimeout(120000);
                 let fakeNodes = [];
