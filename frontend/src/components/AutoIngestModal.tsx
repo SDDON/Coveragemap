@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { t } from '../locales/koKR';
 
 interface AutoIngestModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  // 현재 선택된 워크스페이스(alias 필터). 빈 문자열이면 '전체 보기' 상태
+  workspace: string;
 }
 
 interface ParsedNode {
@@ -28,98 +31,41 @@ interface ParsedGraph {
   edges: ParsedEdge[];
 }
 
-const SAMPLE_SPEC_TEXT = `# 가차 소환 시스템 기획서
+// 이전 버전에서 브라우저에 저장하던 외부 LLM API 키 (기능 제거에 따라 정리 대상)
+const LEGACY_API_KEY_STORAGE = 'coveragemap_gemini_api_key';
 
-## 일반 소환 화면
-일반 상시 워프(가차) 화면입니다. 1회 뽑기와 10회 뽑기 기능을 제공합니다.
-
-### 1회 뽑기 버튼
-- 클릭 시 성옥 160개 소모 후 가차 연출 영상 재생
-- 재화 부족 시 상점 충전 팝업 노출 확인
-- 21:9 해상도에서 버튼 위치 및 이펙트 정렬 확인
-
-### 10회 뽑기 버튼
-- 성옥 1,600개 소모 후 10연차 연출 재생
-- 10회 뽑기 시 4성 이상 1개 확정 지급 검증
-- 다국어 폰트 줄바꿈 검증
-
-## 픽업 이벤트 화면
-한정 픽업 캐릭터 전용 소환 화면입니다.
-
-### 픽업 확률 정보 모달
-- 상세 확률표 팝업 표시
-- 다국어 텍스트 및 확률 수치(0.6%) 표기 검증
-`;
-
-const SAMPLE_CSV_TEXT = `Screen,Feature,TestCase,Prerequisite,CrossCutting,Description
-인벤토리 화면,아이템 분해,일반 등급 장비 일괄 분해 검증,,다국어,인벤토리 가방 내 장비 분해
-인벤토리 화면,아이템 분해,잠금된 장비 분해 시도 시 경고 팝업,아이템 분해,다국어,잠금 보호 로직 검증
-인벤토리 화면,장비 강화,강화 재료 투입 후 골드 소모 검증,로그인 완료,"다국어, 21:9",골드 및 재료 차감
-인벤토리 화면,장비 강화,골드 부족 시 상점 이동 모달 확인,장비 강화,다국어,예외 처리
-상점 화면,패키지 구매,한정 패키지 결제 완료 후 인벤토리 지급 검증,로그인 완료,네트워크,결제 모듈 연동
-`;
-
-export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClose, onSuccess }) => {
-  const [activeTab, setActiveTab] = useState<'spec' | 'csv'>('csv');
-  const [specInput, setSpecInput] = useState<string>('');
+export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClose, onSuccess, workspace }) => {
   const [csvInput, setCsvInput] = useState<string>('');
-  const [apiKey, setApiKey] = useState<string>(() => {
-    return localStorage.getItem('coveragemap_gemini_api_key') || '';
-  });
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.8-flash');
-  const [showApiKey, setShowApiKey] = useState<boolean>(false);
-  const [isConfigOpen, setIsConfigOpen] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [parsedGraph, setParsedGraph] = useState<ParsedGraph | null>(null);
   const [cleanDb, setCleanDb] = useState<boolean>(false);
   const [isApplying, setIsApplying] = useState<boolean>(false);
+  // clean 적용 전 dry-run으로 받은 삭제 대상 노드 이름 목록. null이면 확인 단계가 아님
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null);
+
+  const hasWorkspace = workspace.trim().length > 0;
+
+  useEffect(() => {
+    // 외부 LLM 기능 제거: 남아 있는 API 키를 1회 정리
+    if (isOpen) localStorage.removeItem(LEGACY_API_KEY_STORAGE);
+  }, [isOpen]);
+
+  useEffect(() => {
+    // 워크스페이스가 없으면 clean 옵션을 강제로 해제
+    if (!hasWorkspace) setCleanDb(false);
+  }, [hasWorkspace]);
 
   if (!isOpen) return null;
 
-  const handleApiKeyChange = (val: string) => {
-    setApiKey(val);
-    if (val.trim()) {
-      localStorage.setItem('coveragemap_gemini_api_key', val.trim());
-    } else {
-      localStorage.removeItem('coveragemap_gemini_api_key');
-    }
-  };
-
-  const handleParseSpec = async () => {
-    if (!specInput.trim()) {
-      setError('기획서 텍스트를 입력해주세요.');
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/ingest/parse-spec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          spec_text: specInput,
-          api_key: apiKey.trim() || undefined,
-          model: selectedModel
-        })
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data: ParsedGraph = await res.json();
-      setParsedGraph(data);
-    } catch (err: any) {
-      setError(`기획서 분석 실패: ${err.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleParseCsv = async () => {
     if (!csvInput.trim()) {
-      setError('CSV 내용을 입력해주세요.');
+      setError(t.ingest.emptyInput);
       return;
     }
     setIsLoading(true);
     setError(null);
+    setPendingDelete(null);
     try {
       const res = await fetch('/api/ingest/parse-csv', {
         method: 'POST',
@@ -130,10 +76,22 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
       const data: ParsedGraph = await res.json();
       setParsedGraph(data);
     } catch (err: any) {
-      setError(`CSV 파싱 실패: ${err.message}`);
+      setError(`${t.ingest.parseFailed}: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 백엔드 적용 호출. dryRun=true이면 DB를 바꾸지 않고 예상 결과만 받음
+  const callApply = async (dryRun: boolean) => {
+    const params = new URLSearchParams({ clean: String(cleanDb), dry_run: String(dryRun) });
+    const res = await fetch(`/api/ingest/apply?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...parsedGraph, workspace })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
   };
 
   const handleApply = async () => {
@@ -141,16 +99,32 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
     setIsApplying(true);
     setError(null);
     try {
-      const res = await fetch(`/api/ingest/apply?clean=${cleanDb}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(parsedGraph)
-      });
-      if (!res.ok) throw new Error(await res.text());
+      if (cleanDb) {
+        // 파괴적 작업: 먼저 삭제 대상을 보여주고 확인을 받음
+        const preview = await callApply(true);
+        setPendingDelete(preview.will_delete || []);
+        return;
+      }
+      await callApply(false);
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(`적용 실패: ${err.message}`);
+      setError(`${t.ingest.applyFailed}: ${err.message}`);
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    setIsApplying(true);
+    setError(null);
+    try {
+      await callApply(false);
+      setPendingDelete(null);
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      setError(`${t.ingest.applyFailed}: ${err.message}`);
     } finally {
       setIsApplying(false);
     }
@@ -160,8 +134,15 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
   const features = parsedGraph?.nodes.filter(n => n.label === 'Feature') || [];
   const testcases = parsedGraph?.nodes.filter(n => n.label === 'TestCase') || [];
 
+  const countCard = (value: number, label: string, color: string) => (
+    <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
+      <div style={{ fontSize: '1.25rem', fontWeight: 800, color }}>{value}</div>
+      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{label}</div>
+    </div>
+  );
+
   return (
-    <div 
+    <div
       className="auto-ingest-overlay"
       style={{
         position: 'fixed',
@@ -179,7 +160,7 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
       }}
       onClick={onClose}
     >
-      <div 
+      <div
         className="auto-ingest-modal"
         style={{
           backgroundColor: '#ffffff',
@@ -205,70 +186,19 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
           backgroundColor: '#f8fafc'
         }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              ⚡ 신작 게임 테스트 자동 그래프 셋업 (Auto Ingestion)
+            <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#0f172a' }}>
+              {t.ingest.title}
             </h2>
             <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
-              수작업 없이 기획서 텍스트나 엑셀 시트로부터 화면, 기능, 테스트케이스 및 의존성을 일괄 자동 생성합니다.
+              {t.ingest.subtitle}
             </p>
           </div>
-          <button 
+          <button
             onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              fontSize: '1.5rem',
-              color: '#94a3b8',
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: '6px'
-            }}
+            aria-label={t.ingest.cancel}
+            style={{ background: 'transparent', border: 'none', fontSize: '1.5rem', color: '#94a3b8', cursor: 'pointer', padding: '4px 8px', borderRadius: '6px' }}
           >
             ✕
-          </button>
-        </div>
-
-        {/* Tab Navigation */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f1f5f9' }}>
-          <button
-            onClick={() => { setActiveTab('csv'); setParsedGraph(null); }}
-            style={{
-              flex: 1,
-              padding: '12px 16px',
-              border: 'none',
-              borderBottom: activeTab === 'csv' ? '3px solid #0284c7' : '3px solid transparent',
-              background: activeTab === 'csv' ? '#ffffff' : 'transparent',
-              fontWeight: activeTab === 'csv' ? 700 : 500,
-              color: activeTab === 'csv' ? '#0369a1' : '#64748b',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              fontSize: '0.95rem'
-            }}
-          >
-            📊 엑셀/CSV 일괄 임포트 (보안 안전 / 로컬 100%)
-          </button>
-          <button
-            onClick={() => { setActiveTab('spec'); setParsedGraph(null); }}
-            style={{
-              flex: 1,
-              padding: '12px 16px',
-              border: 'none',
-              borderBottom: activeTab === 'spec' ? '3px solid #3b82f6' : '3px solid transparent',
-              background: activeTab === 'spec' ? '#ffffff' : 'transparent',
-              fontWeight: activeTab === 'spec' ? 700 : 500,
-              color: activeTab === 'spec' ? '#1e40af' : '#64748b',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              fontSize: '0.95rem'
-            }}
-          >
-            📝 로컬 기획서 파서 (마크다운 규칙 기반)
           </button>
         </div>
 
@@ -280,321 +210,102 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
             </div>
           )}
 
-          {activeTab === 'spec' ? (
-            <div>
-              {/* Optional Gemini API Config */}
-              <div style={{
-                marginBottom: '14px',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                backgroundColor: apiKey ? '#f0fdf4' : '#f8fafc',
-                overflow: 'hidden'
-              }}>
-                <div 
-                  onClick={() => setIsConfigOpen(!isConfigOpen)}
-                  style={{
-                    padding: '10px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    userSelect: 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '1rem' }}>⚙️</span>
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>
-                      Google Gemini API 설정 (선택 사항)
-                    </span>
-                    <span style={{
-                      fontSize: '0.75rem',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      backgroundColor: apiKey ? '#dcfce7' : '#e2e8f0',
-                      color: apiKey ? '#15803d' : '#64748b',
-                      fontWeight: 600
-                    }}>
-                      {apiKey ? `🟢 ${selectedModel} 활성화` : '⚪ 로컬 규칙 파서 모드'}
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                    {isConfigOpen ? '▲ 접기' : '▼ 설정 열기'}
-                  </span>
-                </div>
+          <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem' }}>
+            {t.ingest.localNotice}
+          </div>
 
-                {isConfigOpen && (
-                  <div style={{ padding: '0 14px 14px 14px', borderTop: '1px solid #e2e8f0', backgroundColor: '#ffffff' }}>
-                    <p style={{ margin: '10px 0 8px 0', fontSize: '0.8rem', color: '#64748b', lineHeight: 1.4 }}>
-                      💡 <strong>API 키를 비워두면</strong> 외부 통신 없이 100% 로컬 규칙 기반 파서로 동작합니다.<br/>
-                      💡 Google AI Studio에서 발급받은 Gemini API 키를 입력하면 비정형 기획서 원문을 고품질 그래프로 정밀 분석합니다. (사내 보안 정책상 허용된 경우에만 사용하세요)
-                    </p>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <input 
-                        type={showApiKey ? 'text' : 'password'}
-                        value={apiKey}
-                        onChange={(e) => handleApiKeyChange(e.target.value)}
-                        placeholder="AI Studio Gemini API Key 입력..."
-                        style={{
-                          flex: 1,
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '0.85rem',
-                          fontFamily: 'monospace'
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        style={{
-                          padding: '8px 12px',
-                          backgroundColor: '#f1f5f9',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '6px',
-                          fontSize: '0.8rem',
-                          cursor: 'pointer',
-                          color: '#475569'
-                        }}
-                      >
-                        {showApiKey ? '숨기기' : '보기'}
-                      </button>
-                      {apiKey && (
-                        <button
-                          type="button"
-                          onClick={() => handleApiKeyChange('')}
-                          style={{
-                            padding: '8px 12px',
-                            backgroundColor: '#fee2e2',
-                            border: '1px solid #fecaca',
-                            borderRadius: '6px',
-                            fontSize: '0.8rem',
-                            cursor: 'pointer',
-                            color: '#b91c1c'
-                          }}
-                        >
-                          삭제
-                        </button>
-                      )}
-                    </div>
-                    <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
-                        Gemini 모델:
-                      </label>
-                      <select 
-                        value={selectedModel}
-                        onChange={(e) => setSelectedModel(e.target.value)}
-                        style={{
-                          padding: '5px 8px',
-                          borderRadius: '6px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '0.8rem',
-                          backgroundColor: '#f8fafc',
-                          color: '#1e293b',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="gemini-3.8-flash">gemini-3.8-flash (2026 최신 추천 - 초고속 / 고품질)</option>
-                        <option value="gemini-2.5-flash">gemini-2.5-flash (안정화 모델)</option>
-                        <option value="gemini-1.5-flash">gemini-1.5-flash (레거시 모델)</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {!apiKey && (
-                <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>🛡️ <strong>100% 로컬 처리 모드:</strong> API 키가 설정되지 않아 외부 서버 통신 없이 PC 내부 휴리스틱 파서로 안전하게 분석합니다.</span>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
-                  게임 기획서 / 기능 명세서 텍스트 붙여넣기:
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setSpecInput(SAMPLE_SPEC_TEXT)}
-                  style={{
-                    backgroundColor: '#e0f2fe',
-                    color: '#0369a1',
-                    border: '1px solid #bae6fd',
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    fontWeight: 600
-                  }}
-                >
-                  📋 샘플 기획서 채우기 (가차 시스템)
-                </button>
-              </div>
-              <textarea
-                value={specInput}
-                onChange={(e) => setSpecInput(e.target.value)}
-                placeholder="Notion, Confluence, 마크다운 기획서의 내용을 복사하여 붙여넣으세요..."
-                rows={9}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  resize: 'vertical'
-                }}
-              />
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label htmlFor="ingest-csv-input" style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
+                {t.ingest.inputLabel}
+              </label>
               <button
                 type="button"
-                onClick={handleParseSpec}
-                disabled={isLoading}
-                style={{
-                  marginTop: '10px',
-                  width: '100%',
-                  backgroundColor: apiKey ? '#7c3aed' : '#2563eb',
-                  color: '#ffffff',
-                  padding: '10px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                  cursor: isLoading ? 'not-allowed' : 'pointer',
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
+                onClick={() => setCsvInput(t.ingest.sampleCsv)}
+                style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer', fontWeight: 600 }}
               >
-                {isLoading 
-                  ? (apiKey ? `⏳ ${selectedModel} 모델이 기획서를 정밀 분석 중...` : '⏳ 기획서 구조 분석 중...') 
-                  : (apiKey ? `✨ ${selectedModel} 기획서 정밀 분석 실행` : '⚡ 로컬 마크다운 구조 분석 실행')}
+                {t.ingest.fillSample}
               </button>
             </div>
-          ) : (
-            <div>
-              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>🛡️ <strong>100% 로컬 인하우스 파싱:</strong> 어떠한 외부 AI API나 클라우드 서버도 호출하지 않습니다. 로컬 파이썬 엔진에서 테이블을 즉시 그래프로 매핑합니다.</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <label style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
-                  CSV 내용 붙여넣기 (Screen, Feature, TestCase, Prerequisite, CrossCutting):
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setCsvInput(SAMPLE_CSV_TEXT)}
-                  style={{
-                    backgroundColor: '#e0f2fe',
-                    color: '#0369a1',
-                    border: '1px solid #bae6fd',
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    fontSize: '0.75rem',
-                    cursor: 'pointer',
-                    fontWeight: 600
-                  }}
-                >
-                  📋 표준 CSV 템플릿 채우기 (인벤토리)
-                </button>
-              </div>
-              <textarea
-                value={csvInput}
-                onChange={(e) => setCsvInput(e.target.value)}
-                placeholder="Screen,Feature,TestCase,Prerequisite,CrossCutting,Description..."
-                rows={9}
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  padding: '12px',
-                  borderRadius: '8px',
-                  border: '1px solid #cbd5e1',
-                  resize: 'vertical'
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleParseCsv}
-                disabled={isLoading}
-                style={{
-                  marginTop: '10px',
-                  width: '100%',
-                  backgroundColor: '#0284c7',
-                  color: '#ffffff',
-                  padding: '10px',
-                  borderRadius: '8px',
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                  cursor: isLoading ? 'not-allowed' : 'pointer',
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px'
-                }}
-              >
-                {isLoading ? '⏳ CSV 데이터 파싱 중...' : '⚡ CSV 구조 분석 실행'}
-              </button>
-            </div>
-          )}
+            <textarea
+              id="ingest-csv-input"
+              value={csvInput}
+              onChange={(e) => setCsvInput(e.target.value)}
+              placeholder="Screen,Feature,TestCase,Prerequisite,CrossCutting,Description..."
+              rows={9}
+              style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'monospace', fontSize: '0.85rem', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', resize: 'vertical' }}
+            />
+            <button
+              type="button"
+              onClick={handleParseCsv}
+              disabled={isLoading}
+              style={{ marginTop: '10px', width: '100%', backgroundColor: '#0284c7', color: '#ffffff', padding: '10px', borderRadius: '8px', fontWeight: 600, fontSize: '0.95rem', cursor: isLoading ? 'not-allowed' : 'pointer', border: 'none' }}
+            >
+              {isLoading ? t.ingest.parsing : t.ingest.parse}
+            </button>
+          </div>
 
           {/* Analysis Preview Section */}
           {parsedGraph && (
-            <div style={{
-              marginTop: '12px',
-              border: '1px solid #cbd5e1',
-              borderRadius: '12px',
-              padding: '16px',
-              backgroundColor: '#f8fafc',
-              animation: 'fadeIn 0.2s ease-in'
-            }}>
+            <div style={{ border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px', backgroundColor: '#f8fafc' }}>
               <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#0f172a', fontWeight: 700 }}>
-                🔍 분석 결과 미리보기 (Preview)
+                {t.ingest.previewTitle}
               </h3>
-              
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '14px' }}>
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#3b82f6' }}>{screens.length}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Screen (화면)</div>
-                </div>
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#10b981' }}>{features.length}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Feature (기능)</div>
-                </div>
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#8b5cf6' }}>{testcases.length}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>TestCase (검증 시나리오)</div>
-                </div>
-                <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f59e0b' }}>{parsedGraph.edges.length}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Edges (의존성/전이)</div>
-                </div>
+                {countCard(screens.length, t.ingest.countScreen, '#3b82f6')}
+                {countCard(features.length, t.ingest.countFeature, '#10b981')}
+                {countCard(testcases.length, t.ingest.countTestCase, '#8b5cf6')}
+                {countCard(parsedGraph.edges.length, t.ingest.countEdges, '#f59e0b')}
               </div>
 
               {/* Sample Nodes List */}
               <div style={{ maxHeight: '160px', overflowY: 'auto', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px', fontSize: '0.8rem' }}>
-                <div style={{ fontWeight: 600, color: '#475569', marginBottom: '6px' }}>생성될 주요 노드 목록:</div>
+                <div style={{ fontWeight: 600, color: '#475569', marginBottom: '6px' }}>{t.ingest.previewNodeList}</div>
                 {parsedGraph.nodes.map((n, idx) => (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 0' }}>
                     <span style={{
                       backgroundColor: n.label === 'Screen' ? '#dbeafe' : n.label === 'Feature' ? '#d1fae5' : '#ede9fe',
                       color: n.label === 'Screen' ? '#1e40af' : n.label === 'Feature' ? '#065f46' : '#5b21b6',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      fontSize: '0.7rem',
-                      fontWeight: 600
+                      padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600
                     }}>
                       {n.label}
                     </span>
                     <span style={{ fontWeight: 500, color: '#1e293b' }}>{n.name}</span>
                     {n.aliases && n.aliases.length > 0 && (
-                      <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>
-                        [{n.aliases.join(', ')}]
-                      </span>
+                      <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>[{n.aliases.join(', ')}]</span>
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Clean 적용 전 삭제 확인 단계 */}
+          {pendingDelete !== null && (
+            <div data-testid="ingest-delete-confirm" style={{ border: '1px solid #fca5a5', borderRadius: '12px', padding: '16px', backgroundColor: '#fef2f2' }}>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: '1rem', color: '#991b1b', fontWeight: 700 }}>{t.ingest.confirmTitle}</h3>
+              <p style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#7f1d1d' }}>
+                {t.ingest.confirmBody(workspace, pendingDelete.length)}
+              </p>
+              {pendingDelete.length > 0 && (
+                <ul style={{ maxHeight: '140px', overflowY: 'auto', margin: '0 0 12px 0', padding: '8px 12px 8px 28px', backgroundColor: '#ffffff', border: '1px solid #fecaca', borderRadius: '8px', fontSize: '0.8rem' }}>
+                  {pendingDelete.map((name, idx) => <li key={idx}>{name}</li>)}
+                </ul>
+              )}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setPendingDelete(null)}
+                  style={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontWeight: 600, color: '#475569', cursor: 'pointer' }}
+                >
+                  {t.ingest.confirmBack}
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={isApplying}
+                  style={{ backgroundColor: isApplying ? '#94a3b8' : '#dc2626', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 700, cursor: isApplying ? 'not-allowed' : 'pointer' }}
+                >
+                  {isApplying ? t.ingest.applying : t.ingest.confirmProceed}
+                </button>
               </div>
             </div>
           )}
@@ -607,50 +318,42 @@ export const AutoIngestModal: React.FC<AutoIngestModalProps> = ({ isOpen, onClos
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          gap: '16px',
           backgroundColor: '#f8fafc'
         }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: '#475569', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={cleanDb}
-              onChange={(e) => setCleanDb(e.target.checked)}
-              style={{ width: '16px', height: '16px' }}
-            />
-            <span>기존 캔버스 비우고 새로 적용 (Clean Apply)</span>
-          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem', color: '#475569' }}>
+            <span>
+              {t.ingest.targetWorkspace}: <strong data-testid="ingest-target-workspace">{hasWorkspace ? workspace : t.ingest.noWorkspace}</strong>
+            </span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: hasWorkspace ? 'pointer' : 'not-allowed', color: hasWorkspace ? '#475569' : '#94a3b8' }}>
+              <input
+                type="checkbox"
+                checked={cleanDb}
+                disabled={!hasWorkspace}
+                onChange={(e) => { setCleanDb(e.target.checked); setPendingDelete(null); }}
+                style={{ width: '16px', height: '16px' }}
+              />
+              <span>{hasWorkspace ? t.ingest.cleanApply : t.ingest.cleanRequiresWorkspace}</span>
+            </label>
+          </div>
 
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               onClick={onClose}
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontWeight: 600,
-                color: '#475569',
-                cursor: 'pointer'
-              }}
+              style={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontWeight: 600, color: '#475569', cursor: 'pointer' }}
             >
-              취소
+              {t.ingest.cancel}
             </button>
             <button
               onClick={handleApply}
-              disabled={!parsedGraph || isApplying}
+              disabled={!parsedGraph || isApplying || pendingDelete !== null}
               style={{
-                backgroundColor: (!parsedGraph || isApplying) ? '#94a3b8' : '#16a34a',
-                color: '#ffffff',
-                border: 'none',
-                padding: '8px 20px',
-                borderRadius: '8px',
-                fontWeight: 700,
-                cursor: (!parsedGraph || isApplying) ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
+                backgroundColor: (!parsedGraph || isApplying || pendingDelete !== null) ? '#94a3b8' : '#16a34a',
+                color: '#ffffff', border: 'none', padding: '8px 20px', borderRadius: '8px', fontWeight: 700,
+                cursor: (!parsedGraph || isApplying || pendingDelete !== null) ? 'not-allowed' : 'pointer'
               }}
             >
-              {isApplying ? '적용 중...' : '🚀 CoverageMap 캔버스에 적용'}
+              {isApplying ? (cleanDb && pendingDelete === null ? t.ingest.checking : t.ingest.applying) : t.ingest.apply}
             </button>
           </div>
         </div>

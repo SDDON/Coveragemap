@@ -10,7 +10,7 @@ from graph_service import (
     get_impact_nodes
 )
 from preset_service import (
-    list_presets, get_preset, load_preset_to_neo4j, save_current_graph_as_preset
+    list_presets, get_preset, load_preset_to_neo4j, save_current_graph_as_preset, create_auto_backup
 )
 import uvicorn
 
@@ -172,10 +172,21 @@ def api_get_preset(preset_id: str):
     return get_preset(preset_id)
 
 @app.post("/api/presets/{preset_id}/load")
-def api_load_preset(preset_id: str, clean: bool = Query(True, description="Clear existing database before loading"), session = Depends(get_db)):
+def api_load_preset(preset_id: str, clean: bool = Query(False, description="Clear existing database before loading (auto-backup is created first)"), session = Depends(get_db)):
     """Load a preset into Neo4j."""
     try:
-        return load_preset_to_neo4j(session, preset_id, clean=clean)
+        backup = None
+        if clean:
+            # DB 전체 교체 전 자동 백업 (복원: 프리셋 목록의 '_autobackup_' 항목)
+            backup = create_auto_backup(session, f"프리셋 '{preset_id}' Clean Load")
+        result = load_preset_to_neo4j(session, preset_id, clean=clean)
+        if backup:
+            result["backup_preset_id"] = backup["preset_id"]
+        return result
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -221,7 +232,7 @@ def api_qa_next_targets(session = Depends(get_db)):
 
 # ─── Ingestion Endpoints ───────────────────────────────────────────
 
-from models import CsvIngestRequest, SpecIngestRequest, ApplyIngestRequest
+from models import CsvIngestRequest, ApplyIngestRequest
 
 @app.post("/api/ingest/parse-csv")
 def api_parse_csv(req: CsvIngestRequest):
@@ -232,21 +243,31 @@ def api_parse_csv(req: CsvIngestRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/api/ingest/parse-spec")
-def api_parse_spec(req: SpecIngestRequest):
-    """기획서 텍스트를 분석하여 구조화된 그래프 JSON으로 변환합니다."""
-    from ingest_service import parse_spec_text_to_graph
-    try:
-        return parse_spec_text_to_graph(req.spec_text, req.api_key, req.model)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
 @app.post("/api/ingest/apply")
-def api_apply_ingested(req: ApplyIngestRequest, clean: bool = Query(False, description="Clear existing database before applying"), session = Depends(get_db)):
-    """파싱된 노드와 엣지를 Neo4j에 일괄 적용합니다."""
-    from ingest_service import apply_ingested_graph_to_neo4j
+def api_apply_ingested(
+    req: ApplyIngestRequest,
+    clean: bool = Query(False, description="Delete existing nodes tagged with the request workspace before applying"),
+    dry_run: bool = Query(False, description="Preview deletions/creations without writing"),
+    session = Depends(get_db)
+):
+    """
+    파싱된 노드와 엣지를 Neo4j에 일괄 적용합니다.
+    clean=True는 req.workspace 태그를 가진 노드만 삭제하며(DB 전체 삭제 아님), 실제 삭제 전 자동 백업을 생성합니다.
+    """
+    from ingest_service import apply_ingested_graph_to_neo4j, find_workspace_nodes
     try:
-        return apply_ingested_graph_to_neo4j(session, req.model_dump(), clean=clean)
+        payload = req.model_dump()
+        backup = None
+        if clean and not dry_run and req.workspace.strip() and find_workspace_nodes(session, req.workspace):
+            backup = create_auto_backup(session, f"워크스페이스 '{req.workspace}' CSV 가져오기(clean)")
+        result = apply_ingested_graph_to_neo4j(
+            session, payload, workspace=req.workspace, clean=clean, dry_run=dry_run
+        )
+        if backup:
+            result["backup_preset_id"] = backup["preset_id"]
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -254,9 +275,6 @@ if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8190, reload=True)
 
 # trigger reload
-@app.get('/api/dictionary')
-def get_dictionary(term: str):
-    return {'standardTerm': 'valid_category'}
 @app.post("/api/dev/reset-seed")
 def api_reset_seed():
     import subprocess, sys, os

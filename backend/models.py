@@ -3,6 +3,10 @@ from typing import List, Optional, Dict, Any, Literal
 
 TestStatus = Literal["Untested", "Passed", "Failed", "Blocked"]
 
+# Cypher의 라벨/관계 타입은 쿼리 파라미터로 바인딩할 수 없어 문자열로 삽입됩니다.
+# 백틱(`) 탈출에 의한 Cypher 인젝션을 막기 위해 허용 문자를 영문/한글/숫자/밑줄로 제한합니다.
+IDENTIFIER_PATTERN = r"^[A-Za-z가-힣_][A-Za-z0-9가-힣_]{0,63}$"
+
 class NodeModel(BaseModel):
     id: str
     label: str
@@ -23,7 +27,7 @@ class EdgeModel(BaseModel):
     test_status: TestStatus = "Untested"
 
 class NodeCreate(BaseModel):
-    label: str = Field(..., pattern=r"^.*$")
+    label: str = Field(..., pattern=IDENTIFIER_PATTERN)
     name: str
     aliases: List[str] = Field(default_factory=list)
     description: Optional[str] = None
@@ -34,7 +38,7 @@ class NodeCreate(BaseModel):
     override_reason: Optional[str] = None
 
 class NodeUpdate(BaseModel):
-    label: Optional[str] = None
+    label: Optional[str] = Field(None, pattern=IDENTIFIER_PATTERN)
     name: Optional[str] = None
     aliases: Optional[List[str]] = None
     description: Optional[str] = None
@@ -47,13 +51,13 @@ class NodeUpdate(BaseModel):
 class EdgeCreate(BaseModel):
     source: str
     target: str
-    type: str = Field(..., pattern=r"^.*$")
+    type: str = Field(..., pattern=IDENTIFIER_PATTERN)
     action: Optional[str] = None
     properties: Dict[str, Any] = Field(default_factory=dict)
     test_status: TestStatus = "Untested"
 
 class EdgeUpdate(BaseModel):
-    type: Optional[str] = None
+    type: Optional[str] = Field(None, pattern=IDENTIFIER_PATTERN)
     action: Optional[str] = None
     properties: Optional[Dict[str, Any]] = None
     test_status: Optional[TestStatus] = None
@@ -116,14 +120,30 @@ class NextTestTarget(BaseModel):
 class CsvIngestRequest(BaseModel):
     csv_text: str
 
-class SpecIngestRequest(BaseModel):
-    spec_text: str
-    api_key: Optional[str] = None
-    model: Optional[str] = "gemini-3.8-flash"
-
 class ApplyIngestRequest(BaseModel):
-    nodes: List[Dict[str, Any]]
-    edges: List[Dict[str, Any]]
+    nodes: List["IngestNode"]
+    edges: List["IngestEdge"]
+    # 가져온 노드에 붙일 워크스페이스(alias) 태그. 빈 문자열이면 '전체 보기' 상태이며 clean 적용이 금지됨
+    workspace: str = ""
+
+class IngestNode(BaseModel):
+    id: str
+    label: str = Field("Feature", pattern=IDENTIFIER_PATTERN)
+    name: str
+    aliases: List[str] = Field(default_factory=list)
+    description: Optional[str] = ""
+    test_status: TestStatus = "Untested"
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+class IngestEdge(BaseModel):
+    source: str
+    target: str
+    type: str = Field("Depends_On", pattern=IDENTIFIER_PATTERN)
+    action: Optional[str] = ""
+    test_status: TestStatus = "Untested"
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+ApplyIngestRequest.model_rebuild()
 
 
 

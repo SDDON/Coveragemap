@@ -2249,13 +2249,15 @@ export default function App() {
         }}
       />
 
-      {/* Auto Ingest Modal (AI Spec & CSV Parser) */}
+      {/* Auto Ingest Modal (CSV Parser) */}
       <AutoIngestModal
         isOpen={showAutoIngest}
         onClose={() => setShowAutoIngest(false)}
+        workspace={filterText}
         onSuccess={() => {
-          setFilterText('');
-          setShowAllDomains(true);
+          // 가져온 노드에는 현재 워크스페이스 태그가 붙으므로 워크스페이스를 유지하고,
+          // 워크스페이스가 없을 때만 전체 보기로 전환
+          if (!filterText) setShowAllDomains(true);
           triggerRefresh();
           setTimeout(() => {
             if (rfInstance) rfInstance.fitView({ padding: 0.15, duration: 600 });
