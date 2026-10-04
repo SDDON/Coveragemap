@@ -2,6 +2,8 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from graph_service import create_node, update_node, delete_node, create_edge, update_edge, delete_edge
 from models import NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate
+from pydantic import ValidationError
+from conftest import make_recalc_aware_session
 
 def test_create_node():
     mock_session = Mock()
@@ -70,11 +72,8 @@ def test_delete_node():
     assert any("DETACH DELETE n" in q for q in called_queries)
 
 def test_create_edge():
-    mock_session = Mock()
-    mock_result = Mock()
-    mock_record = {"id": "mock_edge_id"}
-    mock_result.single.return_value = mock_record
-    mock_session.run.return_value = mock_result
+    # 스펙 변경(d54aa5f): 엣지 생성 후 대상 노드 상태 재합성 쿼리가 실행되므로, 재합성 레코드를 돌려주는 Mock 사용
+    mock_session = make_recalc_aware_session({"id": "mock_edge_id"})
 
     edge_data = EdgeCreate(
         source="node1",
@@ -94,10 +93,7 @@ def test_create_edge():
     assert any("OPTIONAL MATCH ()-[in_r]->(target)" in q for q in called_queries)
 
 def test_update_edge():
-    mock_session = Mock()
-    mock_result = MagicMock()
-    mock_result.single.return_value = {"new_id": "mock_edge_id", "target_id": "node2"}
-    mock_session.run.return_value = mock_result
+    mock_session = make_recalc_aware_session({"new_id": "mock_edge_id", "target_id": "node2"})
     
     edge_data = EdgeUpdate(
         test_status="Passed",
@@ -113,10 +109,7 @@ def test_update_edge():
     assert any("OPTIONAL MATCH ()-[in_r]->(target)" in q for q in called_queries)
 
 def test_delete_edge():
-    mock_session = Mock()
-    mock_result = MagicMock()
-    mock_result.single.return_value = {"target_id": "node2"}
-    mock_session.run.return_value = mock_result
+    mock_session = make_recalc_aware_session({"target_id": "node2"})
     
     delete_edge(mock_session, "mock_edge_id")
     
@@ -125,4 +118,13 @@ def test_delete_edge():
     called_queries = [args[0][0] for args in mock_session.run.call_args_list]
     assert any("DELETE r" in q for q in called_queries)
     assert any("OPTIONAL MATCH ()-[in_r]->(target)" in q for q in called_queries)
+
+def test_create_edge_rejects_injection_type():
+    # Cypher 인젝션 방지: 관계 타입은 IDENTIFIER_PATTERN(영문/한글/숫자/밑줄)만 허용
+    with pytest.raises(ValidationError):
+        EdgeCreate(source="a", target="b", type="T`]->() DETACH DELETE (x")
+
+def test_create_node_rejects_injection_label():
+    with pytest.raises(ValidationError):
+        NodeCreate(label="X`) DETACH DELETE (m", name="n")
 

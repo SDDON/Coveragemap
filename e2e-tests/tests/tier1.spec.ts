@@ -456,11 +456,25 @@ test.describe('F5: Config Panel & Loading UI', () => {
 
 test.describe('F6: Alias Dictionary (Standardization)', () => {
   test('Backend Alias Normalization', async ({ request }) => {
-    const response = await request.get('/api/dictionary?term=synonym_xyz');
-    expect(response.status()).toBe(200);
-    const body = await response.json();
-    expect(body.standardTerm).toBeDefined();
-    expect(body.standardTerm).not.toBe('synonym_xyz');
+    // 스펙 변경: 스텁이던 /api/dictionary는 제거됨(grill-me Q6).
+    // 실제 표준화 로직(ALIAS_MAP: 'front-end' -> 'frontend')이 그래프 응답에 반영되는지 검증합니다.
+    const uniqueName = `alias_norm_${Date.now()}`;
+    const createRes = await request.post('/api/nodes', {
+      data: { label: 'Feature', name: uniqueName, aliases: ['front-end'] }
+    });
+    expect(createRes.status()).toBe(200);
+    const nodeId = await createRes.json();
+    try {
+      const graphRes = await request.get('/api/graph');
+      expect(graphRes.status()).toBe(200);
+      const graph = await graphRes.json();
+      const node = graph.nodes.find((n: { name: string }) => n.name === uniqueName);
+      expect(node).toBeDefined();
+      expect(node.aliases).toContain('frontend');
+      expect(node.aliases).not.toContain('front-end');
+    } finally {
+      await request.delete(`/api/nodes/${encodeURIComponent(nodeId)}`);
+    }
   });
 
   test.describe('UI Tests', () => {

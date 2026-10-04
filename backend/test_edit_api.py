@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch, MagicMock
 from main import app
 from database import get_db
+from conftest import make_recalc_aware_session
 
 # Create a test client
 client = TestClient(app)
@@ -61,8 +62,8 @@ def test_api_delete_node():
     app.dependency_overrides.clear()
 
 def test_api_create_edge():
-    mock_session = Mock()
-    mock_session.run.return_value.single.return_value = {"id": "e1"}
+    # 스펙 변경(d54aa5f): 엣지 CRUD 후 상태 재합성 쿼리가 실행되므로 재합성 레코드를 돌려주는 Mock 사용
+    mock_session = make_recalc_aware_session({"id": "e1"})
     app.dependency_overrides[get_db] = lambda: mock_session
     
     response = client.post("/api/edges", json={
@@ -78,10 +79,7 @@ def test_api_create_edge():
     app.dependency_overrides.clear()
 
 def test_api_update_edge():
-    mock_session = Mock()
-    mock_result = MagicMock()
-    mock_result.single.return_value = {"new_id": "e1", "target_id": "n2"}
-    mock_session.run.return_value = mock_result
+    mock_session = make_recalc_aware_session({"new_id": "e1", "target_id": "n2"})
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
@@ -95,10 +93,7 @@ def test_api_update_edge():
     app.dependency_overrides.clear()
 
 def test_api_delete_edge():
-    mock_session = Mock()
-    mock_result = MagicMock()
-    mock_result.single.return_value = {"target_id": "n2"}
-    mock_session.run.return_value = mock_result
+    mock_session = make_recalc_aware_session({"target_id": "n2"})
     
     app.dependency_overrides[get_db] = lambda: mock_session
     
