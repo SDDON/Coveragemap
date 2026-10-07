@@ -127,6 +127,34 @@ B안은 테스터의 정보 과부하를 방지하고 일상적인 QA 생산성�
   - `[+ 새 검증 항목 추가]` 버튼 및 개별 항목 삭제(`🗑️`) 지원.
   - 항목 체크 시 즉시 낙관적 업데이트(Optimistic Update)로 노드 상태 및 프로그레스 뱃지 동기화.
 
+### 3.4. 게임 순환 루프(Cycle)와 복귀선(`Return` 엣지) 규격
+게임 내비게이션은 `로비 ⇄ 상점`, `던전 ⇄ 결과창`처럼 순환(Cycle)이 필수적입니다. 그러나 테스트 의존성 그래프가 순환하면 무한 차단(Deadlock)에 빠집니다.
+- **해결 원칙 (엣지 역할 분리)**:
+  - **진입선 (`type: "Transition"` / `"Depends_On"`)**: 상태 전파 **ON**. 선행 노드 결함 시 타겟 노드를 `Blocked` 처리.
+  - **복귀선 (`type: "Return"`)**: 상태 전파 **OFF (가중치 = 0)**. 뒤로가기, 팝업 닫기 등 단순 내비게이션 복귀선으로 취급하여, 복귀 대상 화면으로 결함이 역류하지 않도록 차단.
+- **알고리즘 반영**: 타겟 노드의 상태를 집계하는 `_recalc_target_node_status` 및 `recalculateTargetStatus`에서 `edge.type === 'Return'`인 엣지는 상태 계산 입력에서 완전히 제외합니다.
+
+### 3.5. 3가지 확인 대상 분리 원칙 (Room-Door-Furniture 치트시트)
+모든 검증 요소를 노드로 만들려다 Depth=1 규칙을 위반하고 그래프가 폭발하는 것을 방지하기 위해, 모든 확인 대상을 3가지 계층으로 엄격히 분리합니다:
+1. **노드 (Node / Room)**: 사용자가 입력을 멈추고 머무르는 독립 공간 (화면 `Screen`, 팝업 `Modal`).
+2. **엣지 (Edge / Door)**: 사용자를 다른 방으로 이동시키는 행위 통로 (버튼 터치, 바로가기 액션).
+3. **체크리스트 (Checklist / Furniture)**: 그 방 안에 고정된 정적 스펙 및 시각 품질 (타이틀 텍스트, 본문 내용, 수량, 폰트 깨짐 없음).
+
+### 3.6. 휘발성 모달(Transient Popup) 및 닫기 처리 모델링
+"메인 게임 ➔ 재료 부족 팝업 ➔ 상점 바로가기 ➔ (상점에서 뒤로가기 시 팝업 없이 바로) 메인 게임 복귀"와 같은 모달 스택 소멸 구조:
+- `[Screen: 메인 게임]` ──(제작 시도)──▶ `[Modal: 재료 부족 팝업]`
+- `[Modal: 재료 부족 팝업]` ──(상점 바로가기 클릭)──▶ `[Screen: 상점]`
+- `[Screen: 상점]` ──(상점 닫기 / type: Return)──▶ `[Screen: 메인 게임]` (전파 차단)
+- `[Modal: 재료 부족 팝업]` ──(팝업 닫기 / type: Return)──▶ `[Screen: 메인 게임]` (전파 차단)
+
+### 3.7. 파편화된 실무 환경에서의 N개 팝업 태그(`#Popup`) 전수 회귀 체계
+실제 라이브 게임 개발에서는 팝업마다 프리팹과 코드가 달라 Dimmed 적용 여부, 뒷배경 터치 차단 여부가 제각각 파편화되어 있습니다.
+- **개별 검증**: 각 팝업 노드 내부의 체크리스트에서 자기 팝업 고유의 `[Dimmed]`, `[Overlap]` 스펙을 독립 검증.
+- **일괄 전수 회귀 (Regression Audit)**:
+  1. 모든 팝업 노드에 `aliases: ["Popup"]` 또는 `label: "Modal"` 지정.
+  2. 팝업 시스템 전체 패치 시 검색창에 `#Popup` 입력 ➔ 게임 내 N개의 모든 팝업이 원클릭 하이라이트(Focus+Context).
+  3. 팝업 노드 상태를 일괄 `Untested`로 리셋하고 체크리스트를 순회하며 10분 만에 완벽한 전수 리그레션 달성.
+
 ---
 
 ## 4. 4-Stage State Propagation Engine Specification
@@ -181,18 +209,20 @@ flowchart TD
      - 타겟 컴포넌트의 모든 incoming TC 노드들의 상태를 조회하여 롤업 계산 후 컴포넌트 상태 갱신.
 3. **`recalculateTargetStatus` 함수 개선 (`lines ~829-839`)**:
    - 들어오는 엣지(`e.data.test_status`)뿐만 아니라, **출발지 노드(`sourceNode.data.test_status`)**의 상태도 함께 고려하여 계산하도록 개선.
+   - **`e.type === 'Return'`인 엣지는 집계 대상에서 제외**하여, 뒤로가기/복귀 화살표로 인한 상태 전파 무한 루프(Deadlock) 차단.
 4. **B안: 노드 내부 체크리스트 에디터 및 뱃지 연동**:
    - `frontend/src/App.tsx`: Edit Node 폼에 `Checklist` 섹션을 추가하고, 항목 추가/삭제 및 개별 항목 상태(`Untested`/`Passed`/`Failed`/`Blocked`) 변경 시 노드 `properties.checklist` 및 종합 `test_status`를 자동 산출하여 낙관적 업데이트.
    - `frontend/src/CoverageNode.tsx`: `data.properties.checklist`가 존재할 경우 카드 본체에 `[ 🟢 3/3 (100%) ]` 프로그레스 뱃지를 표시하도록 렌더링 추가.
 
 ### 5.2. 백엔드 작업 (`backend/graph_service.py`)
 1. **`update_node` 함수 내 연쇄 전파 호출 추가 (`lines ~235-282`)**:
-   - 노드의 `test_status`가 변경되면, `_recalc_target_node_status(session, record["next_id"])`를 호출하여 outgoing 노드들의 상태를 실시간 연쇄 재계산.
+   - 노드의 `test_status`가 변경되면, `_recalc_target_node_status(session, record["next_id"])`를 호출하여 outgoing 노드들의 상태를 실시간 연쇄 재계산 (단, `type = 'Return'`인 엣지는 전파 대상에서 제외).
 2. **`_recalc_target_node_status` Cypher 쿼리 개선 (`lines ~295-328`)**:
-   - 엣지 상태만 보는 대신, 출발 노드의 상태도 함께 수집:
+   - 엣지 상태만 보는 대신, 출발 노드의 상태도 함께 수집하되 `Return` 엣지는 상태 전파에서 제외:
      ```cypher
      MATCH (target) WHERE elementId(target) = $target_id
      OPTIONAL MATCH (src)-[in_r]->(target)
+     WHERE in_r.type IS NULL OR in_r.type <> 'Return'
      WITH target, collect({
          edge_status: coalesce(in_r.test_status, 'Untested'),
          src_status: coalesce(src.test_status, 'Untested'),
