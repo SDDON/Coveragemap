@@ -77,12 +77,55 @@ flowchart LR
 | **`Tests`** | `TestCase` (검증) | `Component` / `Feature` | 하위 TC 검증 결과가 상위 컴포넌트로 롤업(Roll-up) 집계됨 |
 | **`Transition`** | `Screen` / `Feature` | `Screen` / `Feature` | 화면 전환 및 기능 흐름 간 상호작용 |
 
-### 3.2. 캔버스 노드 vs 내부 체크리스트 선택 기준
-1. **독립 캔버스 노드 (`TestCase Node`)로 배치하는 경우 (권장)**:
-   - 본 사례처럼 **검증 항목 간에 선행-후행 의존성(`Depends_On`)이 존재**하여 시각적인 흐름 추적이 필요한 경우.
-   - 외부 선행 조건(예: 서버 로그인, 결제 모듈 등 글로벌 노드)과 엣지로 직접 연결되어야 하는 핵심 검증 항목.
-2. **노드 내부 속성(Checklist / Dynamic Chips)으로 유지하는 경우**:
-   - 해상도 대응(21:9, 16:9), 다국어 폰트 깨짐, 단순 텍스트 누락 등 독립적인 흐름이 없는 단순 확인 항목은 캔버스 노드로 분기하지 않고 속성 칩으로 평탄화(Rule 6.2 준수).
+### 3.2. A안(캔버스 독립 노드) vs B안(노드 내부 체크리스트) 비교 분석
+
+| 비교 항목 | A안: 캔버스 독립 TestCase 노드 | B안: 노드 내부 체크리스트 (실무 권장 🌟) |
+| :--- | :--- | :--- |
+| **모델링 형태** | 각 검증 항목마다 캔버스에 사각형 노드 생성 | 컴포넌트 1개만 노출, 세부 항목은 노드 속성(`checklist`)에 내장 |
+| **인간 인지 부하** | **매우 높음 (그래프 폭발 위험)**<br/>컴포넌트 10개 x 검증 3개 = 30~40개 노드로 시야 마비 | **매우 낮음 (깔끔한 캔버스 유지)**<br/>캔버스에는 핵심 컴포넌트만 보이고 세부 내용은 클릭 시 확인 |
+| **적합한 유스케이스** | 화면 간 전환, 외부 시스템 연동 등 **시각적 선후 관계(`Depends_On`)가 거시적으로 중요한 핵심 흐름** | **단순 UI 확인(텍스트 노출, 깨짐, 폰트, 버전 일치 등) 일상적인 컴포넌트 단위 검증** |
+| **상태 판정 방식** | 엣지 기반 자동 롤업 (`TC ➔ Component`) | 체크리스트 항목 종합 판정 (`checklist ➔ Node Status`) |
+
+### 3.3. B안(노드 내부 체크리스트) 상세 설계 및 UX 명세
+
+B안은 테스터의 정보 과부하를 방지하고 일상적인 QA 생산성을 극대화하기 위한 핵심 구현 규격입니다.
+
+#### 1. 데이터 모델 (Data Schema)
+노드의 `properties.checklist` 필드에 JSON 배열로 저장합니다:
+```json
+{
+  "id": "node_client_version",
+  "label": "Component",
+  "name": "클라이언트 버전",
+  "test_status": "Passed",
+  "properties": {
+    "checklist": [
+      { "id": "chk_1", "text": "클라이언트 버전 텍스트가 정상 노출된다.", "status": "Passed" },
+      { "id": "chk_2", "text": "텍스트가 깨지지 않고 폰트가 정상이다.", "status": "Passed" },
+      { "id": "chk_3", "text": "실제 배포된 릴리즈 버전과 일치한다.", "status": "Passed" }
+    ]
+  }
+}
+```
+
+#### 2. 체크리스트 기반 노드 상태 자동 산출 규칙
+- 체크리스트가 없는 노드: 기존처럼 상단의 `Mark Passed / Failed` 수동 조작 유지.
+- 체크리스트가 1개 이상 등록된 노드:
+  - 항목 중 하나라도 `Failed(🔴)`가 있으면 ➔ 노드 `test_status = 'Failed'`
+  - 항목 중 하나라도 `Blocked(🟡)`가 있고 `Failed`가 없으면 ➔ 노드 `test_status = 'Blocked'`
+  - 모든 항목이 `Passed(🟢)`이면 ➔ 노드 `test_status = 'Passed'`
+  - 그 외(일부 `Untested` 등) ➔ 노드 `test_status = 'Untested'`
+
+#### 3. UI/UX 구현 명세
+- **노드 카드 요약 표시 (`CoverageNode.tsx`)**:
+  - `data.properties.checklist`가 존재하면, 카드 하단에 미니 프로그레스 뱃지 노출:
+    - 예: `[ 🟢 3/3 (100%) ]` 또는 `[ 🔴 1 결함 / 3 항목 ]`
+  - 캔버스를 멀리서 보아도 해당 컴포넌트의 체크리스트 진행 상황을 즉시 인지 가능.
+- **우측 인스펙터 패널 (`App.tsx` Edit Node)**:
+  - "세부 체크리스트 (Verification Checklist)" 섹션 추가.
+  - 각 항목별 원클릭 상태 토글 (`⚪` / `🟢` / `🔴` / `🟡`) 및 텍스트 수정.
+  - `[+ 새 검증 항목 추가]` 버튼 및 개별 항목 삭제(`🗑️`) 지원.
+  - 항목 체크 시 즉시 낙관적 업데이트(Optimistic Update)로 노드 상태 및 프로그레스 뱃지 동기화.
 
 ---
 
@@ -138,6 +181,9 @@ flowchart TD
      - 타겟 컴포넌트의 모든 incoming TC 노드들의 상태를 조회하여 롤업 계산 후 컴포넌트 상태 갱신.
 3. **`recalculateTargetStatus` 함수 개선 (`lines ~829-839`)**:
    - 들어오는 엣지(`e.data.test_status`)뿐만 아니라, **출발지 노드(`sourceNode.data.test_status`)**의 상태도 함께 고려하여 계산하도록 개선.
+4. **B안: 노드 내부 체크리스트 에디터 및 뱃지 연동**:
+   - `frontend/src/App.tsx`: Edit Node 폼에 `Checklist` 섹션을 추가하고, 항목 추가/삭제 및 개별 항목 상태(`Untested`/`Passed`/`Failed`/`Blocked`) 변경 시 노드 `properties.checklist` 및 종합 `test_status`를 자동 산출하여 낙관적 업데이트.
+   - `frontend/src/CoverageNode.tsx`: `data.properties.checklist`가 존재할 경우 카드 본체에 `[ 🟢 3/3 (100%) ]` 프로그레스 뱃지를 표시하도록 렌더링 추가.
 
 ### 5.2. 백엔드 작업 (`backend/graph_service.py`)
 1. **`update_node` 함수 내 연쇄 전파 호출 추가 (`lines ~235-282`)**:
