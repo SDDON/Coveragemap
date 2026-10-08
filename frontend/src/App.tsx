@@ -682,8 +682,11 @@ export default function App() {
 
     let defaultType = "Transition";
     const sourceLabel = (sourceNode?.data as any)?.label;
+    const targetLabel = (targetNode?.data as any)?.label;
     if (sourceLabel === 'System' || sourceLabel === 'Category') {
       defaultType = "Contains";
+    } else if (sourceLabel === 'TestCase') {
+      defaultType = targetLabel === 'TestCase' ? "Depends_On" : "Tests";
     }
 
     const payload = {
@@ -743,9 +746,9 @@ export default function App() {
           id: newEdgeId,
           source: connection.source!,
           target: connection.target!,
-          label: 'Transition',
+          label: defaultType,
           type: 'floating',
-          data: { type: 'Transition', test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
+          data: { type: defaultType, test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
           style: { stroke: 'gray', strokeWidth: 2 },
           markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
         }];
@@ -1937,6 +1940,8 @@ export default function App() {
                       <option value="Displays">{t.edgeType.Displays}</option>
                       <option value="Depends_On">{t.edgeType.Depends_On}</option>
                       <option value="Triggers">{t.edgeType.Triggers}</option>
+                      <option value="Tests">{t.edgeType.Tests}</option>
+                      <option value="Return">{t.edgeType.Return}</option>
                     </select>
                   </div>
                   <div className="form-group">

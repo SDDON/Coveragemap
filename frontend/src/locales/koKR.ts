@@ -115,6 +115,8 @@ export const koKR = {
     Displays: 'Displays (표시)',
     Depends_On: 'Depends_On (의존)',
     Triggers: 'Triggers (호출)',
+    Tests: 'Tests (검증)',
+    Return: 'Return (복귀)',
   },
 
   // 노드 편집 폼
