@@ -150,6 +150,15 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 - **화면 전환 엣지(Flow Edge)**: 결함 시 다음 화면의 테스트를 완전히 `Blocked` 시킵니다.
 - **리소스 뱃지(LangKey, Sound 등)**: 결함이 발생해도 화면 전환 자체는 동작하므로 다음 노드를 `Blocked`시키지 않고, 해당 노드에만 **주의(⚠️ 앰버 테두리)** 및 동적 결함 칩을 표시합니다.
 
+### 4.4. 변경 영향도 강조 및 수정 전파 (Change Impact Ripple Highlight)
+- **배경 및 목적**: 개발팀의 기획/UI 변경이 발생했을 때, 테스터가 재검증(Regression) 범위를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조합니다.
+- **순수 CSS 시각 효과 (Zero-JS Styling)**:
+  - 수정된 노드(`properties.is_modified: true`): `.node-modified-pulse` CSS 클래스(바이올렛 테두리 및 펄스 글로우) 및 동적 알약 칩(`✨ [Spec Updated]`).
+  - 다운스트림 영향권 노드/엣지: `.highlight-affected` 스타일을 적용해 영향도 전파를 시각화.
+- **테스터 라이프사이클 (Acknowledge)**:
+  - 테스터가 수정 내역을 확인하고 검증을 마치면 Inspector 패널의 `[✓ 변경사항 확인 완료 (Acknowledge)]` 버튼을 통해 펄스 효과를 해제하고 정상 상태로 복귀시킵니다.
+- **상세 규격 및 차기 모델(Argon / Opus 5.5) 구현 가이드**: [docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md Section 7](file:///d:/workspace/Coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md#7-차기-기능-명세-변경-영향도-강조-및-수정-전파-기능-change-impact-ripple-highlight)을 준수합니다.
+
 ---
 
 ## 5. UI/UX Design System & Golden Rules (불변 엔지니어링 제약)

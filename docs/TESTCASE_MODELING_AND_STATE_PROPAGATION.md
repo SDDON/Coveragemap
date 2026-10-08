@@ -242,3 +242,60 @@ flowchart TD
    - [ ] `TC 1`을 다시 `Passed`로 복구 시, `TC 2`의 차단이 해제되는가?
    - [ ] `TC 1`과 `TC 2`가 모두 `Passed`일 때, 대상 `Component`가 자동으로 `Passed(🟢)`로 변경되는가?
    - [ ] Edit Node에서 `Mark Blocked`를 눌렀을 때 📌 핀 아이콘 및 사유가 정상 저장되는가?
+
+---
+
+## 7. 차기 기능 명세: 변경 영향도 강조 및 수정 전파 기능 (Change Impact Ripple Highlight)
+
+> **대상 에이전트:** 차기 상위 모델 (Argon, Claude Opus 5.5, GPT-5)  
+> **기능 목적:** 개발팀의 기획/코드 수정 발생 시, 테스터가 재검증(Regression) 스코프를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조하는 Living Document 특화 기능.
+
+```mermaid
+flowchart LR
+    Main[" Screen: 메인 게임 "] -->|" Action: 강화 시도 "| Popup
+    
+    Popup[" ✨ Modal: 재료 부족 팝업<br/>[ 🏷️ 10/08 UI 개편: 재확인 필요 ]<br/>(보라색 펄스 애니메이션 테두리) "]
+    
+    Popup -->|" 🌊 파동 전파 (Impact Ripple) "| Shop[" Screen: 상점<br/>(재검증 영향권 표시) "]
+
+    classDef modified stroke:#8b5cf6,stroke-width:3px,stroke-dasharray: 4 2;
+    classDef affected stroke:#c084fc,stroke-width:2px;
+    class Popup modified;
+    class Shop affected;
+```
+
+### 7.1. 데이터 모델 (Data Schema)
+노드 `properties`에 변경 이력 및 영향도 추적 필드를 추가:
+```json
+{
+  "properties": {
+    "is_modified": true,
+    "modified_note": "상점 바로가기 버튼 UI 개편 (Jira: GAME-1234)",
+    "modified_at": "2026-10-08T18:40:00Z"
+  }
+}
+```
+
+### 7.2. UI/UX 표현 및 애니메이션 (Pure CSS Rule 1 준수)
+- **수정 노드 본체 (`CoverageNode.tsx`)**:
+  - `properties.is_modified === true`인 노드에 `.node-modified-pulse` CSS 클래스 부여.
+  - CSS 스타일: 바이올렛 테두리(#8b5cf6)와 부드러운 네온 글로우 펄스 애니메이션 (2s infinite ease-in-out).
+  - 카드 상단에 동적 칩 `✨ [Spec Updated]` 노출.
+- **다운스트림 영향권 파동 (Impact Ripple)**:
+  - 수정된 노드로부터 뻗어나가는 outgoing 엣지 및 1~2차 후속 노드에 `.highlight-affected` 스타일을 적용하여 재검증 영향권임을 시각화.
+
+### 7.3. 테스터 검증 라이프사이클 (Acknowledge Lifecycle)
+1. **인지**: 테스터가 캔버스를 열었을 때 보라색 펄스가 깜빡이는 노드를 통해 당일 수정 사항을 1초 만에 식별.
+2. **확인**: 노드 클릭 시 우측 인스펙터 패널에 `⚠️ 변경 내역: 상점 바로가기 버튼 UI 개편` 안내 배너 노출.
+3. **확인 완료 (Acknowledge)**:
+   - 테스터가 게임에서 확인 및 체크리스트 검증을 마친 후 **`[✓ 변경사항 확인 완료 (Acknowledge)]`** 버튼 클릭.
+   - 백엔드 `is_modified = false` 갱신 및 낙관적 업데이트로 펄스 효과 소멸, 정상 상태(Passed🟢)로 복귀.
+
+### 7.4. 차기 모델(Argon / Opus 5.5)을 위한 백엔드/프론트엔드 작업 지시
+1. **백엔드 (`backend/main.py` 및 `graph_service.py`)**:
+   - `POST /api/nodes/{id}/mark-modified`: 노드를 수정 상태로 지정 (`is_modified=true`, `modified_note` 기록).
+   - `POST /api/nodes/{id}/acknowledge`: 테스터의 확인 완료 처리 (`is_modified=false`).
+2. **프론트엔드 (`frontend/src/App.tsx`, `CoverageNode.tsx`, `index.css`)**:
+   - `index.css`: `.node-modified-pulse` 및 `@keyframes pulse-modified` 애니메이션 추가.
+   - `CoverageNode.tsx`: `is_modified` 플래그 감지 시 칩 노출 및 클래스 적용.
+   - `App.tsx`: 우측 인스펙터에 Acknowledge 버튼 및 `modified_note` 렌더링.

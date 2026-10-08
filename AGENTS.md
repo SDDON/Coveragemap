@@ -44,6 +44,13 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
    - CoverageMap operates strictly in a **pure black-box QA environment** where QA engineers have **NO ACCESS to game client source code, internal repositories, or game engine project files (Unity, Unreal)**.
    - All white-box methods, engine asset parsers (Prefabs, Scenes, UMG), and source code reflection tools are strictly banned.
    - Graph structures, verification points, and test results must be constructed exclusively from external test artifacts (Spreadsheet/CSV test cases, QA conversational flow prompts) and runtime black-box behavioral testing.
+12. **Game Cycle & 3-Layer Modeling Separation (Room-Door-Furniture Rule):**
+   - **No Dependency Cycles**: Never use `Depends_On` or progress `Transition` for backward/return navigation. Always use `type: "Return"` (Propagation Weight = 0) to prevent circular blocking deadlocks.
+   - **3-Layer Verification Separation**: Strictly maintain Node (Context/Screen/Modal), Edge (Action/Transition Trigger), and Checklist (Static UI/Text/Dimmed Specs). Never nest sub-components beyond Max Depth = 1.
+   - **Batch Regression via Tagging**: For fragmented, heterogeneous components (e.g. popups with inconsistent Dimmed behaviors), verify specs via node-internal checklists and batch-audit via `#Popup` tags and Focus+Context filtering.
+13. **Change Impact Ripple Highlight (Future Work Specification):**
+   - When a feature/node is modified (`properties.is_modified: true`), highlight it with `.node-modified-pulse` and mark downstream dependents with `.highlight-affected`.
+   - The effect persists until the tester verifies and acknowledges (`is_modified: false`) in the Inspector panel (see `AI_IMPLEMENTATION_SPEC.md` Section 4.4 & `docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md` Section 7).
 
 ## 3-Tier Verification Pipeline
 Before concluding any task, the AI agent MUST execute:
