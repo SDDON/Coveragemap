@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/coveragenode.tsx","./src/floatingedge.tsx","./src/offsetedge.tsx","./src/floatingedgeutils.ts","./src/layout.ts","./src/main.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/coveragenode.tsx","./src/floatingedge.tsx","./src/floatingedgeutils.ts","./src/layout.ts","./src/main.tsx","./src/statuspropagation.ts","./src/components/presetmanagermodal.tsx","./src/locales/kokr.ts"],"version":"5.9.3"}

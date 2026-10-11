@@ -32,7 +32,8 @@ def test_api_create_node():
     app.dependency_overrides.clear()
 
 def test_api_update_node():
-    mock_session = Mock()
+    # 스펙 변경(TESTCASE_MODELING 5.2-1): test_status 갱신 후 하류 전파 조회 결과를 순회하므로 iterable Mock 세션 사용
+    mock_session = make_recalc_aware_session(None)
     app.dependency_overrides[get_db] = lambda: mock_session
     
     response = client.put("/api/nodes/n1", json={
@@ -104,3 +105,23 @@ def test_api_delete_edge():
     
     app.dependency_overrides.clear()
 
+def test_api_node_statuses():
+    # 프론트 낙관적 상태 계산 후 서버 SSOT와 재동기화하는 경량 엔드포인트 (/api/node-statuses)
+    # test_status가 없는 노드는 coalesce로 'Untested'가 반환되어야 함 (Cypher에서 처리 → 여기선 그대로 매핑만 확인)
+    mock_session = Mock()
+    mock_session.run.return_value = iter([
+        {"id": "n1", "test_status": "Passed"},
+        {"id": "n2", "test_status": "Blocked"},
+        {"id": "n3", "test_status": "Untested"},
+    ])
+    app.dependency_overrides[get_db] = lambda: mock_session
+
+    response = client.get("/api/node-statuses")
+
+    assert response.status_code == 200
+    assert response.json() == {"n1": "Passed", "n2": "Blocked", "n3": "Untested"}
+    # 상태 조회 쿼리는 1회만 실행 (전체 그래프 조회/레이아웃 재계산 없음)
+    assert mock_session.run.call_count == 1
+    assert "coalesce(n.test_status, 'Untested')" in mock_session.run.call_args[0][0]
+
+    app.dependency_overrides.clear()

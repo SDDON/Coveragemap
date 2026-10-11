@@ -29,14 +29,12 @@ export const koKR = {
   },
 
   // 상단 툴바 버튼 툴팁
+  // (Cypher Export / Grid Layout 문구는 FEATURE_PRUNING_GUIDE 1순위 정리로 기능과 함께 제거됨)
   toolbar: {
     switchWorkspace: '워크스페이스(도메인) 선택 화면 열기',
     presets: '샘플 프리셋 및 데이터셋 관리자를 엽니다.',
-    exportCypher: '현재 그래프를 Cypher 쿼리로 내보냅니다.',
-    cypherCopied: 'Cypher 쿼리가 클립보드에 복사되었습니다.',
     help: '도움말 및 범례 (Help & Legend)',
     relayout: '선택된 노드만 또는 전체를 자동 정렬합니다',
-    gridLayout: '노드의 Category(Alias) 기준으로 그룹핑하여 격자(Grid) 형태로 정렬합니다',
   },
 
   // 우측 패널 ? 아이콘 툴팁
@@ -80,6 +78,50 @@ export const koKR = {
   nodeForm: {
     issueLink: 'Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능',
     deleteProperty: '속성 삭제',
+  },
+
+  // 📌 수동 차단 (Manual Override, TESTCASE 스펙 4.3)
+  override: {
+    reasonLabel: '차단 사유',
+    reasonPlaceholder: '차단 사유 (필수) 예: 빌드 미제공, 테스트 기기 없음',
+    confirm: '📌 차단 확정',
+    cancel: '취소',
+    hint: '수동 차단된 노드는 선행 노드가 바뀌어도 자동 계산으로 덮어쓰지 않습니다.',
+    pinnedLabel: '수동 고정됨',
+    noReason: '(사유 없음)',
+    releaseHint: 'Mark Passed / Mark Failed / Reset Status를 누르면 고정이 해제됩니다.',
+    pinTitle: (reason: string) => `📌 수동 고정: ${reason}`,
+  },
+
+  // B안 노드 내부 체크리스트 (TESTCASE 스펙 3.3)
+  checklist: {
+    title: '세부 체크리스트 (Verification Checklist)',
+    empty: '등록된 검증 항목이 없습니다. 단순 UI 검증 항목은 노드를 새로 만들지 말고 여기에 추가하세요.',
+    itemLabel: '검증 항목 내용',
+    itemPlaceholder: '검증 항목 입력 (Enter 저장 · Shift+Enter 줄바꿈)',
+    changeStatus: '검증 결과 변경',
+    deleteItem: '항목 삭제',
+    addItem: '+ 새 검증 항목 추가',
+    autoStatusHint: '항목 결과에 따라 노드 상태가 자동 판정됩니다. (실패 > 차단 > 모두 통과 > 미검증)',
+    badgeAllPassed: (passed: number, total: number) => `🟢 ${passed}/${total} (${total ? Math.round((passed / total) * 100) : 0}%)`,
+    badgeFailed: (failed: number, total: number) => `🔴 ${failed} 결함 / ${total} 항목`,
+    badgeBlocked: (blocked: number, total: number) => `🟡 ${blocked} 차단 / ${total} 항목`,
+    badgeProgress: (passed: number, total: number) => `⚪ ${passed}/${total} (${total ? Math.round((passed / total) * 100) : 0}%)`,
+  },
+
+  // 변경 영향도 강조 (Change Impact Ripple, AI_IMPLEMENTATION_SPEC 4.4)
+  modified: {
+    sectionTitle: '변경 영향도 (Change Impact)',
+    bannerTitle: '변경 내역',
+    noNote: '(메모 없음)',
+    modifiedAt: '변경 시각:',
+    acknowledge: '✓ 변경사항 확인 완료 (Acknowledge)',
+    noteLabel: '변경 메모',
+    notePlaceholder: '변경 메모 예: 상점 바로가기 버튼 UI 개편 (GAME-1234)',
+    markButton: '✨ 변경 표시',
+    hint: '변경 표시된 노드는 보라색 펄스로, 하류 1~2단계 노드/엣지는 영향권으로 강조됩니다. 확인 완료해도 테스트 상태는 바뀌지 않습니다.',
+    saveFailed: '변경 표시 상태를 저장하지 못했습니다.',
+    chip: '✨ [Spec Updated]',
   },
 
   // 전역 공통 노드(Badge) 설정
@@ -132,8 +174,8 @@ export const koKR = {
     failedBody: '테스트에 실패한(버그가 발견된) 항목입니다.',
     // 기존 범례에서 누락되어 있던 4번째 상태
     blockedTitle: '🟡 노란색 (Blocked)',
-    blockedBody: '선행 항목이 실패(또는 차단)되어 테스트를 진행할 수 없는 항목입니다. 들어오는 엣지 상태에 따라 자동으로 전파됩니다.',
-    statusNote: '※ 대상(Component/Data 등)을 검증하는 엣지들의 상태가 모두 Passed이면 자동으로 Passed로 변경됩니다.',
+    blockedBody: '선행 항목(Depends_On)이 실패/차단되어 테스트를 진행할 수 없는 항목입니다. 하류로 자동 연쇄 전파되며, Mark Blocked로 사유와 함께 수동 고정(📌)할 수도 있습니다.',
+    statusNote: '※ 대상(Component 등)을 검증하는 Tests TC와 체크리스트가 모두 Passed이면 자동으로 Passed, 하나라도 Failed면 Failed로 판정됩니다. Return(복귀) 엣지는 전파에서 제외됩니다.',
     tipsTitle: '🛠 주요 기능 팁',
     connectTitle: '선 연결 (드래그)',
     // 상/하단 핸들 → 외곽 Halo 핸들 구조로 바뀐 현재 동작 기준

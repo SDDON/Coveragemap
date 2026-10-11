@@ -7,6 +7,8 @@ from models import (
 )
 
 import collections
+import datetime
+import json
 
 ALIAS_MAP = {
     "front-end": "frontend",
@@ -59,6 +61,122 @@ def _normalize_string(val: Any) -> Any:
         return val_lower
     return val.title()
 
+
+# ─── JSON 속성 직렬화 (B안 노드 내부 체크리스트) ─────────────────────
+# Neo4j 속성은 원시값/원시값 배열만 저장할 수 있어, 맵 배열인 checklist는 JSON 문자열로 저장합니다.
+# 읽을 때(fetch_graph_from_neo4j, /api/nodes/{id})는 다시 리스트로 복원해 API에는 항상 배열로 노출합니다.
+JSON_PROPERTY_KEYS = {"checklist"}
+
+
+def serialize_props_for_neo4j(props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """맵/맵 배열 같은 중첩 값을 JSON 문자열로 바꿔 Neo4j에 저장 가능한 형태로 만듭니다."""
+    if not props:
+        return {} if props is None else props
+    result = {}
+    for k, v in props.items():
+        if isinstance(v, dict) or (isinstance(v, list) and any(isinstance(i, (dict, list)) for i in v)):
+            result[k] = json.dumps(v, ensure_ascii=False)
+        elif k in JSON_PROPERTY_KEYS and isinstance(v, list):
+            # 빈 체크리스트([])도 문자열로 저장해 읽기 경로를 단일화합니다.
+            result[k] = json.dumps(v, ensure_ascii=False)
+        else:
+            result[k] = v
+    return result
+
+
+def deserialize_props_from_neo4j(props: Dict[str, Any]) -> Dict[str, Any]:
+    """JSON_PROPERTY_KEYS에 해당하는 문자열 속성을 리스트/맵으로 복원합니다. (파싱 실패 시 원본 유지)"""
+    for k in JSON_PROPERTY_KEYS:
+        v = props.get(k)
+        if isinstance(v, str):
+            try:
+                props[k] = json.loads(v)
+            except (ValueError, TypeError):
+                pass
+    return props
+
+
+# ─── Living TC 상태 합성 (TESTCASE_MODELING_AND_STATE_PROPAGATION.md 3.4 / 4.2) ─────
+# 엣지 타입별 역할:
+#   - RETURN      : 상태 전파 OFF (뒤로가기/팝업 닫기). 집계에서 완전히 제외해 순환 Deadlock 방지.
+#   - DEPENDS_ON  : 선행 조건(게이트). 출발 노드가 Failed/Blocked면 타겟은 Blocked, 해제되면 차단만 풀림(Untested).
+#   - TESTS       : 롤업. 타겟(Component)의 상태는 연결된 TC(출발 노드)들의 상태를 종합해 산출.
+#   - 그 외(Transition/Contains 등 흐름 엣지): 기존 규칙(엣지 자체의 test_status 기준) 유지.
+STATUS_DEPENDENT_EDGE_TYPES = ("DEPENDS_ON", "TESTS")
+FAIL_OR_BLOCK = ("Failed", "Blocked")
+
+
+def checklist_status(checklist: Any) -> Optional[str]:
+    """체크리스트 항목들의 종합 상태 (3.3-2 규칙). 항목이 없으면 None."""
+    if not isinstance(checklist, list) or len(checklist) == 0:
+        return None
+    statuses = [str((item or {}).get("status") or "Untested") for item in checklist if isinstance(item, dict)]
+    if not statuses:
+        return None
+    if "Failed" in statuses:
+        return "Failed"
+    if "Blocked" in statuses:
+        return "Blocked"
+    if all(s == "Passed" for s in statuses):
+        return "Passed"
+    return "Untested"
+
+
+def _legacy_edge_rule(edge_statuses: List[str]) -> str:
+    """기존 3.2 합성 규칙: 0개 → Untested / Failed·Blocked 포함 → Blocked / 전부 Passed → Passed / 그 외 Untested."""
+    if len(edge_statuses) == 0:
+        return "Untested"
+    if any(s in FAIL_OR_BLOCK for s in edge_statuses):
+        return "Blocked"
+    if all(s == "Passed" for s in edge_statuses):
+        return "Passed"
+    return "Untested"
+
+
+def compute_synthesized_status(current_status: Optional[str], inputs: List[Dict[str, Any]],
+                               checklist: Any = None, is_global: bool = False) -> str:
+    """
+    타겟 노드의 새 상태를 계산하는 순수 함수 (DB 접근 없음, 프론트 statusPropagation.ts와 동일 규칙).
+    inputs: [{edge_type: 'DEPENDS_ON'|'TESTS'|..., edge_status: str, src_status: str}, ...]
+    """
+    current = current_status or "Untested"
+    clean = [i for i in (inputs or []) if i and str(i.get("edge_type", "")).upper() != "RETURN"]
+
+    # 전역(Badge) 노드: 배지 ✓/✖는 엣지 상태로 기록되므로 기존 엣지 기준 규칙만 적용합니다.
+    if is_global:
+        return _legacy_edge_rule([i.get("edge_status") or "Untested" for i in clean])
+
+    def _t(i):
+        return str(i.get("edge_type", "")).upper()
+
+    dep = [i for i in clean if _t(i) == "DEPENDS_ON"]
+    tests = [i for i in clean if _t(i) == "TESTS"]
+    flow = [i for i in clean if _t(i) not in STATUS_DEPENDENT_EDGE_TYPES]
+
+    tests_src = [i.get("src_status") or "Untested" for i in tests]
+    cl = checklist_status(checklist)
+    rollup = tests_src + ([cl] if cl else [])
+
+    # 게이트: 선행 TC(Depends_On 출발 노드)의 결함/차단, 또는 엣지 자체의 결함/차단
+    gate_blocked = any((i.get("src_status") in FAIL_OR_BLOCK) or (i.get("edge_status") in FAIL_OR_BLOCK) for i in dep) \
+        or any(i.get("edge_status") in FAIL_OR_BLOCK for i in flow + tests)
+
+    # 1) 검증 TC 또는 체크리스트에 실제 결함이 있으면 Failed (차단보다 우선하는 확정 정보)
+    if "Failed" in rollup:
+        return "Failed"
+    # 2) 선행 결함/차단 → Blocked
+    if gate_blocked or "Blocked" in rollup:
+        return "Blocked"
+    # 3) 롤업 대상(TC/체크리스트/흐름 엣지)이 있으면 전부 Passed일 때만 Passed
+    derive_parts = rollup + [i.get("edge_status") or "Untested" for i in flow]
+    if derive_parts:
+        return "Passed" if all(s == "Passed" for s in derive_parts) else "Untested"
+    # 4) 선행 조건만 있고 모두 해제됨 → 자동 차단만 풀고, 테스터가 직접 마킹한 결과는 보존
+    if dep:
+        return "Untested" if current == "Blocked" else current
+    # 5) 입력이 전혀 없음 → 기존 규칙대로 Untested
+    return "Untested"
+
 def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
     """Fetch the entire graph from Neo4j into a NetworkX MultiDiGraph."""
     query = """
@@ -81,7 +199,7 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
             name = str(name_val) if name_val is not None else n_id
             aliases = _normalize_aliases(n.get("aliases"))
             
-            n_props = dict(n)
+            n_props = deserialize_props_from_neo4j(dict(n))
             for key in ["category", "type"]:
                 if key in n_props:
                     n_props[key] = _normalize_string(n_props[key])
@@ -100,7 +218,7 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
             m_name = str(m_name_val) if m_name_val is not None else m_id
             m_aliases = _normalize_aliases(m.get("aliases"))
             
-            m_props = dict(m)
+            m_props = deserialize_props_from_neo4j(dict(m))
             for key in ["category", "type"]:
                 if key in m_props:
                     m_props[key] = _normalize_string(m_props[key])
@@ -220,7 +338,7 @@ def create_node(session, node_data: NodeCreate) -> str:
         test_status=node_data.test_status,
         is_manual_override=node_data.is_manual_override,
         override_reason=node_data.override_reason,
-        properties=node_data.properties
+        properties=serialize_props_for_neo4j(node_data.properties)
     )
     record = result.single()
     return record["id"]
@@ -252,7 +370,7 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
         params["override_reason"] = node_data.override_reason
     if node_data.properties is not None:
         set_clauses.append("n += $properties")
-        params["properties"] = node_data.properties
+        params["properties"] = serialize_props_for_neo4j(node_data.properties)
         
     set_query = "SET " + ", ".join(set_clauses) if set_clauses else ""
         
@@ -280,66 +398,126 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
             set_label_query = f"MATCH (n) WHERE elementId(n) = $id {remove_clause} SET n:`{node_data.label}`"
             session.run(set_label_query, id=node_id)
 
-def _recalc_target_node_status(session, target_id: str, visited=None):
-    """
-    Living TC 4-Stage Status Taxonomy에 따라 타겟 노드의 상태를 들어오는 엣지들을 바탕으로 재계산합니다.
-    수동 오버라이드(is_manual_override=True)가 설정된 노드는 사용자의 판단을 보존합니다.
-    상태가 변경되면 하류(outgoing) 노드들로 연쇄 전파합니다.
-    """
-    if visited is None:
-        visited = set()
-    if target_id in visited:
-        return
-    visited.add(target_id)
+    # ─── 연쇄 상태 전파 (TESTCASE 스펙 5.2-1) ───
+    # B안 체크리스트가 갱신되면 노드 자신의 상태를 체크리스트(+입력 엣지) 기준으로 재산출합니다.
+    # (빈 체크리스트는 판정 근거가 없으므로 요청에 담긴 test_status를 그대로 따릅니다.)
+    new_checklist = (node_data.properties or {}).get("checklist") if node_data.properties else None
+    if isinstance(new_checklist, list) and len(new_checklist) > 0:
+        _recalc_single_node_status(session, node_id)
 
+    # 상태가 바뀔 수 있는 갱신(test_status / 체크리스트 / 오버라이드 해제)이면 하류 Depends_On·Tests 노드들을 재계산합니다.
+    if node_data.test_status is not None or isinstance(new_checklist, list) or node_data.is_manual_override is not None:
+        _propagate_to_dependents(session, node_id)
+
+
+# 순환 의존(잘못 모델링된 Depends_On 루프 등)에서도 무한 반복하지 않도록 하는 전파 스텝 상한
+MAX_PROPAGATION_STEPS = 1000
+
+
+def _dependent_targets(session, node_id: str) -> List[str]:
+    """
+    node_id의 상태를 입력으로 쓰는 하류 노드(DEPENDS_ON 후행 / TESTS 대상) 목록.
+    흐름 엣지(Transition 등)는 엣지 자체 상태로만 판정하므로 출발 노드 변경으로 재계산하지 않으며,
+    RETURN 엣지는 전파 대상에서 완전히 제외됩니다 (순환 Deadlock 방지).
+    """
+    downstream_query = """
+    MATCH (src)-[r]->(downstream) WHERE elementId(src) = $id
+      AND toUpper(type(r)) IN $dep_types
+    RETURN DISTINCT elementId(downstream) AS next_id
+    """
+    downstream_recs = session.run(downstream_query, id=node_id, dep_types=list(STATUS_DEPENDENT_EDGE_TYPES))
+    return [d["next_id"] for d in list(downstream_recs)]
+
+
+def _run_propagation(session, start_ids: List[str], exclude: Optional[set] = None):
+    """
+    워크리스트 방식 연쇄 전파: 상태가 바뀐 노드의 하류만 다시 큐에 넣습니다.
+    (다이아몬드 의존에서 먼저 계산된 노드도 입력이 바뀌면 재계산되어 최종 상태로 수렴)
+    exclude: 사용자가 방금 직접 마킹한 노드 — 순환이 있어도 사용자의 입력을 덮어쓰지 않습니다.
+    """
+    exclude = exclude or set()
+    queue = collections.deque(start_ids)
+    queued = set(start_ids)
+    steps = 0
+    while queue and steps < MAX_PROPAGATION_STEPS:
+        nid = queue.popleft()
+        queued.discard(nid)
+        steps += 1
+        if nid in exclude:
+            continue
+        if _recalc_single_node_status(session, nid):
+            for nxt in _dependent_targets(session, nid):
+                if nxt not in queued and nxt not in exclude:
+                    queue.append(nxt)
+                    queued.add(nxt)
+
+
+def _propagate_to_dependents(session, node_id: str):
+    """노드의 상태가 바뀌었을 때 하류 Depends_On/Tests 노드들을 연쇄 재계산합니다."""
+    _run_propagation(session, _dependent_targets(session, node_id), exclude={node_id})
+
+
+def _recalc_single_node_status(session, target_id: str) -> bool:
+    """
+    Living TC 4-Stage Status Taxonomy에 따라 타겟 노드 1개의 상태를 들어오는 엣지/출발 노드 상태/체크리스트로 재계산합니다.
+    - 수동 오버라이드(is_manual_override=True)가 설정된 노드는 사용자의 판단을 보존합니다.
+    - RETURN 엣지는 집계에서 제외합니다. (TESTCASE 스펙 3.4)
+    반환값: 상태가 실제로 바뀌었는지 여부
+    """
+    # 관계 타입은 type(in_r)로 읽습니다. (엣지의 'type'은 속성이 아니라 Neo4j 관계 타입)
     query = """
     MATCH (target) WHERE elementId(target) = $target_id
-    OPTIONAL MATCH ()-[in_r]->(target)
-    WITH target, collect(coalesce(in_r.test_status, 'Untested')) AS statuses
+    OPTIONAL MATCH (src)-[in_r]->(target)
+    WHERE toUpper(type(in_r)) <> 'RETURN'
+    WITH target, collect(CASE WHEN in_r IS NULL THEN NULL ELSE {
+        edge_type: toUpper(type(in_r)),
+        edge_status: coalesce(in_r.test_status, 'Untested'),
+        src_status: coalesce(src.test_status, 'Untested')
+    } END) AS inputs
     RETURN target.test_status AS current_status,
            target.is_manual_override AS is_override,
-           statuses
+           target.is_global AS is_global,
+           target.checklist AS checklist,
+           inputs
     """
     rec = session.run(query, target_id=target_id).single()
     if not rec:
-        return
+        return False
 
     # 수동 고정(Manual Override)되어 있다면 자동 합성 스킵
     if rec["is_override"] in [True, "true", "True"]:
-        return
+        return False
 
-    statuses = rec["statuses"]
     old_status = rec["current_status"]
-    
-    # 3.2 상태 합성 로직:
-    # 0개 -> Untested
-    # 1개 이상: 'Failed' 또는 'Blocked'가 있으면 -> 'Blocked' (선행 결함으로 차단)
-    # 모든 엣지가 'Passed'이면 -> 'Passed'
-    # 그 외 -> 'Untested'
-    if len(statuses) == 0:
-        new_status = "Untested"
-    elif "Failed" in statuses or "Blocked" in statuses:
-        new_status = "Blocked"
-    elif all(s == "Passed" for s in statuses):
-        new_status = "Passed"
-    else:
-        new_status = "Untested"
+    # neo4j Record와 테스트용 dict 모두 .get을 지원합니다. (checklist는 JSON 문자열로 저장되어 있어 복원 필요)
+    checklist = deserialize_props_from_neo4j({"checklist": rec.get("checklist")}).get("checklist")
+    is_global = rec.get("is_global")
+    new_status = compute_synthesized_status(
+        old_status,
+        rec["inputs"] or [],
+        checklist=checklist,
+        is_global=str(is_global).lower() == "true",
+    )
 
-    if new_status != old_status:
-        update_query = """
-        MATCH (target) WHERE elementId(target) = $target_id
-        SET target.test_status = $new_status
-        """
-        session.run(update_query, target_id=target_id, new_status=new_status)
-        
-        # 하류(outgoing) 노드들로 연쇄 전파
-        downstream_query = """
-        MATCH (target)-[r]->(downstream) WHERE elementId(target) = $target_id
-        RETURN elementId(downstream) AS next_id
-        """
-        downstream_recs = session.run(downstream_query, target_id=target_id)
-        for d in downstream_recs:
-            _recalc_target_node_status(session, d["next_id"], visited=visited)
+    if new_status == old_status:
+        return False
+    update_query = """
+    MATCH (target) WHERE elementId(target) = $target_id
+    SET target.test_status = $new_status
+    """
+    session.run(update_query, target_id=target_id, new_status=new_status)
+    return True
+
+
+def _recalc_target_node_status(session, target_id: str, visited=None, propagate: bool = True):
+    """
+    엣지 생성/수정/삭제 후 호출되는 진입점: 타겟 노드를 재계산하고,
+    상태가 변경되면 하류 DEPENDS_ON / TESTS 노드들로 연쇄 전파합니다. (propagate=False면 자기 자신만 갱신)
+    visited 인자는 하위 호환을 위해 유지합니다. (전파는 워크리스트 + MAX_PROPAGATION_STEPS로 순환 보호)
+    """
+    changed = _recalc_single_node_status(session, target_id)
+    if changed and propagate:
+        _run_propagation(session, _dependent_targets(session, target_id))
 
 def delete_node(session, node_id: str):
     check_query = """
@@ -448,6 +626,53 @@ def delete_edge(session, edge_id: str):
     record = result.single()
     if record:
         _recalc_target_node_status(session, record["target_id"])
+
+
+def get_node_statuses(session) -> Dict[str, str]:
+    """
+    전체 노드의 {elementId: test_status} 스냅샷을 반환합니다.
+    프론트엔드는 낙관적 전파로 화면을 먼저 갱신한 뒤, 이 값으로 서버(SSOT)의 연쇄 전파 결과와 재동기화합니다.
+    (/api/graph 전체 재조회 + 레이아웃 재계산 없이 상태만 맞추기 위한 경량 엔드포인트)
+    """
+    result = session.run("MATCH (n) RETURN elementId(n) AS id, coalesce(n.test_status, 'Untested') AS test_status")
+    return {rec["id"]: rec["test_status"] for rec in result}
+
+
+# ─── Change Impact Ripple Highlight (TESTCASE 스펙 7 / AI_IMPLEMENTATION_SPEC 4.4) ─────
+def _now_iso() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def mark_node_modified(session, node_id: str, note: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """기획/UI 변경이 발생한 노드를 수정 상태(is_modified=true)로 표시합니다. 노드가 없으면 None."""
+    query = """
+    MATCH (n) WHERE elementId(n) = $id
+    SET n.is_modified = true,
+        n.modified_note = $note,
+        n.modified_at = $modified_at
+    RETURN elementId(n) AS id, n.modified_note AS modified_note, n.modified_at AS modified_at
+    """
+    rec = session.run(query, id=node_id, note=(note or "").strip(), modified_at=_now_iso()).single()
+    if not rec:
+        return None
+    return {"id": rec["id"], "is_modified": True, "modified_note": rec["modified_note"], "modified_at": rec["modified_at"]}
+
+
+def acknowledge_node_modification(session, node_id: str) -> Optional[Dict[str, Any]]:
+    """
+    테스터가 변경 내역을 확인/재검증했음을 기록합니다 (is_modified=false).
+    modified_note/modified_at은 이력으로 남기고, 확인 시각(acknowledged_at)을 추가로 기록합니다.
+    """
+    query = """
+    MATCH (n) WHERE elementId(n) = $id
+    SET n.is_modified = false,
+        n.acknowledged_at = $acknowledged_at
+    RETURN elementId(n) AS id, n.acknowledged_at AS acknowledged_at
+    """
+    rec = session.run(query, id=node_id, acknowledged_at=_now_iso()).single()
+    if not rec:
+        return None
+    return {"id": rec["id"], "is_modified": False, "acknowledged_at": rec["acknowledged_at"]}
 
 
 def get_impact_nodes(session, global_node_id: str) -> dict:
@@ -618,7 +843,14 @@ def get_impact_scope(session, query_str: str) -> Optional[ImpactScopeResponse]:
         )
     
     # 3. 하류 도달 가능한 노드들 (descendants)
-    descendants = nx.descendants(G, start_id)
+    # Return(복귀) 엣지는 상태 전파 OFF(가중치 0)이므로 영향 범위 탐색에서도 제외합니다. (TESTCASE 스펙 3.4)
+    G_forward = nx.MultiDiGraph()
+    G_forward.add_nodes_from(G.nodes(data=True))
+    G_forward.add_edges_from(
+        (u, v, k, d) for u, v, k, d in G.edges(keys=True, data=True)
+        if str(d.get("type", "")).upper() != "RETURN"
+    )
+    descendants = nx.descendants(G_forward, start_id)
     impacted_node_ids = set(descendants)
     
     impacted_nodes = []

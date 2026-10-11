@@ -2,8 +2,8 @@
 
 **Document Version:** 1.0.0  
 **Target Audience:** Senior AI Coding Agents & QA Engineers  
-**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///d:/workspace/Coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///d:/workspace/Coveragemap/UI_UX_DESIGN_SYSTEM.md)  
-**Status:** Approved Specification (Ready for Implementation)
+**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///e:/Workspace/coveragemap/UI_UX_DESIGN_SYSTEM.md)  
+**Status:** Implemented (2026-10-11) — 구현 결과 및 원 명세와 달라진 결정 사항은 [8. 구현 결과 및 결정 기록](#8-구현-결과-및-결정-기록-implementation-record-2026-10-11) 참조
 
 ---
 
@@ -55,7 +55,7 @@ flowchart LR
   - 이로 인해 테스터는 노드 상태 따로, 엣지 상태 따로, 컴포넌트 상태 따로 이중/삼중으로 수동 조작해야 하는 문제가 있습니다.
 
 ### 2.2. 한계 2: Edit Node UI에 `Blocked` 상태 누락 (Missing Blocked Action)
-- **현상**: 기획서([AI_IMPLEMENTATION_SPEC.md](file:///d:/workspace/Coveragemap/AI_IMPLEMENTATION_SPEC.md) 3.1)에는 4단계 상태(`Untested`, `Passed`, `Failed`, `Blocked`)가 명시되어 있으나, `App.tsx`의 Edit Node 패널에는 `Mark Passed`, `Mark Failed`, `Reset Status` 3개 버튼만 존재합니다.
+- **현상**: 기획서([AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md) 3.1)에는 4단계 상태(`Untested`, `Passed`, `Failed`, `Blocked`)가 명시되어 있으나, `App.tsx`의 Edit Node 패널에는 `Mark Passed`, `Mark Failed`, `Reset Status` 3개 버튼만 존재합니다.
 - **원인**:
   - `Blocked`는 원래 "선행 조건 실패 시 시스템이 자동으로 산출하는 파생 상태(Computed State)"로 기획되었기 때문에 수동 마킹 버튼에서 제외되었습니다.
   - 그러나 선행 노드(`TC 1`)가 `Failed`가 되었을 때 후행 노드(`TC 2`)로 `Blocked`를 전파하는 자동 트리거가 누락되어 있어 결과적으로 `Blocked` 상태가 도출되지 못했습니다.
@@ -238,10 +238,10 @@ flowchart TD
 ## 6. Verification Guidelines (검증 기준)
 1. **Tier 1 (정적 검사)**: `python scripts/check_policy.py` 통과 (0 Exit Code).
 2. **E2E 테스트 시나리오**:
-   - [ ] `TC 1`을 `Failed`로 마킹 시, `Depends_On`으로 연결된 `TC 2`가 즉시 `Blocked(🟡)`로 자동 변경되는가?
-   - [ ] `TC 1`을 다시 `Passed`로 복구 시, `TC 2`의 차단이 해제되는가?
-   - [ ] `TC 1`과 `TC 2`가 모두 `Passed`일 때, 대상 `Component`가 자동으로 `Passed(🟢)`로 변경되는가?
-   - [ ] Edit Node에서 `Mark Blocked`를 눌렀을 때 📌 핀 아이콘 및 사유가 정상 저장되는가?
+   - [x] `TC 1`을 `Failed`로 마킹 시, `Depends_On`으로 연결된 `TC 2`가 즉시 `Blocked(🟡)`로 자동 변경되는가? *(pytest `test_status_propagation.py`, E2E `verify_state_engine_2026_10.spec.ts` A)*
+   - [x] `TC 1`을 다시 `Passed`로 복구 시, `TC 2`의 차단이 해제되는가? *(동일)*
+   - [x] `TC 1`과 `TC 2`가 모두 `Passed`일 때, 대상 `Component`가 자동으로 `Passed(🟢)`로 변경되는가? *(pytest `test_status_propagation.py`)*
+   - [x] Edit Node에서 `Mark Blocked`를 눌렀을 때 📌 핀 아이콘 및 사유가 정상 저장되는가? *(E2E B)*
 
 ---
 
@@ -299,3 +299,35 @@ flowchart LR
    - `index.css`: `.node-modified-pulse` 및 `@keyframes pulse-modified` 애니메이션 추가.
    - `CoverageNode.tsx`: `is_modified` 플래그 감지 시 칩 노출 및 클래스 적용.
    - `App.tsx`: 우측 인스펙터에 Acknowledge 버튼 및 `modified_note` 렌더링.
+
+---
+
+## 8. 구현 결과 및 결정 기록 (Implementation Record, 2026-10-11)
+
+> 위 1~7장의 원 명세는 기록 보존을 위해 그대로 두고, 실제 구현과 원 명세가 달라진 지점만 여기에 기록합니다.
+
+### 8.1. 구현 위치
+| 영역 | 파일 / 심볼 |
+| :--- | :--- |
+| 상태 합성 (순수 함수) | `backend/graph_service.py` → `compute_synthesized_status` |
+| 연쇄 전파 (워크리스트) | `backend/graph_service.py` → `_run_propagation`, `_propagate_to_dependents`, `_recalc_single_node_status`, `_recalc_target_node_status` |
+| 변경 표시 / 확인 | `backend/graph_service.py` → `mark_node_modified`, `acknowledge_node_modification` / `backend/main.py` → `POST /api/nodes/{id}/mark-modified`, `POST /api/nodes/{id}/acknowledge` |
+| 상태 재동기화 | `GET /api/node-statuses` → `{elementId: test_status}` (`get_node_statuses`) |
+| 프론트 미러 엔진 | `frontend/src/statusPropagation.ts` (`computeSynthesizedStatus`, `runPropagation`, `propagateToDependents`, `recalcTargetAndPropagate`, `applyStatusChanges`) |
+| Inspector UI | `frontend/src/App.tsx` → Mark Blocked + 사유 입력, 체크리스트 에디터(`saveChecklist`), 변경 영향도 섹션(`handleMarkModified`, `handleAcknowledge`, `affectedScope`) |
+| 노드 카드 | `frontend/src/CoverageNode.tsx` → 📌 핀, 체크리스트 진행률 배지, `✨ [Spec Updated]` 칩, `.node-modified-pulse` |
+| 테스트 | `backend/test_status_propagation.py`, `backend/test_edit_api.py`, `e2e-tests/tests/verify_state_engine_2026_10.spec.ts` |
+
+### 8.2. 원 명세 대비 결정 사항
+1. **5.2의 Cypher 정정**: Neo4j에서 관계 타입은 속성이 아니므로 `in_r.type`이 아니라 `type(in_r)`로 읽고, 대소문자 혼용(`Depends_On`/`DEPENDS_ON`)을 막기 위해 `toUpper`로 정규화합니다.
+2. **전파 대상 관계 한정**: 연쇄 전파(소스 **노드** 상태를 입력으로 사용)는 `Depends_On`·`Tests` 두 관계에만 적용합니다. `Transition`/`Contains` 등 Flow 엣지는 기존처럼 **엣지 자체의 상태**로 판정(3.4의 진입선 규칙 유지)하고, `Return`은 입력에서 완전히 제외합니다.
+3. **`Tests` 실패 우선**: 4.2 다이어그램의 "`Blocked` 또는 `Failed`" 모호성을 해소하여, `Tests` 소스 중 하나라도 `Failed`이면 대상은 `Failed`, (`Failed`가 없고) `Blocked`가 있으면 `Blocked`로 정했습니다.
+4. **`Depends_On`만 있는 노드의 복구**: 선행이 정상으로 돌아오면 자동으로 부여됐던 `Blocked`만 `Untested`로 해제하고, 테스터가 직접 마킹한 `Passed`/`Failed`는 유지합니다.
+5. **워크리스트 전파 + 사이클 안전성**: 재귀 대신 큐 기반으로 하류를 순회하며 이미 처리한 노드는 다시 넣지 않아, `Return`이 아닌 순환이 남아 있어도 무한 루프가 생기지 않습니다. 📌 고정 노드와 전역(Badge) 노드는 전파를 멈춥니다.
+6. **체크리스트 저장 형식**: Neo4j 속성은 중첩 객체를 저장할 수 없으므로 `properties.checklist`를 JSON 문자열로 직렬화해 저장하고, API 경계에서 배열로 역직렬화합니다.
+7. **Acknowledge는 상태를 바꾸지 않음 (7.3 정정)**: 7.3의 "정상 상태(Passed🟢)로 복귀"는 테스트 결과를 자동 조작하는 위험이 있어 채택하지 않았습니다. Acknowledge는 `is_modified=false`로 시각 효과만 해제하며, 재검증 결과는 테스터가 직접 마킹합니다. 같은 이유로 변경 표시 시 상태를 `Untested`로 자동 리셋하지도 않습니다.
+8. **영향권 범위**: `.highlight-affected`는 변경 노드에서 나가는 방향으로 `Return`을 제외하고 **최대 2 hop**까지(7.2의 "1~2차 후속 노드") 적용합니다.
+9. **프론트-서버 정합성**: 프론트엔드 `edges` 상태에는 `Contains`/배지 엣지가 빠져 있어 로컬 계산이 서버와 다를 수 있습니다. 따라서 로컬 계산은 낙관적 표시용으로만 쓰고, 저장 직후 `GET /api/node-statuses`로 서버 결과를 받아 덮어씁니다. (`/api/graph` 재조회를 하지 않으므로 레이아웃·줌이 유지됨)
+
+### 8.3. 남은 과제
+- **Root Cause Tracing 버튼 (AI_IMPLEMENTATION_SPEC 3.3)**: `.highlight-root-cause` CSS와 백엔드 역추적(`get_node_status_summary`)은 있으나, Inspector의 **[Trace Root Cause]** 버튼은 아직 연결되지 않았습니다.

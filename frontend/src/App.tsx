@@ -15,9 +15,22 @@ import {
   Connection,
   ConnectionMode,
 } from '@xyflow/react';
-import { getLayoutedElements, getGridLayoutedElements } from './layout';
+import { getLayoutedElements } from './layout';
 import { PresetManagerModal } from './components/PresetManagerModal';
 import { t } from './locales/koKR';
+// Living TC 4-Stage 연쇄 전파 엔진 (백엔드 compute_synthesized_status 와 동일 규칙)
+import {
+  applyStatusChanges,
+  checklistStatus,
+  computeSynthesizedStatus,
+  edgeTypeOf,
+  isOverridden,
+  propagateToDependents,
+  recalcTargetAndPropagate,
+  type ChecklistItem,
+  type StatusInput,
+  type StatusName,
+} from './statusPropagation';
 
 const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
   const edgeBundles: Record<string, Edge[]> = {};
@@ -46,8 +59,18 @@ const calculateEdgeBundling = (edgesList: Edge[]): Edge[] => {
 // System reserved keys that have dedicated UI form controls and must be excluded from Custom Properties
 const SYSTEM_RESERVED_KEYS = new Set([
   'name', 'label', 'aliases', 'test_status', 'id',
-  'is_global', 'description', 'issue_link', 'x', 'y'
+  'is_global', 'description', 'issue_link', 'x', 'y',
+  // B안 체크리스트 / 📌 수동 고정 / Change Impact Ripple 필드는 전용 UI(Inspector 섹션)에서만 편집합니다.
+  'checklist', 'is_manual_override', 'override_reason',
+  'is_modified', 'modified_note', 'modified_at', 'acknowledged_at'
 ]);
+
+// 체크리스트 항목 원클릭 상태 버튼 순서 (⚪ / 🟢 / 🔴 / 🟡) — TESTCASE 스펙 3.3-3
+const CHECKLIST_STATUS_CYCLE: StatusName[] = ['Untested', 'Passed', 'Failed', 'Blocked'];
+const STATUS_ICON: Record<string, string> = { Untested: '⚪', Passed: '🟢', Failed: '🔴', Blocked: '🟡' };
+
+// 변경 영향권(.highlight-affected)으로 표시할 다운스트림 홉 수 (TESTCASE 스펙 7.2: 1~2차 후속 노드)
+const AFFECTED_MAX_HOPS = 2;
 
 
 type ApiNode = {
@@ -86,12 +109,21 @@ export default function App() {
   const [isCreatingNode, setIsCreatingNode] = useState(false);
   const [editFormData, setEditFormData] = useState<any>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  // 그래프 전체 재조회(/api/graph) 완료 횟수 — 재조회로 className이 초기화되면 하이라이트 effect를 다시 적용하기 위함
+  const [graphVersion, setGraphVersion] = useState(0);
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, show: boolean } | null>(null);
   const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
   const [showPresetManager, setShowPresetManager] = useState(false);
-  const [showCypherExport, setShowCypherExport] = useState(false);
-  const [cypherQuery, setCypherQuery] = useState('');
+
+  // E. 연결 드래그 중일 때만 타겟 드롭 히트박스를 노드 전체로 확장하기 위한 플래그 (.react-flow--connecting)
+  const [isConnecting, setIsConnecting] = useState(false);
+  // B. Mark Blocked(📌 수동 차단) 사유 입력 UI 상태 — null이면 입력창 닫힘
+  const [blockReasonDraft, setBlockReasonDraft] = useState<string | null>(null);
+  // D. 변경 표시(Mark Modified) 메모 입력값
+  const [modifiedNoteDraft, setModifiedNoteDraft] = useState('');
+  // C. 체크리스트 항목의 상태 선택 팝오버가 열린 항목 id (한 번에 하나만 열림, null이면 닫힘)
+  const [openChecklistStatusId, setOpenChecklistStatusId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -219,6 +251,55 @@ export default function App() {
 
   const triggerRefresh = () => setRefreshKey(k => k + 1);
 
+  // 최신 nodes/edges 참조 (useCallback 핸들러의 stale closure 방지 — 전파 계산은 항상 최신 그래프 기준)
+  const nodesRef = useRef<Node[]>(nodes);
+  const edgesRef = useRef<Edge[]>(edges);
+  nodesRef.current = nodes;
+  edgesRef.current = edges;
+
+  // 서버 재동기화 순번: 늦게 도착한 이전 응답이 최신 낙관적 상태를 덮어쓰지 않도록 마지막 요청만 반영
+  const statusSyncSeq = useRef(0);
+  // 저장 중인 변경 요청 수: 다른 변경이 아직 저장 중이면 그 사이의 서버 스냅샷은 낡았으므로 반영하지 않음
+  const pendingMutations = useRef(0);
+
+  /**
+   * 상태 전파를 일으키는 저장 요청 래퍼.
+   * 요청 시작 시 진행 중인 재동기화를 무효화하고, 끝날 때까지 pending으로 표시합니다.
+   */
+  const persist = useCallback(async (url: string, init: RequestInit) => {
+    pendingMutations.current += 1;
+    statusSyncSeq.current += 1;
+    try {
+      return await fetch(url, init);
+    } finally {
+      pendingMutations.current -= 1;
+    }
+  }, []);
+
+  /**
+   * 낙관적 전파 이후 서버(SSOT)의 실제 연쇄 전파 결과로 노드 상태를 재동기화합니다.
+   * - 프론트 state에는 Contains/배지 엣지가 없어 일부 노드는 로컬 계산과 서버 계산이 다를 수 있습니다.
+   * - 레이아웃/줌을 건드리지 않고 test_status(+status-xxx 클래스)만 맞춥니다. (Anti-Jumping)
+   */
+  const syncStatusesFromServer = useCallback(async () => {
+    const seq = ++statusSyncSeq.current;
+    try {
+      const res = await fetch('/api/node-statuses');
+      if (!res.ok || seq !== statusSyncSeq.current || pendingMutations.current > 0) return;
+      const serverStatuses: Record<string, string> = await res.json();
+      if (seq !== statusSyncSeq.current || pendingMutations.current > 0) return;
+      setNodes(nds => applyStatusChanges(nds, serverStatuses));
+    } catch (err) {
+      console.error('Failed to sync statuses', err);
+    }
+  }, [setNodes]);
+
+  /** 로컬 전파 결과를 노드 state에 반영 (상태 변경 맵이 비어 있으면 아무것도 하지 않음) */
+  const applyLocalStatusChanges = useCallback((changes: Record<string, string>) => {
+    if (Object.keys(changes).length === 0) return;
+    setNodes(nds => applyStatusChanges(nds, changes));
+  }, [setNodes]);
+
 
 
   // Undo Stack
@@ -298,10 +379,12 @@ export default function App() {
           style: { strokeWidth: 2 },
         }]));
       }
+      // 되돌린 변경이 연쇄 전파를 일으켰을 수 있으므로 서버 상태로 재동기화
+      syncStatusesFromServer();
     } catch (err) {
       console.error("Undo failed", err);
     }
-  }, [triggerRefresh, setNodes, setEdges]);
+  }, [triggerRefresh, setNodes, setEdges, syncStatusesFromServer]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -562,6 +645,7 @@ export default function App() {
 
         setNodes(layoutedNodes);
         setEdges(layoutedEdges);
+        setGraphVersion(v => v + 1);
         setError(null);
         
         // Auto-fit view when the graph is loaded to center all elements nicely
@@ -588,6 +672,13 @@ export default function App() {
       controller.abort();
     };
   }, [filterText, maxDepth, setNodes, setEdges, refreshKey]);
+
+  // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모)은 닫고 비웁니다.
+  // (React Flow는 노드 data가 바뀌어도 selection을 새 객체로 다시 알려주므로 id 기준으로만 초기화)
+  useEffect(() => {
+    setBlockReasonDraft(null);
+    setModifiedNoteDraft('');
+  }, [selectedNode?.id, selectedEdge?.id, isCreatingNode]);
 
   useEffect(() => {
     if (selectedNode) {
@@ -649,8 +740,17 @@ export default function App() {
     }
     // ReactFlow already removes node from local state via onNodesChange
     // Remove connected edges from local state
-    setEdges(eds => eds.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target)));
-  }, [pushUndo, edges, setEdges]);
+    const remainingEdges = edgesRef.current.filter(e => !deletedIds.has(e.source) && !deletedIds.has(e.target));
+    setEdges(remainingEdges);
+    // 삭제된 노드가 입력이던 타겟들을 재계산 (백엔드 delete_node → _recalc_target_node_status 와 동일)
+    const affectedTargets = Array.from(new Set(
+      edgesRef.current.filter(e => deletedIds.has(e.source) && !deletedIds.has(e.target)).map(e => e.target)
+    ));
+    applyLocalStatusChanges(recalcTargetAndPropagate(
+      nodesRef.current.filter(n => !deletedIds.has(n.id)), remainingEdges, affectedTargets
+    ));
+    if (deletedIds.size > 0) syncStatusesFromServer();
+  }, [pushUndo, edges, setEdges, applyLocalStatusChanges, syncStatusesFromServer]);
 
   const onEdgesDelete = useCallback(async (deleted: Edge[]) => {
     for (const e of deleted) {
@@ -668,13 +768,20 @@ export default function App() {
       await fetch(`/api/edges/${e.id}`, { method: 'DELETE' });
     }
     // ReactFlow already removes edges from local state via onEdgesChange
-  }, [pushUndo]);
+    // 삭제된 엣지의 타겟 노드를 재계산하고 하류로 전파 (낙관적) → 서버 결과로 재동기화
+    const deletedEdgeIds = new Set(deleted.map(e => e.id));
+    const remainingEdges = edgesRef.current.filter(e => !deletedEdgeIds.has(e.id));
+    applyLocalStatusChanges(recalcTargetAndPropagate(
+      nodesRef.current, remainingEdges, Array.from(new Set(deleted.map(e => e.target)))
+    ));
+    if (deleted.length > 0) syncStatusesFromServer();
+  }, [pushUndo, applyLocalStatusChanges, syncStatusesFromServer]);
 
   const onConnect = useCallback(async (connection: Connection) => {
     if (!connection.source || !connection.target) return;
     
-    const sourceNode = nodes.find(n => n.id === connection.source);
-    const targetNode = nodes.find(n => n.id === connection.target);
+    const sourceNode = nodesRef.current.find(n => n.id === connection.source);
+    const targetNode = nodesRef.current.find(n => n.id === connection.target);
     const sourceIsGlobal = (sourceNode?.data as any)?.properties?.is_global === 'true';
     const targetIsGlobal = (targetNode?.data as any)?.properties?.is_global === 'true';
 
@@ -739,31 +846,25 @@ export default function App() {
       }
 
       // Add edge to local state instead of re-fetching entire graph with floating type
-      setEdges(eds => {
-        const nextEds = [...eds, {
-          id: newEdgeId,
-          source: connection.source!,
-          target: connection.target!,
-          label: defaultType,
-          type: 'floating',
-          data: { type: defaultType, test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
-          style: { stroke: 'gray', strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
-        }];
-        const bundledEds = calculateEdgeBundling(nextEds);
-        const targetId = connection.target!;
-        const newTargetStatus = recalculateTargetStatus(targetId, bundledEds);
-        setNodes(nds => nds.map(n => {
-          if (n.id !== targetId || (n.data as any)?.test_status === newTargetStatus) return n;
-          const cls = (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newTargetStatus.toLowerCase();
-          return { ...n, data: { ...n.data, test_status: newTargetStatus }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newTargetStatus === 'Passed' ? '#c8e6c9' : (newTargetStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
-        }));
-        return bundledEds;
-      });
+      const newEdge: Edge = {
+        id: newEdgeId,
+        source: connection.source!,
+        target: connection.target!,
+        label: defaultType,
+        type: 'floating',
+        data: { type: defaultType, test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
+        style: { stroke: 'gray', strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
+      };
+      const bundledEds = calculateEdgeBundling([...edgesRef.current, newEdge]);
+      setEdges(bundledEds);
+      // 새 입력 엣지가 생긴 타겟을 재계산하고, 바뀌면 하류(Depends_On/Tests)로 연쇄 전파 (낙관적)
+      applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, bundledEds, [connection.target!]));
+      syncStatusesFromServer();
     } catch (err) {
       console.error("Failed to create edge:", err);
     }
-  }, [pushUndo, setEdges, setNodes]);
+  }, [pushUndo, setEdges, setNodes, applyLocalStatusChanges, syncStatusesFromServer]);
 
   
   const handleDelete = async () => {
@@ -790,7 +891,17 @@ export default function App() {
           connectedEdges
         });
       }
-      setNodes(nds => nds.filter(n => n.id !== editFormData.id)); 
+      const deletedNodeId = editFormData.id;
+      const remainingEdges = edgesRef.current.filter(e => e.source !== deletedNodeId && e.target !== deletedNodeId);
+      // 삭제된 노드가 입력이던 타겟들 (백엔드 delete_node → _recalc_target_node_status 와 동일)
+      const affectedTargets = Array.from(new Set(
+        edgesRef.current.filter(e => e.source === deletedNodeId && e.target !== deletedNodeId).map(e => e.target)
+      ));
+      const remainingNodes = nodesRef.current.filter(n => n.id !== deletedNodeId);
+      const changes = recalcTargetAndPropagate(remainingNodes, remainingEdges, affectedTargets);
+      setNodes(applyStatusChanges(remainingNodes, changes));
+      setEdges(remainingEdges);
+      syncStatusesFromServer();
     } else if (editFormData.type === "edge") { 
       const edge = edges.find(e => e.id === editFormData.id);
       if (edge) {
@@ -807,19 +918,13 @@ export default function App() {
         });
       }
       await fetch(`/api/edges/${editFormData.id}`, { method: "DELETE" }); 
-      setEdges(eds => {
-        const nextEds = eds.filter(e => e.id !== editFormData.id);
-        if (edge) {
-          const targetId = edge.target;
-          const newTargetStatus = recalculateTargetStatus(targetId, nextEds);
-          setNodes(nds => nds.map(n => {
-            if (n.id !== targetId || (n.data as any)?.test_status === newTargetStatus) return n;
-            const cls = (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newTargetStatus.toLowerCase();
-            return { ...n, data: { ...n.data, test_status: newTargetStatus }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newTargetStatus === 'Passed' ? '#c8e6c9' : (newTargetStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
-          }));
-        }
-        return nextEds;
-      }); 
+      const nextEds = edgesRef.current.filter(e => e.id !== editFormData.id);
+      setEdges(nextEds);
+      if (edge) {
+        // 입력 엣지가 사라진 타겟을 재계산하고 하류로 연쇄 전파 (낙관적) → 서버 결과로 재동기화
+        applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [edge.target]));
+        syncStatusesFromServer();
+      }
     } 
     setEditFormData({}); 
     setSelectedNode(null); 
@@ -827,23 +932,35 @@ export default function App() {
     setSelectedEdge(null);
   }; 
   
-  const recalculateTargetStatus = (targetId: string, currentEdges: Edge[]) => {
-    const incoming = currentEdges.filter(e => e.target === targetId);
-    if (incoming.length === 0) return 'Untested';
-    let hasFailed = false, allPassed = true;
-    for (const e of incoming) {
-      const st = ((e.data as any)?.test_status || 'Untested').toLowerCase();
-      if (st === 'failed') hasFailed = true;
-      if (st !== 'passed') allPassed = false;
-    }
-    return hasFailed ? 'Failed' : (allPassed ? 'Passed' : 'Untested');
+  /**
+   * 노드 1개의 상태를 "현재 입력(들어오는 엣지/출발 노드/체크리스트)" 기준으로 합성합니다.
+   * (기존 recalculateTargetStatus 대체: Failed 대신 Blocked 전파, Return 제외, 📌 고정 존중 — statusPropagation.ts 참고)
+   */
+  const synthesizeNodeStatus = (nodeId: string, checklist: unknown, currentStatus: string): StatusName => {
+    const statusOf = new Map(nodesRef.current.map(n => [n.id, ((n.data as any)?.test_status || 'Untested') as string]));
+    const inputs: StatusInput[] = edgesRef.current
+      .filter(e => e.target === nodeId && edgeTypeOf(e) !== 'RETURN')
+      .map(e => ({
+        edgeType: edgeTypeOf(e),
+        edgeStatus: ((e.data as any)?.test_status || 'Untested'),
+        srcStatus: statusOf.get(e.source) || 'Untested',
+      }));
+    return computeSynthesizedStatus(currentStatus, inputs, checklist, false);
   };
 
-  const handleSaveStatus = async (newStatus: string) => {
+  /**
+   * 상태 마킹 저장 (Mark Passed / Failed / Reset / Blocked)
+   * - override가 있으면 📌 수동 고정(Manual Override): is_manual_override=true + override_reason 기록 (TESTCASE 스펙 4.3)
+   * - Passed/Failed/Reset은 테스터의 직접 판정이므로 기존 📌 고정을 해제합니다.
+   * - 낙관적 업데이트를 먼저 적용(로컬 연쇄 전파 포함)한 뒤 저장하고, 저장 후 서버 상태로 재동기화합니다.
+   */
+  const handleSaveStatus = async (newStatus: string, override?: { reason: string }) => {
     if (editFormData.type === 'node') {
       const node = nodes.find(n => n.id === editFormData.id);
       const cleanProps = { ...(editFormData.properties || {}) };
       SYSTEM_RESERVED_KEYS.forEach(k => delete cleanProps[k]);
+      const isManual = !!override;
+      const overrideReason = override?.reason ?? '';
       const payload = {
         label: editFormData.label,
         name: editFormData.name,
@@ -867,26 +984,24 @@ export default function App() {
         pushUndo({ type: 'CREATE_NODE', id: newId });
         setIsCreatingNode(false);
         triggerRefresh(); // New node needs layout
-      } else {
-        if (node) {
-          pushUndo({
-            type: 'UPDATE_NODE',
-            id: node.id,
-            previousData: {
-              name: (node.data as any).name,
-              aliases: (node.data as any).aliases || [],
-              test_status: (node.data as any).test_status || 'Untested',
-              properties: (node.data as any).properties || {}
-            }
-          });
-        }
-        await fetch(`/api/nodes/${editFormData.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        return;
+      }
+
+      if (node) {
+        pushUndo({
+          type: 'UPDATE_NODE',
+          id: node.id,
+          previousData: {
+            name: (node.data as any).name,
+            aliases: (node.data as any).aliases || [],
+            test_status: (node.data as any).test_status || 'Untested',
+            properties: (node.data as any).properties || {}
+          }
         });
       }
-      setNodes(nds => nds.map(n => {
+
+      // 1) 낙관적 업데이트: 대상 노드 상태 + 📌 고정 플래그 + 배지 상태를 즉시 반영
+      const updatedNodes = nodesRef.current.map(n => {
         let newBadges = [...((n.data as any).badges || [])];
         let badgesChanged = false;
         newBadges = newBadges.map((b: any) => {
@@ -909,11 +1024,27 @@ export default function App() {
           data: { 
             ...(n.data || {}), 
             test_status: newStatus, 
-            badges: newBadges 
+            badges: newBadges,
+            properties: {
+              ...((n.data as any)?.properties || {}),
+              is_manual_override: isManual,
+              override_reason: overrideReason
+            }
           } 
         };
-      }));
+      });
+      // 2) 하류(Depends_On / Tests) 연쇄 전파 — 방금 마킹한 노드는 exclude 되어 덮어쓰지 않음
+      const changes = propagateToDependents(updatedNodes, edgesRef.current, editFormData.id);
+      setNodes(applyStatusChanges(updatedNodes, changes));
       setEditFormData({ ...editFormData, status: newStatus, properties: cleanProps });
+
+      // 3) 저장 (백엔드 update_node가 동일 규칙으로 연쇄 전파) → 서버 결과로 재동기화
+      await persist(`/api/nodes/${editFormData.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, is_manual_override: isManual, override_reason: overrideReason })
+      });
+      syncStatusesFromServer();
     } else if (editFormData.type === 'edge') {
       const edge = edges.find(e => e.id === editFormData.id);
       if (!edge) return;
@@ -931,27 +1062,23 @@ export default function App() {
         test_status: newStatus,
         properties: editFormData.properties || {}
       };
-      await fetch(`/api/edges/${editFormData.id}`, {
+      // 1) 낙관적 업데이트: 엣지 상태 반영 + 타겟 노드 재계산/하류 전파
+      const nextEds = edgesRef.current.map(e => {
+        if (e.id !== editFormData.id) return e;
+        const cls = (e.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newStatus.toLowerCase();
+        return { ...e, data: { ...(e.data || {}), test_status: newStatus, markerColor: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, className: cls.trim(), style: { ...(e.style || {}), stroke: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, markerEnd: { type: MarkerType.ArrowClosed, color: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') } };
+      });
+      setEdges(nextEds);
+      applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [edge.target]));
+      setEditFormData({ ...editFormData, status: newStatus });
+
+      // 2) 저장 → 서버 결과로 재동기화
+      await persist(`/api/edges/${editFormData.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      setEdges(eds => {
-        const nextEds = eds.map(e => {
-          if (e.id !== editFormData.id) return e;
-          const cls = (e.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newStatus.toLowerCase();
-          return { ...e, data: { ...(e.data || {}), test_status: newStatus, markerColor: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, className: cls.trim(), style: { ...(e.style || {}), stroke: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, markerEnd: { type: MarkerType.ArrowClosed, color: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') } };
-        });
-        const targetId = edge.target;
-        const newTargetStatus = recalculateTargetStatus(targetId, nextEds);
-        setNodes(nds => nds.map(n => {
-          if (n.id !== targetId || (n.data as any)?.test_status === newTargetStatus) return n;
-          const cls = (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newTargetStatus.toLowerCase();
-          return { ...n, data: { ...n.data, test_status: newTargetStatus }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newTargetStatus === 'Passed' ? '#c8e6c9' : (newTargetStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
-        }));
-        return nextEds;
-      });
-      setEditFormData({ ...editFormData, status: newStatus });
+      syncStatusesFromServer();
     }
   };
 
@@ -964,12 +1091,15 @@ export default function App() {
       const description = props.description;
       const issue_link = props.issue_link;
       SYSTEM_RESERVED_KEYS.forEach(k => delete props[k]);
+      // 상태는 폼에 열어둔 값이 아니라 "현재 노드의 실제 상태"를 사용합니다.
+      // (폼을 연 뒤 연쇄 전파로 Blocked 등이 된 경우, 이름만 고쳐 저장해도 전파 결과를 덮어쓰지 않도록)
+      const liveStatus = isCreatingNode ? editFormData.status : ((node?.data as any)?.test_status || editFormData.status);
       
       const payload = {
         label: editFormData.label,
         name: editFormData.name,
         aliases: typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-        test_status: editFormData.status,
+        test_status: liveStatus,
         description: description,
         issue_link: issue_link,
         properties: props
@@ -1032,36 +1162,36 @@ export default function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        // 기존 시스템 속성(checklist / 📌 고정 / 변경 표시 / is_global 등)은 로컬 state에서도 그대로 보존합니다.
+        // (백엔드는 properties를 병합(n += $properties)하므로 서버 쪽 값도 유지됨)
+        const mergedProps = (prevData: any) => ({
+          ...((prevData as any)?.properties || {}),
+          ...payload.properties,
+          description: payload.description,
+          issue_link: payload.issue_link
+        });
         setNodes(nds => nds.map(n => n.id === editFormData.id ? { 
           ...n, 
-          className: (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (editFormData.status || 'untested').toLowerCase(),
+          className: (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (liveStatus || 'untested').toLowerCase(),
           data: { 
             ...n.data, 
             label: editFormData.label, 
             name: editFormData.name, 
-            test_status: editFormData.status, 
+            test_status: liveStatus, 
             aliases: payload.aliases, 
-            properties: { 
-              ...payload.properties, 
-              description: payload.description, 
-              issue_link: payload.issue_link 
-            } 
+            properties: mergedProps(n.data)
           } 
         } : n));
         setSelectedNode(prev => prev && prev.id === editFormData.id ? {
           ...prev,
-          className: (prev.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (editFormData.status || 'untested').toLowerCase(),
+          className: (prev.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (liveStatus || 'untested').toLowerCase(),
           data: {
             ...prev.data,
             label: editFormData.label,
             name: editFormData.name,
-            test_status: editFormData.status,
+            test_status: liveStatus,
             aliases: payload.aliases,
-            properties: {
-              ...payload.properties,
-              description: payload.description,
-              issue_link: payload.issue_link
-            }
+            properties: mergedProps(prev.data)
           }
         } : prev);
       }
@@ -1090,17 +1220,12 @@ export default function App() {
       });
       const data = await response.json();
       const newId = data.new_id || editFormData.id;
-      setEdges(eds => {
-        const nextEds = eds.map(e => e.id === editFormData.id ? { ...e, id: newId, type: e.type, label: payload.type || e.label, data: { ...e.data as any, action: payload.action, test_status: payload.test_status } } : e);
-        const targetId = edge.target;
-        const newTargetStatus = recalculateTargetStatus(targetId, nextEds);
-        setNodes(nds => nds.map(n => {
-          if (n.id !== targetId || (n.data as any)?.test_status === newTargetStatus) return n;
-          const cls = (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newTargetStatus.toLowerCase();
-          return { ...n, data: { ...n.data, test_status: newTargetStatus }, className: cls.trim(), style: { ...(n.style || {}), backgroundColor: newTargetStatus === 'Passed' ? '#c8e6c9' : (newTargetStatus === 'Failed' ? '#ffcdd2' : '#ffffff') } };
-        }));
-        return nextEds;
-      });
+      // data.type도 함께 갱신해야 전파 엔진(edgeTypeOf)이 바뀐 타입(예: Return 전환)을 인식합니다.
+      const nextEds = edgesRef.current.map(e => e.id === editFormData.id ? { ...e, id: newId, type: e.type, label: payload.type || e.label, data: { ...e.data as any, type: payload.type || (e.data as any)?.type, action: payload.action, test_status: payload.test_status } } : e);
+      setEdges(nextEds);
+      // 타입/상태가 바뀐 엣지의 타겟을 재계산하고 하류로 전파 (낙관적) → 서버 결과로 재동기화
+      applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [edge.target]));
+      syncStatusesFromServer();
       if (newId !== editFormData.id) {
         setEditFormData({...editFormData, id: newId});
         setSelectedEdge(prev => prev ? {...prev, id: newId} : null);
@@ -1112,6 +1237,136 @@ export default function App() {
     // Don't triggerRefresh for normal edits — local state is already updated
     // triggerRefresh would re-run dagre layout and reset all dragged positions
   };
+
+  // Inspector에서 편집 중인 노드의 "최신" 객체 (selectedNode는 선택 시점 스냅샷이라 전파/체크리스트 반영이 늦을 수 있음)
+  const liveEditNode = useMemo(
+    () => (editFormData.type === 'node' && editFormData.id) ? (nodes.find(n => n.id === editFormData.id) || null) : null,
+    [nodes, editFormData.type, editFormData.id]
+  );
+
+  /** UPDATE_NODE Undo 스냅샷 (체크리스트/변경 표시 등 properties 변경 전 상태 보관) */
+  const pushNodeUndoSnapshot = (node: Node) => {
+    pushUndo({
+      type: 'UPDATE_NODE',
+      id: node.id,
+      previousData: {
+        name: (node.data as any).name,
+        aliases: (node.data as any).aliases || [],
+        test_status: (node.data as any).test_status || 'Untested',
+        properties: (node.data as any).properties || {}
+      }
+    });
+  };
+
+  /**
+   * C. B안 노드 내부 체크리스트 저장 (TESTCASE 스펙 3.3)
+   * - 항목 체크/추가/삭제 즉시 낙관적 업데이트: properties.checklist → 노드 자동 판정 → 하류 연쇄 전파
+   * - 📌 수동 고정 노드는 체크리스트가 바뀌어도 상태를 덮어쓰지 않습니다. (백엔드 _recalc_single_node_status 와 동일)
+   * - 체크리스트를 모두 지우면(0개) 자동 판정을 멈추고 현재 상태를 유지합니다. (백엔드 update_node 와 동일)
+   */
+  const saveChecklist = async (nextChecklist: ChecklistItem[]) => {
+    const node = nodesRef.current.find(n => n.id === editFormData.id);
+    if (!node) return;
+    pushNodeUndoSnapshot(node);
+
+    // 1) properties.checklist 반영
+    let updatedNodes = nodesRef.current.map(n => n.id === node.id
+      ? { ...n, data: { ...n.data, properties: { ...((n.data as any)?.properties || {}), checklist: nextChecklist } } }
+      : n);
+    // 2) 체크리스트 기반 자기 자신 상태 재합성
+    if (nextChecklist.length > 0 && !isOverridden(node)) {
+      const current = (node.data as any)?.test_status || 'Untested';
+      const selfStatus = synthesizeNodeStatus(node.id, nextChecklist, current);
+      if (selfStatus !== current) updatedNodes = applyStatusChanges(updatedNodes, { [node.id]: selfStatus });
+    }
+    // 3) 하류(Depends_On / Tests) 연쇄 전파
+    const changes = propagateToDependents(updatedNodes, edgesRef.current, node.id);
+    setNodes(applyStatusChanges(updatedNodes, changes));
+
+    // 4) 저장 (상태는 백엔드가 같은 규칙으로 재계산) → 서버 결과로 재동기화
+    await persist(`/api/nodes/${node.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ properties: { checklist: nextChecklist } })
+    });
+    syncStatusesFromServer();
+  };
+
+  /** D. 변경 표시 (Mark Modified): 기획/UI 변경이 발생한 노드에 보라색 펄스 + 하류 영향권 표시 */
+  const handleMarkModified = async () => {
+    const nodeId = editFormData.id;
+    const note = modifiedNoteDraft.trim();
+    const node = nodesRef.current.find(n => n.id === nodeId);
+    if (!node) return;
+    pushNodeUndoSnapshot(node);
+    const patch = { is_modified: true, modified_note: note, modified_at: new Date().toISOString() };
+    setNodes(nds => nds.map(n => n.id === nodeId
+      ? { ...n, data: { ...n.data, properties: { ...((n.data as any)?.properties || {}), ...patch } } }
+      : n));
+    setModifiedNoteDraft('');
+    const res = await fetch(`/api/nodes/${nodeId}/mark-modified`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note })
+    });
+    if (!res.ok) {
+      setError(t.modified.saveFailed);
+      triggerRefresh();
+    }
+  };
+
+  /**
+   * D. 변경사항 확인 완료 (Acknowledge): 펄스/영향권 표시 해제.
+   * 테스트 상태(test_status)는 바꾸지 않습니다 — 재검증 결과는 테스터가 Mark Passed/체크리스트로 직접 기록합니다.
+   */
+  const handleAcknowledge = async () => {
+    const nodeId = editFormData.id;
+    const node = nodesRef.current.find(n => n.id === nodeId);
+    if (!node) return;
+    pushNodeUndoSnapshot(node);
+    const patch = { is_modified: false, acknowledged_at: new Date().toISOString() };
+    setNodes(nds => nds.map(n => n.id === nodeId
+      ? { ...n, data: { ...n.data, properties: { ...((n.data as any)?.properties || {}), ...patch } } }
+      : n));
+    const res = await fetch(`/api/nodes/${nodeId}/acknowledge`, { method: 'POST' });
+    if (!res.ok) {
+      setError(t.modified.saveFailed);
+      triggerRefresh();
+    }
+  };
+
+  /**
+   * D. 변경 영향권(Impact Ripple): is_modified 노드에서 나가는 엣지(Return 제외)를 따라 1~2홉 하류 노드/엣지.
+   * 집합 객체 대신 정렬된 키 문자열을 함께 만들어, 내용이 같으면 하이라이트 effect가 다시 돌지 않게 합니다.
+   */
+  const affectedScope = useMemo(() => {
+    const modifiedIds = nodes
+      .filter(n => { const v = (n.data as any)?.properties?.is_modified; return v === true || v === 'true'; })
+      .map(n => n.id);
+    const nodeIds = new Set<string>();
+    const edgeIds = new Set<string>();
+    let frontier = modifiedIds;
+    const visited = new Set(modifiedIds);
+    for (let hop = 0; hop < AFFECTED_MAX_HOPS && frontier.length > 0; hop++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const e of edges) {
+          if (e.source !== id || edgeTypeOf(e) === 'RETURN') continue;
+          edgeIds.add(e.id);
+          if (!visited.has(e.target)) {
+            visited.add(e.target);
+            nodeIds.add(e.target);
+            next.push(e.target);
+          }
+        }
+      }
+      frontier = next;
+    }
+    const key = `${Array.from(nodeIds).sort().join(',')}|${Array.from(edgeIds).sort().join(',')}`;
+    return { nodeIds, edgeIds, key };
+  }, [nodes, edges]);
+  const affectedScopeRef = useRef(affectedScope);
+  affectedScopeRef.current = affectedScope;
 
 
   useEffect(() => {
@@ -1243,6 +1498,8 @@ export default function App() {
         } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
           cls += ' de-emphasized';
         }
+        // D. 변경 영향권(Impact Ripple) — Focus 상태와 독립적으로 유지되는 순수 CSS 클래스
+        if (affectedScopeRef.current.nodeIds.has(n.id)) cls += ' highlight-affected';
         
         if (n.className !== cls.trim()) {
           changed = true;
@@ -1256,7 +1513,7 @@ export default function App() {
     setEdges(eds => {
       let changed = false;
       const next = eds.map(e => {
-        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-edge|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
+        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-edge|highlight-affected|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
         const status = ((e.data as any)?.test_status || 'untested').toLowerCase();
         cls += ' status-' + status;
 
@@ -1270,6 +1527,8 @@ export default function App() {
         } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
           cls += ' de-emphasized';
         }
+        // D. 수정 노드에서 뻗어나가는 영향권 엣지
+        if (affectedScopeRef.current.edgeIds.has(e.id)) cls += ' highlight-affected';
         
         const currentMarkerColor = (e.data as any)?.markerColor;
         
@@ -1284,7 +1543,7 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, graphVersion]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
@@ -1319,28 +1578,7 @@ export default function App() {
     return calculateEdgeBundling(Array.from(edgeMap.values()));
   }, [edges, nodes]);
 
-  const generateCypher = useCallback(() => {
-    let query = "// Exported Cypher Queries from CoverageMap\n";
-    nodes.forEach(n => {
-      const data = n.data as any;
-      const label = data.label || 'Node';
-      const name = (data.name || n.id).replace(/'/g, "\\'");
-      const aliases = JSON.stringify(data.aliases || []);
-      const status = data.test_status || 'Untested';
-      query += `MERGE (n:\`${label}\` {name: '${name}'}) ON CREATE SET n.aliases = ${aliases}, n.test_status = '${status}' ON MATCH SET n.aliases = ${aliases}, n.test_status = '${status}';\n`;
-    });
-    edges.forEach(e => {
-      const type = (e.label || (e.data as any)?.type || 'RELATED').replace(/[^a-zA-Z0-9_]/g, '_');
-      const sourceNode = nodes.find(n => n.id === e.source);
-      const targetNode = nodes.find(n => n.id === e.target);
-      const sourceName = ((sourceNode?.data as any)?.name || e.source).replace(/'/g, "\\'");
-      const targetName = ((targetNode?.data as any)?.name || e.target).replace(/'/g, "\\'");
-      const status = (e.data as any)?.test_status || 'Untested';
-      query += `MATCH (s {name: '${sourceName}'}), (t {name: '${targetName}'}) MERGE (s)-[r:\`${type}\`]->(t) ON CREATE SET r.test_status = '${status}';\n`;
-    });
-    setCypherQuery(query);
-    setShowCypherExport(true);
-  }, [nodes, edges]);
+  // (Cypher Export 기능은 FEATURE_PRUNING_GUIDE 1순위 정리 대상으로 제거됨 — 데이터 백업/공유는 프리셋 JSON 저장 사용)
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -1475,6 +1713,11 @@ export default function App() {
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onConnect={onConnect}
+        // E. 연결 드래그 중에만 컨테이너에 .react-flow--connecting을 붙여 타겟 드롭 히트박스를 노드 전체로 확장
+        onConnectStart={() => setIsConnecting(true)}
+        onConnectEnd={() => setIsConnecting(false)}
+        // 확장된 히트박스가 출발 노드 자신도 덮으므로 자기 자신으로의 연결(Self-loop)은 차단
+        isValidConnection={(c) => c.source !== c.target}
         onPaneClick={() => {
           setSelectedNode(null);
           setSelectedEdge(null);
@@ -1494,7 +1737,7 @@ export default function App() {
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge || hoveredGlobalBadgeId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''}`}
+        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge || hoveredGlobalBadgeId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -1541,14 +1784,6 @@ export default function App() {
                 onClick={() => setShowPresetManager(true)}
               >
                 📂 Presets
-              </button>
-              <button 
-                className="primary"
-                style={{ padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}
-                title={t.toolbar.exportCypher}
-                onClick={generateCypher}
-              >
-                Export Cypher
               </button>
             <button 
               style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '50%', fontWeight: 'bold' }}
@@ -1616,16 +1851,6 @@ export default function App() {
               }}
             >
               ⟳ Re-layout
-            </button>
-            <button 
-              style={{ padding: 8, cursor: 'pointer' }}
-              title={t.toolbar.gridLayout}
-              onClick={() => {
-                const { nodes: layoutedNodes } = getGridLayoutedElements(nodes);
-                setNodes(layoutedNodes);
-              }}
-            >
-              🗂 Grid Layout
             </button>
           </div>
         </Panel>
@@ -1947,61 +2172,210 @@ export default function App() {
                   <button className="success" onClick={(e) => { e.preventDefault(); handleSaveStatus("Passed"); }}>Mark Passed</button>
                   <button className="danger" onClick={(e) => { e.preventDefault(); handleSaveStatus("Failed"); }}>Mark Failed</button>
                   <button onClick={(e) => { e.preventDefault(); handleSaveStatus("Untested"); }} style={{ border: '1.5px solid #cbd5e1', backgroundColor: '#f8fafc', color: '#334155' }}>Reset Status</button>
+                  {/* B. 수동 차단(📌 Manual Override): 노드에서만 제공, 사유 필수 */}
+                  {editFormData.type === 'node' && !isCreatingNode && (
+                    <button
+                      className="warning"
+                      onClick={(e) => { e.preventDefault(); setBlockReasonDraft(prev => prev === null ? '' : null); }}
+                    >
+                      Mark Blocked
+                    </button>
+                  )}
                 </div>
+                {editFormData.type === 'node' && !isCreatingNode && blockReasonDraft !== null && (
+                  <div className="override-reason-box">
+                    <input
+                      type="text"
+                      autoFocus
+                      aria-label={t.override.reasonLabel}
+                      placeholder={t.override.reasonPlaceholder}
+                      value={blockReasonDraft}
+                      onChange={e => setBlockReasonDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && blockReasonDraft.trim()) {
+                          handleSaveStatus('Blocked', { reason: blockReasonDraft.trim() });
+                          setBlockReasonDraft(null);
+                        }
+                      }}
+                    />
+                    <div className="override-reason-actions">
+                      <button
+                        className="warning"
+                        disabled={!blockReasonDraft.trim()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (!blockReasonDraft.trim()) return;
+                          handleSaveStatus('Blocked', { reason: blockReasonDraft.trim() });
+                          setBlockReasonDraft(null);
+                        }}
+                      >
+                        {t.override.confirm}
+                      </button>
+                      <button onClick={(e) => { e.preventDefault(); setBlockReasonDraft(null); }}>{t.override.cancel}</button>
+                    </div>
+                    <p className="inspector-hint">{t.override.hint}</p>
+                  </div>
+                )}
+                {editFormData.type === 'node' && !isCreatingNode && isOverridden(liveEditNode ?? undefined) && (
+                  <div className="override-pin-banner">
+                    📌 {t.override.pinnedLabel}: {(liveEditNode?.data as any)?.properties?.override_reason || t.override.noReason}
+                    <div className="inspector-hint">{t.override.releaseHint}</div>
+                  </div>
+                )}
               </div>
+
+              {/* C. B안 노드 내부 체크리스트 (TESTCASE 스펙 3.3) */}
+              {editFormData.type === 'node' && !isCreatingNode && liveEditNode && (() => {
+                const items: ChecklistItem[] = Array.isArray((liveEditNode.data as any)?.properties?.checklist)
+                  ? (liveEditNode.data as any).properties.checklist
+                  : [];
+                const passedCount = items.filter(i => i.status === 'Passed').length;
+                const overall = checklistStatus(items);
+                return (
+                  <div className="form-group checklist-section">
+                    <h4 className="inspector-section-title">
+                      {t.checklist.title}
+                      {overall && <span className="checklist-summary">{STATUS_ICON[overall]} {passedCount}/{items.length}</span>}
+                    </h4>
+                    {items.length === 0 && <p className="inspector-hint">{t.checklist.empty}</p>}
+                    {items.map(item => (
+                      <div key={item.id} className="checklist-item">
+                        {/* 상태 아이콘 1개 + 클릭 시 팝오버(⚪🟢🔴🟡)로 선택 → 텍스트 영역에 최대한 폭을 양보 */}
+                        <div
+                          className="checklist-status-picker"
+                          onBlur={e => {
+                            // 팝오버 바깥으로 포커스가 나가면 닫기 (팝오버 내부 버튼 클릭은 유지)
+                            if (!e.currentTarget.contains(e.relatedTarget as HTMLElement | null)) {
+                              setOpenChecklistStatusId(prev => (prev === item.id ? null : prev));
+                            }
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="checklist-status-trigger"
+                            title={`${t.checklist.changeStatus}: ${t.status[(item.status || 'Untested') as StatusName]}`}
+                            aria-haspopup="menu"
+                            aria-expanded={openChecklistStatusId === item.id}
+                            onClick={() => setOpenChecklistStatusId(prev => (prev === item.id ? null : item.id))}
+                          >
+                            {STATUS_ICON[item.status || 'Untested']}
+                          </button>
+                          {openChecklistStatusId === item.id && (
+                            <div className="checklist-status-menu" role="menu">
+                              {CHECKLIST_STATUS_CYCLE.map(st => (
+                                <button
+                                  key={st}
+                                  type="button"
+                                  role="menuitemradio"
+                                  className={`checklist-status-btn${item.status === st ? ' selected' : ''}`}
+                                  title={t.status[st]}
+                                  aria-checked={item.status === st}
+                                  onClick={() => {
+                                    setOpenChecklistStatusId(null);
+                                    if (item.status === st) return;
+                                    saveChecklist(items.map(i => i.id === item.id ? { ...i, status: st } : i));
+                                  }}
+                                >
+                                  {STATUS_ICON[st]}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <textarea
+                          // 텍스트가 바뀌면(저장/Undo) 다시 마운트되어 최신 값을 보여줍니다.
+                          key={`${item.id}:${item.text}`}
+                          rows={1}
+                          className="checklist-text"
+                          aria-label={t.checklist.itemLabel}
+                          placeholder={t.checklist.itemPlaceholder}
+                          defaultValue={item.text}
+                          autoFocus={item.text === ''}
+                          // 내용 길이에 맞춰 높이 자동 조절 (긴 문장은 폭에 맞춰 줄바꿈되어 전부 보임)
+                          ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }}
+                          onInput={e => {
+                            const el = e.currentTarget;
+                            el.style.height = 'auto';
+                            el.style.height = `${el.scrollHeight}px`;
+                          }}
+                          onBlur={e => {
+                            const text = e.target.value.trim();
+                            if (text !== item.text) saveChecklist(items.map(i => i.id === item.id ? { ...i, text } : i));
+                          }}
+                          onKeyDown={e => {
+                            // Enter = 저장(입력 종료), Shift+Enter = 줄바꿈
+                            // 한글 IME 조합 중 Enter(isComposing)는 글자 확정용이므로 무시
+                            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                              e.preventDefault();
+                              (e.target as HTMLTextAreaElement).blur();
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="checklist-delete-btn"
+                          title={t.checklist.deleteItem}
+                          onClick={() => saveChecklist(items.filter(i => i.id !== item.id))}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="checklist-add-btn"
+                      onClick={() => saveChecklist([
+                        ...items,
+                        { id: `chk_${Date.now().toString(36)}_${items.length + 1}`, text: '', status: 'Untested' }
+                      ])}
+                    >
+                      {t.checklist.addItem}
+                    </button>
+                    {items.length > 0 && <p className="inspector-hint">{t.checklist.autoStatusHint}</p>}
+                  </div>
+                );
+              })()}
+
+              {/* D. 변경 영향도 강조 (Change Impact Ripple, AI_IMPLEMENTATION_SPEC 4.4) */}
+              {editFormData.type === 'node' && !isCreatingNode && liveEditNode && (() => {
+                const props = (liveEditNode.data as any)?.properties || {};
+                const isModified = props.is_modified === true || props.is_modified === 'true';
+                return (
+                  <div className="form-group modified-section">
+                    <h4 className="inspector-section-title">{t.modified.sectionTitle}</h4>
+                    {isModified ? (
+                      <div className="modified-banner">
+                        <div className="modified-banner-title">⚠️ {t.modified.bannerTitle}: {props.modified_note || t.modified.noNote}</div>
+                        {props.modified_at && (
+                          <div className="inspector-hint">{t.modified.modifiedAt} {new Date(props.modified_at).toLocaleString()}</div>
+                        )}
+                        <button className="success" onClick={(e) => { e.preventDefault(); handleAcknowledge(); }}>
+                          {t.modified.acknowledge}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="modified-mark-row">
+                        <input
+                          type="text"
+                          aria-label={t.modified.noteLabel}
+                          placeholder={t.modified.notePlaceholder}
+                          value={modifiedNoteDraft}
+                          onChange={e => setModifiedNoteDraft(e.target.value)}
+                        />
+                        <button onClick={(e) => { e.preventDefault(); handleMarkModified(); }}>{t.modified.markButton}</button>
+                      </div>
+                    )}
+                    <p className="inspector-hint">{t.modified.hint}</p>
+                  </div>
+                );
+              })()}
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
                 <button className="danger" style={{flex: 1}} onClick={handleDelete}>Delete</button>
                 <button className="primary" style={{flex: 1}} onClick={handleSave}>Save</button>
               </div>
 
-              {/* Debug: Real-time Node System Metadata Inspector */}
-              <details style={{ marginTop: '16px', padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '0.8rem', color: '#475569' }}>
-                <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#2563eb', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>🔍 Node Raw Inspector (Debug)</span>
-                </summary>
-                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
-                    <span style={{ fontWeight: 600, color: '#64748b' }}>Status (Current):</span>
-                    <span style={{ fontWeight: 700, color: editFormData.status === 'Passed' ? '#16a34a' : (editFormData.status === 'Failed' ? '#dc2626' : '#d97706') }}>
-                      {editFormData.status || 'Untested'}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
-                    <span style={{ fontWeight: 600, color: '#64748b' }}>Node ID:</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#0f172a' }}>{editFormData.id}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
-                    <span style={{ fontWeight: 600, color: '#64748b' }}>Label / Name:</span>
-                    <span style={{ color: '#0f172a' }}>[{editFormData.label}] {editFormData.name}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
-                    <span style={{ fontWeight: 600, color: '#64748b' }}>Category (Aliases):</span>
-                    <span style={{ color: '#0f172a' }}>{editFormData.aliases || '(none)'}</span>
-                  </div>
-                  {selectedNode && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
-                      <span style={{ fontWeight: 600, color: '#64748b' }}>Parent Node:</span>
-                      <span style={{ color: '#0f172a' }}>{selectedNode.parentId ? selectedNode.parentId : '(Root / None)'}</span>
-                    </div>
-                  )}
-                  <div style={{ marginTop: '4px' }}>
-                    <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Active Properties Payload:</span>
-                    <pre style={{ margin: 0, padding: '8px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '4px', fontSize: '0.7rem', maxHeight: '140px', overflowY: 'auto', color: '#0f172a' }}>
-                      {JSON.stringify({
-                        id: editFormData.id,
-                        label: editFormData.label,
-                        name: editFormData.name,
-                        test_status: editFormData.status,
-                        aliases: editFormData.aliases,
-                        custom_properties: Object.fromEntries(
-                          Object.entries(editFormData.properties || {}).filter(([k]) => !SYSTEM_RESERVED_KEYS.has(k))
-                        )
-                      }, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              </details>
+              {/* (Node Raw Inspector 디버그 패널은 FEATURE_PRUNING_GUIDE 1순위 정리 대상으로 제거됨) */}
             </div>
             ) : (
               <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -2338,46 +2712,6 @@ export default function App() {
             
             <div style={{ textAlign: 'right', marginTop: '30px' }}>
               <button onClick={() => setShowHelp(false)} className="success">{t.common.ok}</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {showCypherExport && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
-          backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 'var(--z-modal)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center'
-        }}>
-          <div className="glass-panel" style={{
-            backgroundColor: 'var(--bg-color)', color: 'var(--text-main)',
-            padding: '24px', borderRadius: '12px', width: '650px', maxWidth: '90%',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.3)', maxHeight: '85vh', display: 'flex', flexDirection: 'column'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem' }}>Export Cypher Query</h2>
-              <button onClick={() => setShowCypherExport(false)} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: '1.5rem', color: 'var(--text-main)' }}>&times;</button>
-            </div>
-            <textarea
-              readOnly
-              value={cypherQuery}
-              style={{
-                flex: 1, minHeight: '320px', backgroundColor: 'rgba(0,0,0,0.3)',
-                color: '#4ade80', fontFamily: 'monospace', padding: '12px',
-                borderRadius: '6px', border: '1px solid var(--panel-border)',
-                resize: 'none', fontSize: '0.85rem'
-              }}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-              <button 
-                className="primary" 
-                onClick={() => {
-                  navigator.clipboard.writeText(cypherQuery);
-                  alert(t.toolbar.cypherCopied);
-                }}
-              >
-                Copy to Clipboard
-              </button>
-              <button onClick={() => setShowCypherExport(false)}>Close</button>
             </div>
           </div>
         </div>

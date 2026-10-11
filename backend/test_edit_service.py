@@ -35,7 +35,9 @@ def test_create_node():
     assert called_kwargs["properties"] == {"status": "active"}
 
 def test_update_node():
-    mock_session = Mock()
+    # 스펙 변경(TESTCASE_MODELING 5.2-1): test_status가 바뀌면 하류 Depends_On/Tests 노드로 연쇄 전파 조회가 이어집니다.
+    # (하류 조회는 빈 결과를 돌려주는 Mock 세션 사용 → 호출 수 = SET 1 + 하류 조회 1)
+    mock_session = make_recalc_aware_session(None)
     
     node_data = NodeUpdate(
         name="New Backend",
@@ -44,15 +46,26 @@ def test_update_node():
     
     update_node(mock_session, "mock_node_id", node_data)
     
-    mock_session.run.assert_called_once()
-    called_query = mock_session.run.call_args[0][0]
+    assert mock_session.run.call_count == 2
+    called_query = mock_session.run.call_args_list[0][0][0]
     assert "MATCH (n) WHERE elementId(n) = $id" in called_query
     assert "SET n.name = $name, n.test_status = $test_status" in called_query
     
-    called_kwargs = mock_session.run.call_args[1]
+    called_kwargs = mock_session.run.call_args_list[0][1]
     assert called_kwargs["id"] == "mock_node_id"
     assert called_kwargs["name"] == "New Backend"
     assert called_kwargs["test_status"] == "Failed"
+
+    # 하류 전파 조회는 상태 의존 엣지(DEPENDS_ON/TESTS)만 대상으로 합니다. (Return/흐름 엣지 제외)
+    downstream_query = mock_session.run.call_args_list[1][0][0]
+    assert "toUpper(type(r)) IN $dep_types" in downstream_query
+    assert mock_session.run.call_args_list[1][1]["dep_types"] == ["DEPENDS_ON", "TESTS"]
+
+def test_update_node_without_status_does_not_propagate():
+    # 이름만 바꾸는 편집은 상태에 영향이 없으므로 하류 전파 조회를 하지 않습니다.
+    mock_session = make_recalc_aware_session(None)
+    update_node(mock_session, "mock_node_id", NodeUpdate(name="Only Rename"))
+    assert mock_session.run.call_count == 1
 
 def test_delete_node():
     mock_session = Mock()
@@ -72,7 +85,7 @@ def test_delete_node():
     assert any("DETACH DELETE n" in q for q in called_queries)
 
 def test_create_edge():
-    # 스펙 변경(d54aa5f): 엣지 생성 후 대상 노드 상태 재합성 쿼리가 실행되므로, 재합성 레코드를 돌려주는 Mock 사용
+    # ?ㅽ럺 蹂寃?d54aa5f): ?ｌ? ?앹꽦 ??????몃뱶 ?곹깭 ?ы빀??荑쇰━媛 ?ㅽ뻾?섎?濡? ?ы빀???덉퐫?쒕? ?뚮젮二쇰뒗 Mock ?ъ슜
     mock_session = make_recalc_aware_session({"id": "mock_edge_id"})
 
     edge_data = EdgeCreate(
@@ -90,7 +103,7 @@ def test_create_edge():
     assert mock_session.run.call_count == 2
     called_queries = [args[0][0] for args in mock_session.run.call_args_list]
     assert any("CREATE (source)-[r:`DEPENDS_ON`]->(target)" in q for q in called_queries)
-    assert any("OPTIONAL MATCH ()-[in_r]->(target)" in q for q in called_queries)
+    assert any("OPTIONAL MATCH (src)-[in_r]->(target)" in q for q in called_queries)
 
 def test_update_edge():
     mock_session = make_recalc_aware_session({"new_id": "mock_edge_id", "target_id": "node2"})
@@ -106,7 +119,7 @@ def test_update_edge():
     assert mock_session.run.call_count == 2
     called_queries = [args[0][0] for args in mock_session.run.call_args_list]
     assert any("MATCH ()-[r]->(target) WHERE elementId(r) = $id" in q for q in called_queries)
-    assert any("OPTIONAL MATCH ()-[in_r]->(target)" in q for q in called_queries)
+    assert any("OPTIONAL MATCH (src)-[in_r]->(target)" in q for q in called_queries)
 
 def test_delete_edge():
     mock_session = make_recalc_aware_session({"target_id": "node2"})
@@ -117,10 +130,10 @@ def test_delete_edge():
     assert mock_session.run.call_count == 2
     called_queries = [args[0][0] for args in mock_session.run.call_args_list]
     assert any("DELETE r" in q for q in called_queries)
-    assert any("OPTIONAL MATCH ()-[in_r]->(target)" in q for q in called_queries)
+    assert any("OPTIONAL MATCH (src)-[in_r]->(target)" in q for q in called_queries)
 
 def test_create_edge_rejects_injection_type():
-    # Cypher 인젝션 방지: 관계 타입은 IDENTIFIER_PATTERN(영문/한글/숫자/밑줄)만 허용
+    # Cypher ?몄젥??諛⑹?: 愿怨???낆? IDENTIFIER_PATTERN(?곷Ц/?쒓?/?レ옄/諛묒쨪)留??덉슜
     with pytest.raises(ValidationError):
         EdgeCreate(source="a", target="b", type="T`]->() DETACH DELETE (x")
 

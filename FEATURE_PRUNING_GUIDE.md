@@ -20,10 +20,10 @@ graph TD
         C[근본 원인 역추적 🔍]
         D[부모-자식 폴딩 & ELK 레이아웃]
         E[Focus+Context 순수 CSS]
-        F[프리셋 JSON 저장/로드 & CSV 가져오기]
+        F[프리셋 JSON 저장/로드]
     end
 
-    subgraph Tier1 [" 🔴 1단계 즉시 제거 권장 (Low Risk / Dead Code) "]
+    subgraph Tier1 [" ✅ 1단계 제거 완료 (2026-10-11) "]
         G[원시 Cypher Export 모달]
         H[바둑판 Grid Layout]
         I[Node Raw Inspector 디버그 JSON]
@@ -51,11 +51,14 @@ graph TD
 | **계층 구조 (Subflow)** | 부모-자식 노드 포함 관계(`CONTAINS`), Collapse/Expand(`+/-`) 및 요약 프로그레스 | SSOT 4.1, 5 Rule 6 | 단일 부모 제약 및 Max Depth=1 준수 |
 | **순수 CSS 시각화** | Focus+Context 관계 하이라이트 (선택 노드 Focus, 비선택 노드 40% Dimmed, 진입 Blue, 진출 Orange) | SSOT 5 Rule 1 | Zero-JS Styling, 12단계 Z-Index 준수 |
 | **핸들 조작성 (Halo UX)** | 노드 외곽 둘레 도넛 링 핸들 (`.halo-handle`, Z-Index 0 이하 격리) | SSOT 5 Rule 5 | 클릭 가로채기(Click Stealing) 방지 |
-| **안전한 영속성** | 프리셋 저장/불러오기 (`Preset JSON`, 트랜잭션 보장, 자동 백업 `_autobackup_*`) 및 CSV 수집 | SSOT 1.3, 2.1 | 블랙박스 QA 표준 입력/저장 방식 |
+| **안전한 영속성** | 프리셋 저장/불러오기 (`Preset JSON`, 트랜잭션 보장, 자동 백업 `_autobackup_*`) | SSOT 1.3, 2.1 | 블랙박스 QA 표준 입력/저장 방식 (CSV 일괄 가져오기는 2026-10 결정으로 제거됨) |
 
 ---
 
 ## 3. 1단계: 즉시 제거 권장 기능 (Tier 1: Low Risk / Cleanup)
+
+> [!NOTE]
+> **2026-10-11 완료**: 아래 3.1~3.4 항목과 연관 번역 키(`toolbar.exportCypher`, `toolbar.cypherCopied`, `toolbar.gridLayout`)를 모두 제거했습니다. `npm run build`(tsc 포함), `check_policy.py`, pytest, Playwright E2E 통과.
 
 비즈니스 로직에 악영향을 주지 않으며, SSOT 규격 원칙에 부합하지 않거나 이미 더 우수한 메커니즘으로 대체된 기능들입니다.
 

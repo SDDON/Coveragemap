@@ -322,14 +322,37 @@ body {
 }
 
 /* Target Handle: Covers the whole node area to act as a large drop zone */
-.react-flow__handle-top {
+/* (2026-10 개정, AGENTS.md #9 Target Drop Hitbox)
+   - 평소(idle): 노드 중앙의 1px 점으로 축소 + pointer-events 차단 → 배지/접기 버튼의 클릭을 절대 가로채지 않음
+   - 연결 드래그 중(.react-flow--connecting): 노드 전체를 덮는 드롭 히트박스로 확장하여 어디에 놓아도 연결되도록 함
+   - React Flow 기본 핸들 스타일(top/left/transform)을 이기기 위해 !important 사용 */
+.react-flow__handle.target-drop-handle {
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  border-radius: 12px !important;
+  pointer-events: none !important;
+  z-index: var(--z-canvas-bg) !important;
+}
+.react-flow--connecting .react-flow__handle.target-drop-handle {
+  top: 0 !important;
+  left: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  top: 0 !important; 
-  left: 0 !important;
-  border-radius: 12px !important;
-  z-index: var(--z-canvas-bg) !important;
   transform: none !important;
+  pointer-events: all !important;
+  /* 드래그 중에는 노드 내용(z 1)·배지(z 50 이하 영역) 위로 올라와야 드롭을 받을 수 있음 */
+  z-index: var(--z-active-node) !important;
+}
+/* 드롭 대상 위에 있을 때 시각 피드백 (React Flow가 .connectingto / .valid 클래스를 부여) */
+.react-flow--connecting .react-flow__handle.target-drop-handle.connectingto.valid {
+  background-color: rgba(37, 99, 235, 0.08) !important;
+  outline: 2px dashed rgba(37, 99, 235, 0.55);
+  outline-offset: -2px;
 }
 
 /* Source Handle: A small visible pull tab at the bottom center (excluding halo handles) */
@@ -430,6 +453,69 @@ body {
   animation: dash 1s linear infinite;
 }
 
+/* ============================================
+   Change Impact Ripple (Spec 4.4 / AGENTS.md #13)
+   - .node-modified-pulse : 변경된 노드 자체 (보라색 맥동)
+   - .highlight-affected  : 하위 의존 노드/엣지 (최대 2 hop, Return 제외)
+   - 부모 노드 좌표 보호를 위해 transform: scale 금지, box-shadow만 사용
+   ============================================ */
+@keyframes pulse-modified {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.55);
+    border-color: #8b5cf6;
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(139, 92, 246, 0);
+    border-color: #a78bfa;
+  }
+}
+.custom-node.node-modified-pulse {
+  animation: pulse-modified 2s infinite ease-in-out;
+  border-width: 2px !important;
+  border-color: #8b5cf6 !important;
+}
+.react-flow__node.highlight-affected > .custom-node-wrapper > .custom-node {
+  border-color: #c084fc !important;
+  box-shadow: 0 0 0 2px rgba(192, 132, 252, 0.6), 0 4px 14px rgba(192, 132, 252, 0.25);
+  transform: none !important;
+}
+.react-flow__edge.highlight-affected path.react-flow__edge-path {
+  stroke: #c084fc !important;
+  stroke-width: 2.5 !important;
+  stroke-dasharray: 5 4;
+}
+.react-flow__edge.highlight-affected .custom-marker-path {
+  fill: #c084fc !important;
+}
+
+/* 노드 카드 내부 시스템 표시: 📌 고정 핀 / 변경 칩 / 체크리스트 진행률 배지 */
+.override-pin {
+  margin-left: 6px;
+  font-size: 0.8rem;
+  letter-spacing: 0;
+  cursor: help;
+}
+.node-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.modified-chip,
+.checklist-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.modified-chip { background: #f3e8ff; color: #6b21a8; border-color: #d8b4fe; }
+.checklist-badge-passed { background: #dcfce7; color: var(--status-passed-text); border-color: #86efac; }
+.checklist-badge-failed { background: #fee2e2; color: var(--status-failed-text); border-color: #fca5a5; }
+.checklist-badge-blocked { background: #fef3c7; color: var(--status-blocked-text); border-color: #fcd34d; }
+.checklist-badge-progress { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+
 /* Controls */
 .react-flow__controls-button {
   background-color: #ffffff !important;
@@ -489,6 +575,152 @@ button.danger { background: var(--danger-btn); border: none; color: #ffffff; }
 button.danger:hover { background: var(--danger-btn-hover); }
 button.success { background: var(--success-btn); border: none; color: #ffffff; }
 button.success:hover { background: var(--success-btn-hover); }
+/* Mark Blocked 등 '보류/경고' 계열 액션 (Amber) */
+button.warning { background: #f59e0b; border: none; color: #ffffff; }
+button.warning:hover { background: #d97706; }
+button.warning:disabled { background: #fcd34d; cursor: not-allowed; }
+
+/* ============================================
+   Inspector: 📌 Override / ☑ Checklist / 🟣 Modified 섹션
+   ============================================ */
+.inspector-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+.inspector-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px;
+}
+.override-reason-box {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  border-radius: 8px;
+}
+.override-reason-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.override-reason-actions button { padding: 6px 12px; font-size: 0.82rem; }
+.override-pin-banner {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid #f59e0b;
+  background: #fffbeb;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #78350f;
+}
+.checklist-section,
+.modified-section {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+.checklist-summary {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+}
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+/* 상태 아이콘 1개 + 팝오버 (텍스트 영역에 폭을 최대한 양보) */
+.checklist-status-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+.checklist-status-trigger {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 0.85rem;
+  border-radius: 6px;
+  line-height: 1;
+}
+.checklist-status-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.15);
+  z-index: var(--z-context-menu);
+}
+.checklist-status-btn {
+  padding: 4px 6px;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  line-height: 1.2;
+}
+.checklist-status-btn.selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb;
+}
+/* 여러 줄 입력칸: 남은 폭 전부 사용 + 내용 길이에 따라 높이 자동 조절(JS) */
+.checklist-text {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
+  min-height: 30px;
+}
+/* 🗑️는 항목에 마우스를 올리거나 포커스가 있을 때만 표시 */
+.checklist-delete-btn {
+  padding: 2px 6px;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.checklist-item:hover .checklist-delete-btn,
+.checklist-item:focus-within .checklist-delete-btn {
+  opacity: 1;
+}
+.checklist-add-btn {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-style: dashed;
+}
+.modified-banner {
+  padding: 8px 10px;
+  border-left: 3px solid #8b5cf6;
+  background: #f5f3ff;
+  border-radius: 6px;
+}
+.modified-banner button { margin-top: 8px; padding: 6px 12px; font-size: 0.82rem; }
+.modified-banner-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #5b21b6;
+  word-break: break-word;
+}
+.modified-mark-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.modified-mark-row input { flex: 1; min-width: 0; }
+.modified-mark-row button { padding: 6px 10px; font-size: 0.8rem; white-space: nowrap; flex-shrink: 0; }
 
 /* Collapse Button */
 .collapse-btn {

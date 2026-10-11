@@ -37,11 +37,34 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
     ? { position: 'relative' as const, zIndex: 1, width: '100%', height: '100%', padding: '16px', boxSizing: 'border-box' as const }
     : { position: 'relative' as const, zIndex: 1, width: '100%', boxSizing: 'border-box' as const };
 
+  // ── 노드 내부 시스템 속성 (Spec 3.5 / 4.4 / Rule 5-3) ──
+  const props = data.properties || {};
+  // 📌 Manual Override: 합성 엔진이 덮어쓰지 않는 고정 상태 (Mark Blocked 사유 포함)
+  const isPinned = props.is_manual_override === true || props.is_manual_override === 'true';
+  // 🟣 Change Impact Ripple: 기능 변경 표시 (테스터가 Acknowledge 할 때까지 유지)
+  const isModified = props.is_modified === true || props.is_modified === 'true';
+  // ☑ 노드 내부 체크리스트 (B안: properties.checklist 배열) 진행률 배지 계산
+  const checklist: Array<{ status?: string }> = Array.isArray(props.checklist) ? props.checklist : [];
+  const clTotal = checklist.length;
+  const clPassed = checklist.filter(i => i.status === 'Passed').length;
+  const clFailed = checklist.filter(i => i.status === 'Failed').length;
+  const clBlocked = checklist.filter(i => i.status === 'Blocked').length;
+  // 우선순위: Failed > Blocked > 전부 Passed > 진행 중
+  let checklistBadge: { text: string; tone: string } | null = null;
+  if (clTotal > 0) {
+    if (clFailed > 0) checklistBadge = { text: t.checklist.badgeFailed(clFailed, clTotal), tone: 'failed' };
+    else if (clBlocked > 0) checklistBadge = { text: t.checklist.badgeBlocked(clBlocked, clTotal), tone: 'blocked' };
+    else if (clPassed === clTotal) checklistBadge = { text: t.checklist.badgeAllPassed(clPassed, clTotal), tone: 'passed' };
+    else checklistBadge = { text: t.checklist.badgeProgress(clPassed, clTotal), tone: 'progress' };
+  }
+
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>
-      <Handle type="target" position={Position.Top} id="target" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0, width: '1px', height: '1px', zIndex: -2 }} />
+      {/* Target Handle: 평소에는 노드 중앙의 1px 점(클릭 가로채기 없음).
+          연결 드래그 중(.react-flow--connecting)에만 CSS로 노드 전체 크기의 드롭 히트박스로 확장됩니다. (AGENTS.md #9) */}
+      <Handle type="target" position={Position.Top} id="target" className="target-drop-handle" />
       <Handle type="source" position={Position.Bottom} id="source" className="halo-handle" />
-      <div className="custom-node" style={customNodeStyle}>
+      <div className={`custom-node${isModified ? ' node-modified-pulse' : ''}`} style={customNodeStyle}>
         {/* Collapse/Expand button for parent nodes */}
         {data.hasChildren && (
           <button className="collapse-btn" 
@@ -54,10 +77,28 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
         )}
 
         {/* Category label (e.g., Screen, Component) */}
-        <div className="node-type">{data.label || 'Node'}</div>
+        <div className="node-type">
+          {data.label || 'Node'}
+          {/* 📌 수동 고정 표시: 사유는 툴팁으로 노출 */}
+          {isPinned && (
+            <span className="override-pin" title={t.override.pinTitle(props.override_reason || '')}>📌</span>
+          )}
+        </div>
         
         {/* Node name (e.g., ARENA, ARENA_SHOP) */}
         <div className="node-label">{data.name}</div>
+
+        {/* 변경 표시 칩 + 체크리스트 진행률 배지 (값이 있을 때만 렌더링하여 노드를 컴팩트하게 유지) */}
+        {(isModified || checklistBadge) && (
+          <div className="node-status-chips">
+            {isModified && (
+              <span className="modified-chip" title={props.modified_note || ''}>{t.modified.chip}</span>
+            )}
+            {checklistBadge && (
+              <span className={`checklist-badge checklist-badge-${checklistBadge.tone}`}>{checklistBadge.text}</span>
+            )}
+          </div>
+        )}
         
         {/* Alias tags */}
         {data.aliases && data.aliases.length > 0 && (

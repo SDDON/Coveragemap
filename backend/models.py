@@ -72,6 +72,10 @@ class PresetCreate(BaseModel):
     name: str
     description: Optional[str] = ""
 
+# Change Impact Ripple Highlight: 노드 수정 표시 요청 (TESTCASE 스펙 7.4)
+class ModifiedMark(BaseModel):
+    note: Optional[str] = ""
+
 # ─── QA Copilot Response Models ────────────────────────────────────
 
 class RootCauseInfo(BaseModel):

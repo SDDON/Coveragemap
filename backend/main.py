@@ -2,12 +2,13 @@ from fastapi import FastAPI, Depends, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from database import get_db, close_driver
-from models import GraphResponse, NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate, PresetCreate
+from models import GraphResponse, NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate, PresetCreate, ModifiedMark
 from graph_service import (
     fetch_graph_from_neo4j, process_graph, convert_to_response,
     create_node, update_node, delete_node,
     create_edge, update_edge, delete_edge,
-    get_impact_nodes
+    get_impact_nodes, deserialize_props_from_neo4j,
+    mark_node_modified, acknowledge_node_modification, get_node_statuses
 )
 from preset_service import (
     list_presets, get_preset, load_preset_to_neo4j, save_current_graph_as_preset, create_auto_backup
@@ -106,7 +107,7 @@ def api_get_node(node_id: str, session = Depends(get_db)):
         if not res:
             raise HTTPException(status_code=404, detail="Node not found")
         data = res.data()
-        data["properties"] = data.get("properties") or {}
+        data["properties"] = deserialize_props_from_neo4j(data.get("properties") or {})
         return data
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -126,6 +127,28 @@ def api_delete_node(node_id: str, session = Depends(get_db)):
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+# ─── Change Impact Ripple Highlight (TESTCASE 스펙 7.4) ─────────────
+@app.post("/api/nodes/{node_id}/mark-modified")
+def api_mark_node_modified(node_id: str, body: Optional[ModifiedMark] = None, session = Depends(get_db)):
+    """기획/UI 변경이 발생한 노드를 수정 상태로 표시합니다 (is_modified=true, modified_note 기록)."""
+    res = mark_node_modified(session, node_id, (body.note if body else "") or "")
+    if not res:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return res
+
+@app.post("/api/nodes/{node_id}/acknowledge")
+def api_acknowledge_node(node_id: str, session = Depends(get_db)):
+    """테스터가 변경 내역 확인/재검증을 마쳤음을 기록합니다 (is_modified=false)."""
+    res = acknowledge_node_modification(session, node_id)
+    if not res:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return res
+
+@app.get("/api/node-statuses")
+def api_node_statuses(session = Depends(get_db)):
+    """연쇄 전파 이후 프론트엔드 낙관적 상태를 서버 기준으로 재동기화하기 위한 {node_id: test_status} 스냅샷."""
+    return get_node_statuses(session)
 
 @app.post("/api/edges", response_model=str)
 def api_create_edge(edge: EdgeCreate, session = Depends(get_db)):

@@ -4,7 +4,7 @@ import json
 import datetime
 from typing import List, Dict, Any, Optional
 from fastapi import HTTPException
-from graph_service import fetch_graph_from_neo4j, convert_to_response
+from graph_service import fetch_graph_from_neo4j, convert_to_response, serialize_props_for_neo4j
 from models import IDENTIFIER_PATTERN
 
 PRESETS_DIR = os.path.join(os.path.dirname(__file__), "presets")
@@ -93,7 +93,7 @@ def load_preset_to_neo4j(session, preset_id: str, clean: bool = False) -> Dict[s
             aliases = n.get("aliases", [])
             description = n.get("description", "")
             test_status = n.get("test_status", "Untested")
-            props = n.get("properties", {})
+            props = serialize_props_for_neo4j(n.get("properties", {}))
 
             # Safe cypher creation
             query = f"""

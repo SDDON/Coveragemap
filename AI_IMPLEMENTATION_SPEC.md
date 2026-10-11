@@ -125,12 +125,24 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 - 4단계 상태 라벨은 `t.status.{Untested|Passed|Failed|Blocked}`를 사용합니다.
 
 ### 3.5. TestCase 모델링 및 연쇄 상태 전파 규격 (TestCase Modeling & State Propagation)
-세부 구현 명세 및 아키텍처 배경은 **[docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///d:/workspace/Coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md)**를 준수합니다.
+세부 구현 명세 및 아키텍처 배경은 **[docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md)**를 준수합니다.
 - **포함 및 검증 관계**: `Screen` (부모) ➔ `Component` (자식, `Contains`), `TestCase` ➔ `Component` (`Tests`).
 - **선-후행 의존성 (`Depends_On`)**: 선행 TC가 `Failed` 또는 `Blocked`로 전이되면 후행 TC는 자동으로 `Blocked(🟡)`로 전파됩니다.
 - **컴포넌트 자동 롤업**: 타겟 컴포넌트에 연결된 모든 `Tests` 관계의 TC가 `Passed`이면 컴포넌트는 `Passed(🟢)`로 자동 승격됩니다.
 - **수동 차단(Manual Blocked) 지원**: 외부 요인으로 인한 차단 시 Edit Node 패널에서 수동으로 `Blocked` 지정이 가능하며 필수 사유(`override_reason`)를 기록합니다.
 - **인지 부하 완화를 위한 B안(노드 내부 체크리스트) 권장**: 화면 내 수십 개 TC로 인한 그래프 폭발(Graph Clutter)을 방지하기 위해, 단순 UI 검증 항목은 캔버스 노드로 분기하지 않고 노드 내부 `properties.checklist` 속성으로 관리하며, 체크리스트 종합 결과에 따라 노드 상태가 자동 판정됩니다.
+
+> [!NOTE]
+> **구현 현황 (2026-10-11 반영 완료)**
+> - **백엔드**: `backend/graph_service.py`의 순수 함수 `compute_synthesized_status` + 워크리스트 전파(`_run_propagation`). `update_node`/엣지 CRUD 직후 하류(`Depends_On`/`Tests`)로 연쇄 전파되며, 📌 고정 노드와 전역(Badge) 노드는 건너뜁니다.
+> - **프론트엔드**: `frontend/src/statusPropagation.ts`가 동일 규칙을 미러링하여 낙관적으로 즉시 반영하고, 저장 후 경량 엔드포인트 `GET /api/node-statuses`(`{elementId: test_status}`)로 서버 결과와 재동기화합니다. (`/api/graph` 재조회 없음 → 레이아웃/줌 보존, Rule 3)
+> - **결정 사항**:
+>   1. 관계 타입은 `type(r)`로 읽고 대문자로 정규화합니다. (원 명세 5.2의 `r.type` Cypher는 동작하지 않음)
+>   2. 연쇄 전파 대상은 `Depends_On`·`Tests` 두 관계뿐입니다. 화면 전환 등 Flow 엣지(`Transition`, `Contains`…)는 **엣지 자체의 상태**로만 판정하고, `Return`은 가중치 0으로 완전히 제외합니다.
+>   3. `Tests` 소스 중 하나라도 `Failed`이면 대상은 `Failed`(결함 전파)이며, 이는 `Blocked`보다 우선합니다.
+>   4. 입력이 `Depends_On`뿐인 노드는 선행이 정상으로 돌아오면 자신의 마킹 상태를 유지합니다(자동 `Blocked`였다면 `Untested`로 해제).
+>   5. `properties.checklist`는 Neo4j에 JSON 문자열로 저장하고 API 경계에서 배열로 역직렬화합니다. 비어 있지 않은 체크리스트는 `Failed > Blocked > 모두 Passed > Untested` 순으로 노드 상태를 결정합니다.
+>   6. 📌 Mark Blocked는 사유 입력이 필수이며 `is_manual_override=true`, `override_reason`을 함께 저장합니다. Mark Passed / Mark Failed / Reset Status를 누르면 고정이 해제됩니다.
 
 ---
 
@@ -158,7 +170,14 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
   - 다운스트림 영향권 노드/엣지: `.highlight-affected` 스타일을 적용해 영향도 전파를 시각화.
 - **테스터 라이프사이클 (Acknowledge)**:
   - 테스터가 수정 내역을 확인하고 검증을 마치면 Inspector 패널의 `[✓ 변경사항 확인 완료 (Acknowledge)]` 버튼을 통해 펄스 효과를 해제하고 정상 상태로 복귀시킵니다.
-- **상세 규격 및 차기 모델(Argon / Opus 5.5) 구현 가이드**: [docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md Section 7](file:///d:/workspace/Coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md#7-차기-기능-명세-변경-영향도-강조-및-수정-전파-기능-change-impact-ripple-highlight)을 준수합니다.
+- **상세 규격 및 차기 모델(Argon / Opus 5.5) 구현 가이드**: [docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md Section 7](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md#7-차기-기능-명세-변경-영향도-강조-및-수정-전파-기능-change-impact-ripple-highlight)을 준수합니다.
+
+> [!NOTE]
+> **구현 현황 (2026-10-11 반영 완료)**
+> - API: `POST /api/nodes/{id}/mark-modified` (body `{note}` → `is_modified=true`, `modified_note`, `modified_at`), `POST /api/nodes/{id}/acknowledge` (`is_modified=false`, `acknowledged_at`).
+> - UI: Inspector의 "변경 영향도" 섹션(메모 입력 + `✨ 변경 표시` / `✓ 변경사항 확인 완료 (Acknowledge)`), 노드 카드의 `✨ [Spec Updated]` 칩 + `.node-modified-pulse`.
+> - 영향권(`.highlight-affected`): 변경 노드에서 **나가는 방향, `Return` 제외, 최대 2 hop**까지의 노드/엣지를 프론트엔드에서 BFS로 계산해 CSS 클래스로만 표시합니다.
+> - 결정 사항: 변경 표시/확인은 **테스트 상태를 바꾸지 않습니다.** (변경 표시 시 자동 `Untested` 리셋이나 Acknowledge 시 자동 `Passed` 처리를 하지 않음 — 재검증 결과는 테스터가 직접 마킹)
 
 ---
 
@@ -233,6 +252,12 @@ AI 모델은 코드에 임의의 숫자(`z-index: 99`, `z-index: 9999`)를 직�
   3. **검증 기준 통과 보장**:
      - `python scripts/check_policy.py` (Tier 1 정적 정책 검사 통과)
      - `cd backend; uv run pytest -q` 및 `cd e2e-tests; npm test` (기존 엣지 생성/삭제/뱃지 클릭 테스트 전원 통과)
+
+> [!NOTE]
+> **구현 현황 (2026-10-11 반영 완료)**: 타겟 핸들에 `className="target-drop-handle"`을 부여하고(`CoverageNode.tsx`), `index.css`에서
+> - 평상시: 중앙 1px 점 + `pointer-events: none` + `z-index: var(--z-canvas-bg)` → 내부 클릭을 절대 가로채지 않음
+> - `.react-flow--connecting` 상태(`App.tsx`의 `onConnectStart`/`onConnectEnd`로 루트에 부여): `inset 0` 전체 크기 + `pointer-events: all` + `z-index: var(--z-active-node)` → 카드 어디에 놓아도 연결
+> - 자기 자신으로의 연결은 `isValidConnection`으로 차단합니다.
 
 ### 🌟 Rule 6: 단일 부모 트리 제약, 부모 노드 스케일 불변 및 클린 라이트 테마 표준 (Parent Constraints & Light Theme)
 

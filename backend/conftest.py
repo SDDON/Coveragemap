@@ -11,7 +11,8 @@ from unittest.mock import Mock, MagicMock
 collect_ignore = ["test_e2e.py", "test_e2e_edge.py"]
 
 # 상태 재합성 쿼리 식별용 조각 (graph_service._recalc_target_node_status)
-RECALC_QUERY_MARKER = "OPTIONAL MATCH ()-[in_r]->(target)"
+# 2026-10: TestCase 연쇄 전파 스펙 반영으로 출발 노드(src) 상태까지 수집하도록 쿼리가 바뀌었습니다.
+RECALC_QUERY_MARKER = "OPTIONAL MATCH (src)-[in_r]->(target)"
 
 
 def make_recalc_aware_session(primary_record):
@@ -19,6 +20,7 @@ def make_recalc_aware_session(primary_record):
     primary_record: 엣지 생성/수정/삭제 쿼리의 .single() 결과.
     재합성 쿼리에는 '들어오는 엣지 없음 + 현재 Untested + 오버라이드 없음' 레코드를 돌려주어,
     상태 변화/하류 전파가 일어나지 않게 합니다. (run 호출 수 = 본 쿼리 1 + 재합성 1)
+    그 외 쿼리(하류 전파 조회 등)는 빈 결과로 순회됩니다. (MagicMock 기본 __iter__ = 빈 이터레이터)
     """
     session = Mock()
 
@@ -28,7 +30,9 @@ def make_recalc_aware_session(primary_record):
             result.single.return_value = {
                 "current_status": "Untested",
                 "is_override": None,
-                "statuses": [],
+                "is_global": None,
+                "checklist": None,
+                "inputs": [],
             }
         else:
             result.single.return_value = primary_record
