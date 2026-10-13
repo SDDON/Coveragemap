@@ -1,0 +1,397 @@
+{
+  "id": "mobile_game_qa_guide_2026_10",
+  "name": "실사용 가이드: 모바일 게임 로그인 & 로비 QA 샘플 (2026-10)",
+  "description": "2026-10 명세 기준 실사용 안내용 샘플 맵입니다. ① 공용 로그인 팝업(단일 노드 통합 + 사전조건/기능 내부 체크리스트), ② Return(복귀) 가중치 0 비순환 사이클, ③ 선행 API 결함(Failed)에 의한 연쇄 차단(Blocked) 및 원인 역추적(Trace Root Cause), ④ 수동 차단 고정(📌), ⑤ 스펙 변경 영향도(⚡ Ripple), ⑥ 전역 배지(다국어/네트워크 결함 칩) 및 #Popup 태그 일괄 필터링을 한눈에 체험할 수 있습니다.",
+  "created_at": "2026-10-14T03:05:00Z",
+  "nodes": [
+    {
+      "id": "Screen_Title_Main",
+      "label": "Screen",
+      "name": "타이틀 화면 (Title Screen)",
+      "aliases": ["Title", "Entry"],
+      "description": "게임 최초 진입 화면. 리소스 체크 후 로그인 팝업을 호출합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "checklist": [
+          {
+            "id": "chk_title_1",
+            "text": "타이틀 배경 영상(Bink/MP4) 및 BGM 루프 재생 정상 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_title_2",
+            "text": "우측 하단 클라이언트 버전 및 리소스 해시 표기 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_title_3",
+            "text": "화면 터치 시 로그인 팝업 호출 반응성 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Popup_Common_Login",
+      "label": "Popup",
+      "name": "로그인 팝업 #Popup",
+      "aliases": ["Popup", "Auth", "Login"],
+      "description": "타이틀 화면(최초 로그인)과 설정 화면(계정 연동) 양쪽에서 호출되는 통합 공용 팝업입니다. 세부 인증 시퀀스는 내부 체크리스트(B안)로 관리합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "checklist": [
+          {
+            "id": "chk_login_pre_1",
+            "text": "[사전조건: 타이틀 진입] 비로그인 상태에서 호출 및 인증 후 로비 이동 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_login_pre_2",
+            "text": "[사전조건: 설정 진입] 게스트 상태에서 계정 연동 호출 및 연동 후 설정 유지 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_login_func_1",
+            "text": "서드파티(Google / Apple / Guest) 버튼 터치 시 외부 인증 SDK 창 정상 호출",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_login_func_2",
+            "text": "외부 인증 성공 콜백 수신 시 별도 조작 없이 팝업 창 자동 닫힘 동작",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_login_ui_1",
+            "text": "팝업 오픈 시 배경 Dimmed 처리 및 우측 상단 닫기(X) 터치 시 안전 복귀",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Ingame_Lobby",
+      "label": "Screen",
+      "name": "인게임 로비 (로그인 완료)",
+      "aliases": ["Lobby", "Core"],
+      "description": "로그인 인증 완료 및 팝업 자동 닫힘 후 진입하는 메인 로비 화면입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "checklist": [
+          {
+            "id": "chk_lobby_1",
+            "text": "상단 재화바(골드/다이아/스태미나) 유저 세션 동기화 표시 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_lobby_2",
+            "text": "메인 캐릭터 3D 스탠딩 연출 및 터치 보이스 재생 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Account_Settings",
+      "label": "Screen",
+      "name": "설정 화면 (계정/환경설정)",
+      "aliases": ["Settings", "Option"],
+      "description": "로비에서 진입하는 환경설정 화면. 게스트 계정의 경우 공용 로그인 팝업을 다시 호출해 계정을 연동할 수 있습니다.",
+      "test_status": "Untested",
+      "properties": {
+        "checklist": [
+          {
+            "id": "chk_set_1",
+            "text": "그래픽 프레임(30/60 FPS) 옵션 변경 시 즉시 반영 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_set_2",
+            "text": "게스트 계정 상태에서 [계정 연동] 버튼 활성화 표시 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Feature_Gacha_Summon",
+      "label": "Feature",
+      "name": "가챠(소환) 연출 및 결과 획득",
+      "aliases": ["Gacha", "Summon"],
+      "description": "[⚡ 스펙 변경 영향도 데모] v1.2 패치로 10연차 스킵 UI가 변경되었습니다. 클릭 시 보라색 펄스와 하류 영향권 노드를 확인할 수 있습니다.",
+      "test_status": "Untested",
+      "properties": {
+        "is_modified": true,
+        "modified_note": "v1.2 패치: 10연차 스킵 버튼 위치 변경 및 천장 카운터 잔여 횟수 UI 표기 추가 (재검증 후 Acknowledge 필요)",
+        "checklist": [
+          {
+            "id": "chk_gacha_1",
+            "text": "1회 / 10회 소환 시 재화 차감 및 소환 연출 정상 재생 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_gacha_2",
+            "text": "[신규 스펙] 10연차 연출 중 우측 상단 스킵 버튼 터치 시 결과창 즉시 이동 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Popup_Gacha_Rate_Detail",
+      "label": "Popup",
+      "name": "가챠 확률 상세 팝업 #Popup",
+      "aliases": ["Popup", "Gacha", "Legal"],
+      "description": "가챠 화면에서 호출되는 확률 고지 팝업. 상위 가챠 기능의 스펙 변경 영향권(2-hop 이내)에 포함되어 보라색 테두리로 표시됩니다.",
+      "test_status": "Untested",
+      "properties": {
+        "checklist": [
+          {
+            "id": "chk_rate_1",
+            "text": "픽업 캐릭터 및 등급별 합산 확률 표기 정상 노출 확인",
+            "status": "Untested"
+          },
+          {
+            "id": "chk_rate_2",
+            "text": "팝업 오픈 시 배경 Dimmed 처리 및 외부 터치 닫힘 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "API_IAP_Receipt_Verify",
+      "label": "API",
+      "name": "인앱 결제 영수증 검증 API",
+      "aliases": ["IAP", "Billing", "Backend"],
+      "description": "[🔴 결함 원흉 데모] 스토어 영수증 검증 콜백 타임아웃 결함이 발생한 선행 API 노드입니다. 하류 상점 팝업과 우편함 보상을 자동 Blocked 처리합니다.",
+      "test_status": "Failed",
+      "properties": {
+        "issue_link": "JIRA-404",
+        "checklist": [
+          {
+            "id": "chk_iap_1",
+            "text": "테스트 결제 요청 시 스토어 샌드박스 결제창 호출 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_iap_2",
+            "text": "결제 완료 후 서버 영수증 검증 API 200 OK 응답 확인 (현재 504 Timeout 발생)",
+            "status": "Failed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Popup_Shop_Purchase",
+      "label": "Popup",
+      "name": "패키지 상점 구매 확인 팝업 #Popup",
+      "aliases": ["Popup", "Shop", "IAP"],
+      "description": "[🟡 연쇄 차단 데모] 선행 결제 검증 API 결함으로 인해 자동 Blocked된 노드입니다. 우측 인스펙터에서 [🔍 결함 원인 역추적] 버튼을 눌러보세요.",
+      "test_status": "Blocked",
+      "properties": {
+        "checklist": [
+          {
+            "id": "chk_shop_1",
+            "text": "상품 가격 및 청약철회 안내 문구 정상 표시 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_shop_2",
+            "text": "구매 완료 후 팝업 자동 닫힘 및 구매 제한 횟수 차감 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Feature_Mailbox_Reward",
+      "label": "Feature",
+      "name": "우편함 구매 보상 수령",
+      "aliases": ["Mailbox", "Reward", "IAP"],
+      "description": "[🟡 2-Hop 연쇄 차단 데모] 상점 구매 팝업이 Blocked됨에 따라 연쇄적으로 자동 Blocked된 후속 기능입니다. [🔍 결함 원인 역추적] 클릭 시 2단계 상위 원흉인 '인앱 결제 영수증 검증 API'를 찾아냅니다.",
+      "test_status": "Blocked",
+      "properties": {
+        "checklist": [
+          {
+            "id": "chk_mail_1",
+            "text": "구매한 패키지 아이템이 우편함에 즉시 도착하는지 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Feature_Guild_Raid_Boss",
+      "label": "Feature",
+      "name": "길드 레이드 보스전 (시즌 오픈 전)",
+      "aliases": ["Guild", "Raid"],
+      "description": "[📌 수동 차단 고정 데모] 선행 결함이 아니라 테스트 환경(시즌 미오픈) 사유로 테스터가 직접 사유를 적어 수동 Blocked 고정한 노드입니다.",
+      "test_status": "Blocked",
+      "properties": {
+        "is_manual_override": true,
+        "override_reason": "QA 테스트 서버에 길드 레이드 시즌 스케줄 미적용 (다음 빌드에서 검증 예정)"
+      }
+    },
+    {
+      "id": "Global_Badge_I18N",
+      "label": "Component",
+      "name": "다국어(I18N) 텍스트 말줄임/폰트 검증",
+      "aliases": ["I18N", "Localization"],
+      "description": "[전역 배지 - 정상] 한국어/영어/일본어 전환 시 UI 텍스트 오버플로우 및 폰트 깨짐 여부를 점검하는 글로벌 배지입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "is_global": "true"
+      }
+    },
+    {
+      "id": "Global_Badge_Network_Drop",
+      "label": "Component",
+      "name": "네트워크 단절(비행기 모드) 재연결 핸들링",
+      "aliases": ["Network", "Reconnect"],
+      "description": "[전역 배지 - 결함 발생 🔴] 일시적 Wi-Fi/데이터 단절 후 복구 시 무한 로딩 없이 재연결 팝업이 동작하는지 검증합니다. 실패 상태이므로 부착된 노드에 붉은 결함 칩이 노출됩니다.",
+      "test_status": "Failed",
+      "properties": {
+        "is_global": "true",
+        "issue_link": "JIRA-502"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "Screen_Title_Main",
+      "target": "Popup_Common_Login",
+      "type": "Transition",
+      "action": "로그인 버튼 터치 (타이틀 진입)",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Screen_Title_Main",
+      "type": "Return",
+      "action": "닫기(X) / 인증 취소 시 타이틀 복귀",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Screen_Ingame_Lobby",
+      "type": "Depends_On",
+      "action": "서드파티 인증 성공 & 팝업 자동 닫힘 후 로비 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Ingame_Lobby",
+      "target": "Screen_Account_Settings",
+      "type": "Transition",
+      "action": "우측 상단 톱니바퀴(설정) 버튼 터치",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Account_Settings",
+      "target": "Screen_Ingame_Lobby",
+      "type": "Return",
+      "action": "뒤로가기(Back) 터치 시 로비 복귀",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Account_Settings",
+      "target": "Popup_Common_Login",
+      "type": "Transition",
+      "action": "게스트 계정 연동 버튼 터치 (공용 팝업 재호출)",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Screen_Account_Settings",
+      "type": "Return",
+      "action": "계정 연동 완료/취소 후 설정 화면 복귀",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Ingame_Lobby",
+      "target": "Feature_Gacha_Summon",
+      "type": "Transition",
+      "action": "하단 [소환(가챠)] 메뉴 탭 터치",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Gacha_Summon",
+      "target": "Popup_Gacha_Rate_Detail",
+      "type": "Transition",
+      "action": "[확률 상세 보기] 버튼 터치",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Gacha_Rate_Detail",
+      "target": "Feature_Gacha_Summon",
+      "type": "Return",
+      "action": "확률 팝업 닫기(X) 후 소환 화면 복귀",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Ingame_Lobby",
+      "target": "Popup_Shop_Purchase",
+      "type": "Transition",
+      "action": "상점 탭 진입 후 패키지 상품 터치",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "API_IAP_Receipt_Verify",
+      "target": "Popup_Shop_Purchase",
+      "type": "Depends_On",
+      "action": "인앱 결제 영수증 검증 필수 의존",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Shop_Purchase",
+      "target": "Feature_Mailbox_Reward",
+      "type": "Depends_On",
+      "action": "패키지 구매 확정 후 우편함 상품 지급",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Ingame_Lobby",
+      "target": "Feature_Guild_Raid_Boss",
+      "type": "Transition",
+      "action": "길드 본부 → 레이드 보스전 입장 터치",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Global_Badge_I18N",
+      "type": "Depends_On",
+      "action": "전역 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Global_Badge_Network_Drop",
+      "type": "Depends_On",
+      "action": "전역 배지 부착",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Ingame_Lobby",
+      "target": "Global_Badge_I18N",
+      "type": "Depends_On",
+      "action": "전역 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    }
+  ]
+}
