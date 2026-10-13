@@ -1,6 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeAll(async ({ request }) => {
+  await request.post('/api/dev/reset-seed');
+});
+
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('savedShowAll', 'true'));
   page.on('framenavigated', async () => {
     try {
       const heavyBtn = page.getByRole('button', { name: /전체 그래프 로드/i });

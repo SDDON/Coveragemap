@@ -57,6 +57,9 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
     else if (clPassed === clTotal) checklistBadge = { text: t.checklist.badgeAllPassed(clPassed, clTotal), tone: 'passed' };
     else checklistBadge = { text: t.checklist.badgeProgress(clPassed, clTotal), tone: 'progress' };
   }
+  // 부모 노드를 접었을 때(isCollapsed) 하위 자식 노드들의 통과/결함 요약 배지 (AI_IMPLEMENTATION_SPEC 4.1)
+  const childSummary: { total: number; passed: number; failed: number; blocked: number } | null =
+    isParent && data.isCollapsed && data.childSummary ? data.childSummary : null;
 
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>
@@ -87,6 +90,13 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
         
         {/* Node name (e.g., ARENA, ARENA_SHOP) */}
         <div className="node-label">{data.name}</div>
+
+        {/* 부모 노드 접기 시 하위 자식 진행률 요약 배지 (Spec 4.1) */}
+        {childSummary && childSummary.total > 0 && (
+          <div className="parent-collapse-summary">
+            {t.parentCollapse.summary(childSummary.passed, childSummary.failed, childSummary.blocked, childSummary.total)}
+          </div>
+        )}
 
         {/* 변경 표시 칩 + 체크리스트 진행률 배지 (값이 있을 때만 렌더링하여 노드를 컴팩트하게 유지) */}
         {(isModified || checklistBadge) && (

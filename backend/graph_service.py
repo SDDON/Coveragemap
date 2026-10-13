@@ -768,20 +768,26 @@ def get_node_status_summary(session, query_str: str) -> Optional[NodeStatusSumma
     node_id = rec["id"]
     test_status = rec["test_status"]
     
-    # 들어오는 엣지 분포 집계
+    # 들어오는 엣지 분포 집계 (Return 복귀선 제외, Depends_On/Tests는 선행 노드 상태 기준)
     incoming_query = """
-    MATCH (src)-[r]->(n) WHERE elementId(n) = $id
-    RETURN coalesce(r.test_status, 'Untested') AS status, count(r) AS count
+    MATCH (src)-[r]->(n)
+    WHERE elementId(n) = $id AND toUpper(type(r)) <> 'RETURN'
+    RETURN CASE WHEN toUpper(type(r)) IN ['DEPENDS_ON', 'TESTS']
+                THEN coalesce(src.test_status, 'Untested')
+                ELSE coalesce(r.test_status, 'Untested')
+           END AS status, count(r) AS count
     """
     in_recs = session.run(incoming_query, id=node_id)
     incoming_statuses = {r["status"]: r["count"] for r in in_recs}
     
     root_cause_info = None
     if test_status in ["Blocked", "Failed"]:
-        # 역방향으로 Failed/Blocked 원인 추적
+        # 역방향으로 Failed/Blocked 원인 추적 (Return 복귀선 제외, 노드 결함 및 엣지 결함 모두 추적)
         trace_query = """
         MATCH p = (origin)-[r*1..10]->(n)
-        WHERE elementId(n) = $id AND origin.test_status = 'Failed'
+        WHERE elementId(n) = $id
+          AND ALL(rel IN relationships(p) WHERE toUpper(type(rel)) <> 'RETURN')
+          AND (origin.test_status = 'Failed' OR (relationships(p)[0]).test_status = 'Failed')
         RETURN elementId(origin) AS origin_id, origin.name AS origin_name,
                [node IN nodes(p) | node.name] AS path_names
         LIMIT 1
@@ -903,7 +909,7 @@ def audit_cross_cutting(session, aspect: str) -> CrossCuttingAuditResponse:
     nodes_query = """
     MATCH (n)
     WHERE coalesce(n.is_global, 'false') <> 'true'
-    RETURN elementId(n) AS id, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases
+    RETURN elementId(n) AS id, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, n.checklist AS checklist
     """
     records = list(session.run(nodes_query))
     
@@ -940,13 +946,20 @@ def audit_cross_cutting(session, aspect: str) -> CrossCuttingAuditResponse:
         nname = r["name"]
         nlabel = r["label"]
         naliases = [str(a).lower() for a in (r["aliases"] or [])]
+        raw_checklist = r["checklist"] if "checklist" in r.keys() else None
+        parsed_checklist = deserialize_props_from_neo4j({"checklist": raw_checklist}).get("checklist")
+        checklist_texts = [
+            str(item.get("text", "") if isinstance(item, dict) else item).lower()
+            for item in (parsed_checklist if isinstance(parsed_checklist, list) else [])
+        ]
         
-        # 判定: 1) alias/name에 aspect 포함 또는 2) matched global 노드와 연결됨
+        # 判定: 1) alias/name에 aspect 포함, 2) B안 내부 체크리스트 항목에 포함, 또는 3) matched global 노드와 연결됨
         has_aspect_in_alias = any(aspect_lower in a for a in naliases) or (aspect_lower in nname.lower())
+        has_aspect_in_checklist = any(aspect_lower in t for t in checklist_texts)
         is_connected_to_global = nid in connected_to_matched_globals
         
         node_info = {"id": nid, "name": nname, "label": nlabel}
-        if has_aspect_in_alias or is_connected_to_global:
+        if has_aspect_in_alias or has_aspect_in_checklist or is_connected_to_global:
             covered_nodes.append(node_info)
         else:
             missing_nodes.append(node_info)
@@ -975,13 +988,22 @@ def audit_cross_cutting(session, aspect: str) -> CrossCuttingAuditResponse:
 def get_next_test_targets(session) -> List[NextTestTarget]:
     """
     선행 조건(Incoming Edges)이 모두 Passed되어 지금 즉시 검증을 시작할 수 있는 Untested 노드들을 찾아 추천합니다.
+    Return(복귀) 엣지는 선행 조건에서 제외하며, Depends_On/Tests 엣지는 선행 노드의 test_status를 기준으로 판정합니다.
     """
     query = """
     MATCH (n)
     WHERE coalesce(n.is_global, 'false') <> 'true'
       AND coalesce(n.test_status, 'Untested') = 'Untested'
     OPTIONAL MATCH (src)-[r]->(n)
-    WITH n, collect(CASE WHEN r IS NOT NULL THEN {status: coalesce(r.test_status, 'Untested'), src_name: coalesce(src.name, elementId(src))} END) AS incoming_edges
+    WHERE toUpper(type(r)) <> 'RETURN'
+    WITH n, collect(CASE WHEN r IS NOT NULL THEN {
+        status: CASE
+            WHEN toUpper(type(r)) IN ['DEPENDS_ON', 'TESTS'] AND NOT coalesce(r.test_status, 'Untested') IN ['Failed', 'Blocked']
+            THEN coalesce(src.test_status, 'Untested')
+            ELSE coalesce(r.test_status, 'Untested')
+        END,
+        src_name: coalesce(src.name, elementId(src))
+    } END) AS incoming_edges
     RETURN elementId(n) AS id, labels(n)[0] AS label, n.name AS name,
            [edge IN incoming_edges WHERE edge IS NOT NULL] AS clean_edges
     """

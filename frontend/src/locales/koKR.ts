@@ -124,6 +124,22 @@ export const koKR = {
     chip: '✨ [Spec Updated]',
   },
 
+  // 부모 노드 접기/펼치기 요약 배지 (AI_IMPLEMENTATION_SPEC 4.1)
+  parentCollapse: {
+    summary: (passed: number, failed: number, blocked: number, total: number) => {
+      const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
+      const blockedPart = blocked > 0 ? ` / 🟡 차단: ${blocked}` : '';
+      return `🟢 통과: ${passed} / 🔴 결함: ${failed}${blockedPart} (${pct}%)`;
+    },
+  },
+
+  // 결함 원인 역추적 (Root Cause Tracing, AI_IMPLEMENTATION_SPEC 3.3)
+  rootCause: {
+    traceButton: '🔍 결함 원인 역추적 (Trace Root Cause)',
+    clearButton: '✕ 역추적 하이라이트 해제',
+    banner: (count: number) => `🚨 선행 결함/차단 경로 ${count}개 노드를 역추적하여 캔버스에 강조 표시 중입니다.`,
+  },
+
   // 전역 공통 노드(Badge) 설정
   globalNode: {
     title: '🌐 전역 공통 노드 (Badge화)',

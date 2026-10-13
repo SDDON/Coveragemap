@@ -48,6 +48,10 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(page.locator('.react-flow__node')).toHaveCount(4);
   });
 
+  test.afterAll(async ({ request }) => {
+    await request.post('/api/dev/reset-seed');
+  });
+
   test('A. Cascading propagation: TC1 Failed -> Game_Root Failed -> Game_Child Blocked', async ({ page, request }) => {
     await selectNode(page, ids.tc1);
     const putPromise = page.waitForResponse(res => res.url().includes('/api/nodes/') && res.request().method() === 'PUT');
@@ -171,4 +175,47 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     expect(style.width).toBeLessThanOrEqual(1);
     expect(Number(style.zIndex) || 0).toBeLessThanOrEqual(0);
   });
+
+  test('F. Root Cause Tracing highlights the upstream failing path with .highlight-root-cause', async ({ page }) => {
+    await selectNode(page, ids.tc1);
+    const putPromise = page.waitForResponse(res => res.url().includes('/api/nodes/') && res.request().method() === 'PUT');
+    await page.getByRole('button', { name: /mark failed/i }).click();
+    expect((await putPromise).ok()).toBeTruthy();
+
+    await selectNode(page, ids.child);
+    const traceBtn = page.locator('.trace-root-cause-btn');
+    await expect(traceBtn).toBeVisible();
+    await traceBtn.click();
+
+    await expect(page.locator('.root-cause-banner')).toBeVisible();
+    await expect(nodeLocator(page, ids.tc1)).toHaveClass(/highlight-root-cause/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/highlight-root-cause/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/highlight-root-cause/);
+    await expect(nodeLocator(page, ids.settings)).not.toHaveClass(/highlight-root-cause/);
+
+    await traceBtn.click();
+    await expect(nodeLocator(page, ids.tc1)).not.toHaveClass(/highlight-root-cause/);
+  });
+
+  test('G. Parent Collapse hides children and displays summary progress badge', async ({ page, request }) => {
+    await request.put(`/api/nodes/${encodeURIComponent(ids.settings)}`, { data: { test_status: 'Passed' } });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+
+    const responsePromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await responsePromise;
+
+    const parentNode = nodeLocator(page, ids.root);
+    const collapseBtn = parentNode.locator('.collapse-btn');
+    await expect(collapseBtn).toBeVisible();
+    await collapseBtn.click({ force: true });
+
+    await expect(nodeLocator(page, ids.settings)).toBeHidden();
+    const summaryBadge = parentNode.locator('.parent-collapse-summary');
+    await expect(summaryBadge).toBeVisible();
+    await expect(summaryBadge).toContainText('100%');
+  });
 });
+

@@ -124,6 +124,8 @@ export default function App() {
   const [modifiedNoteDraft, setModifiedNoteDraft] = useState('');
   // C. 체크리스트 항목의 상태 선택 팝오버가 열린 항목 id (한 번에 하나만 열림, null이면 닫힘)
   const [openChecklistStatusId, setOpenChecklistStatusId] = useState<string | null>(null);
+  // 결함 원인 역추적(Trace Root Cause) 활성 대상 노드 ID (AI_IMPLEMENTATION_SPEC 3.3)
+  const [tracedRootNodeId, setTracedRootNodeId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -481,8 +483,25 @@ export default function App() {
       setNodes((nds) => {
         const parentNode = nds.find(n => n.id === targetId);
         const isCollapsed = !parentNode?.data?.isCollapsed;
+        const children = nds.filter(n => n.parentId === targetId);
+        const childSummary = {
+          total: children.length,
+          passed: children.filter(c => (c.data as any)?.test_status === 'Passed').length,
+          failed: children.filter(c => (c.data as any)?.test_status === 'Failed').length,
+          blocked: children.filter(c => (c.data as any)?.test_status === 'Blocked').length,
+        };
         return nds.map(n => {
-          if (n.id === targetId) return { ...n, data: { ...n.data, isCollapsed } };
+          if (n.id === targetId) {
+            const expandedStyle = (n.data as any)?.expandedStyle || n.style;
+            const nextStyle = isCollapsed
+              ? { ...n.style, width: 280, height: 110 }
+              : expandedStyle;
+            return {
+              ...n,
+              style: nextStyle,
+              data: { ...n.data, isCollapsed, childSummary, expandedStyle }
+            };
+          }
           if (n.parentId === targetId) return { ...n, hidden: isCollapsed };
           return n;
         });
@@ -673,18 +692,51 @@ export default function App() {
     };
   }, [filterText, maxDepth, setNodes, setEdges, refreshKey]);
 
-  // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모)은 닫고 비웁니다.
+  // 부모 노드의 하위 자식 상태 요약(childSummary)을 자식 상태 변경 시 자동 동기화 (Spec 4.1)
+  useEffect(() => {
+    setNodes(nds => {
+      let changed = false;
+      const next = nds.map(n => {
+        if (!(n.data as any)?.hasChildren) return n;
+        const children = nds.filter(c => c.parentId === n.id);
+        const total = children.length;
+        const passed = children.filter(c => (c.data as any)?.test_status === 'Passed').length;
+        const failed = children.filter(c => (c.data as any)?.test_status === 'Failed').length;
+        const blocked = children.filter(c => (c.data as any)?.test_status === 'Blocked').length;
+        const prev = (n.data as any)?.childSummary;
+        if (!prev || prev.total !== total || prev.passed !== passed || prev.failed !== failed || prev.blocked !== blocked) {
+          changed = true;
+          return { ...n, data: { ...n.data, childSummary: { total, passed, failed, blocked } } };
+        }
+        return n;
+      });
+      return changed ? next : nds;
+    });
+  }, [nodes, setNodes]);
+
+  // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모/원인 역추적)은 닫고 비웁니다.
   // (React Flow는 노드 data가 바뀌어도 selection을 새 객체로 다시 알려주므로 id 기준으로만 초기화)
   useEffect(() => {
     setBlockReasonDraft(null);
     setModifiedNoteDraft('');
+    setTracedRootNodeId(null);
   }, [selectedNode?.id, selectedEdge?.id, isCreatingNode]);
 
   useEffect(() => {
     if (selectedNode) {
       const n = selectedNode.data as ApiNode;
-      const cleanProps = { ...(n.properties || {}) };
+      const rawProps = n.properties || {};
+      const cleanProps: Record<string, any> = { ...rawProps };
       SYSTEM_RESERVED_KEYS.forEach(k => delete cleanProps[k]);
+      // 전용 폼 컨트롤(#nodeIsGlobal, description, issue_link)이 사용하는 키는 보존하되,
+      // Custom Properties 목록에서는 SYSTEM_RESERVED_KEYS 필터로 숨깁니다.
+      if (rawProps.is_global !== undefined) cleanProps.is_global = String(rawProps.is_global);
+      if (rawProps.description !== undefined || (n as any).description !== undefined) {
+        cleanProps.description = rawProps.description ?? (n as any).description;
+      }
+      if (rawProps.issue_link !== undefined || (n as any).issue_link !== undefined) {
+        cleanProps.issue_link = rawProps.issue_link ?? (n as any).issue_link;
+      }
       setEditFormData({ 
         type: 'node', 
         id: selectedNode.id, 
@@ -1086,11 +1138,15 @@ export default function App() {
     if (editFormData.type === 'node') {
       const node = nodes.find(n => n.id === editFormData.id);
       
-      // Extract description and issue_link to top-level for the backend
+      // Extract description and issue_link to top-level for the backend, while preserving is_global in properties
       const props = { ...(editFormData.properties || {}) };
       const description = props.description;
       const issue_link = props.issue_link;
+      const isGlobalVal = props.is_global;
       SYSTEM_RESERVED_KEYS.forEach(k => delete props[k]);
+      if (isGlobalVal !== undefined) {
+        props.is_global = String(isGlobalVal);
+      }
       // 상태는 폼에 열어둔 값이 아니라 "현재 노드의 실제 상태"를 사용합니다.
       // (폼을 연 뒤 연쇄 전파로 Blocked 등이 된 경우, 이름만 고쳐 저장해도 전파 결과를 덮어쓰지 않도록)
       const liveStatus = isCreatingNode ? editFormData.status : ((node?.data as any)?.test_status || editFormData.status);
@@ -1143,8 +1199,15 @@ export default function App() {
         };
         setNodes(nds => [...nds, newNode as Node]);
         setIsCreatingNode(false);
-        setTimeout(() => setSelectedNode(newNode as Node), 0);
+        if (payload.properties?.is_global === 'true') {
+          fetchGlobals();
+          triggerRefresh();
+        } else {
+          setTimeout(() => setSelectedNode(newNode as Node), 0);
+        }
       } else {
+        const prevIsGlobal = String((node?.data as any)?.properties?.is_global || 'false');
+        const nextIsGlobal = String(props.is_global ?? prevIsGlobal);
         if (node) {
           pushUndo({
             type: 'UPDATE_NODE',
@@ -1194,6 +1257,10 @@ export default function App() {
             properties: mergedProps(prev.data)
           }
         } : prev);
+        if (prevIsGlobal !== nextIsGlobal) {
+          fetchGlobals();
+          triggerRefresh();
+        }
       }
     } else if (editFormData.type === 'edge') {
       const edge = edges.find(e => e.id === editFormData.id);
@@ -1368,6 +1435,45 @@ export default function App() {
   const affectedScopeRef = useRef(affectedScope);
   affectedScopeRef.current = affectedScope;
 
+  /**
+   * 결함 원인 역추적(Root Cause Tracing, AI_IMPLEMENTATION_SPEC 3.3):
+   * tracedRootNodeId로부터 역방향(Incoming, Return 제외) BFS로 최대 10홉까지
+   * Failed/Blocked 상태인 선행 노드 및 엣지 경로를 찾아 .highlight-root-cause 클래스를 부여합니다.
+   */
+  const rootCauseScope = useMemo(() => {
+    const nodeIds = new Set<string>();
+    const edgeIds = new Set<string>();
+    if (!tracedRootNodeId) return { nodeIds, edgeIds, key: '' };
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    nodeIds.add(tracedRootNodeId);
+    const visited = new Set<string>([tracedRootNodeId]);
+    let frontier = [tracedRootNodeId];
+    for (let hop = 0; hop < 10 && frontier.length > 0; hop++) {
+      const next: string[] = [];
+      for (const currId of frontier) {
+        for (const e of edges) {
+          if (e.target !== currId || edgeTypeOf(e) === 'RETURN') continue;
+          const srcNode = nodeById.get(e.source);
+          const edgeSt = (e.data as any)?.test_status || 'Untested';
+          const srcSt = (srcNode?.data as any)?.test_status || 'Untested';
+          if (edgeSt === 'Failed' || edgeSt === 'Blocked' || srcSt === 'Failed' || srcSt === 'Blocked') {
+            edgeIds.add(e.id);
+            nodeIds.add(e.source);
+            if (!visited.has(e.source)) {
+              visited.add(e.source);
+              next.push(e.source);
+            }
+          }
+        }
+      }
+      frontier = next;
+    }
+    const key = `${Array.from(nodeIds).sort().join(',')}|${Array.from(edgeIds).sort().join(',')}`;
+    return { nodeIds, edgeIds, key };
+  }, [tracedRootNodeId, nodes, edges]);
+  const rootCauseScopeRef = useRef(rootCauseScope);
+  rootCauseScopeRef.current = rootCauseScope;
+
 
   useEffect(() => {
     const activeNodes = new Set();
@@ -1481,6 +1587,7 @@ export default function App() {
         let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
         const status = ((n.data as any)?.test_status || 'untested').toLowerCase();
         cls += ' status-' + status;
+        const isRootCauseNode = rootCauseScopeRef.current.nodeIds.has(n.id);
 
         // Impact mode classes
         if (impactMode) {
@@ -1489,7 +1596,7 @@ export default function App() {
           } else if (impactMode.connectedIds.has(n.id)) {
             cls += ' impact-highlighted';
           }
-        } else if (activeNodes.has(n.id) || hoveredNode === n.id) {
+        } else if (activeNodes.has(n.id) || hoveredNode === n.id || isRootCauseNode) {
           cls += ' active';
           if (outgoing.has(n.id)) cls += ' highlight-outgoing';
           if (incoming.has(n.id)) cls += ' highlight-incoming';
@@ -1498,6 +1605,8 @@ export default function App() {
         } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
           cls += ' de-emphasized';
         }
+        // 결함 원인 역추적(Root Cause Tracing, Spec 3.3) — 선행 결함 경로 맥동 강조
+        if (isRootCauseNode) cls += ' highlight-root-cause';
         // D. 변경 영향권(Impact Ripple) — Focus 상태와 독립적으로 유지되는 순수 CSS 클래스
         if (affectedScopeRef.current.nodeIds.has(n.id)) cls += ' highlight-affected';
         
@@ -1513,20 +1622,23 @@ export default function App() {
     setEdges(eds => {
       let changed = false;
       const next = eds.map(e => {
-        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-edge|highlight-affected|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
+        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
         const status = ((e.data as any)?.test_status || 'untested').toLowerCase();
         cls += ' status-' + status;
+        const isRootCauseEdge = rootCauseScopeRef.current.edgeIds.has(e.id);
 
         // Impact mode edge classes
         if (impactMode && impactMode.edgeIds.has(e.id)) {
           cls += ' impact-edge';
-        } else if (edgeHighlights.has(e.id) || hoveredEdge === e.id) {
+        } else if (edgeHighlights.has(e.id) || hoveredEdge === e.id || isRootCauseEdge) {
           cls += ' active highlight-edge';
         } else if (relatedEdges.has(e.id)) {
           cls += ' related';
         } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
           cls += ' de-emphasized';
         }
+        // 결함 원인 역추적 엣지 강조
+        if (isRootCauseEdge) cls += ' highlight-root-cause';
         // D. 수정 노드에서 뻗어나가는 영향권 엣지
         if (affectedScopeRef.current.edgeIds.has(e.id)) cls += ' highlight-affected';
         
@@ -1543,7 +1655,7 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, graphVersion]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, rootCauseScope.key, graphVersion]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
@@ -2181,7 +2293,27 @@ export default function App() {
                       Mark Blocked
                     </button>
                   )}
+                  {/* 결함 원인 역추적(Root Cause Tracing, AI_IMPLEMENTATION_SPEC 3.3): Failed 또는 Blocked 노드에서 활성 */}
+                  {editFormData.type === 'node' && !isCreatingNode && (
+                    ((liveEditNode?.data as any)?.test_status === 'Blocked' || (liveEditNode?.data as any)?.test_status === 'Failed')
+                  ) && (
+                    <button
+                      type="button"
+                      className={`trace-root-cause-btn${tracedRootNodeId === editFormData.id ? ' active' : ''}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setTracedRootNodeId(prev => prev === editFormData.id ? null : editFormData.id);
+                      }}
+                    >
+                      {tracedRootNodeId === editFormData.id ? t.rootCause.clearButton : t.rootCause.traceButton}
+                    </button>
+                  )}
                 </div>
+                {editFormData.type === 'node' && !isCreatingNode && tracedRootNodeId === editFormData.id && (
+                  <div className="root-cause-banner">
+                    {t.rootCause.banner(rootCauseScope.nodeIds.size)}
+                  </div>
+                )}
                 {editFormData.type === 'node' && !isCreatingNode && blockReasonDraft !== null && (
                   <div className="override-reason-box">
                     <input

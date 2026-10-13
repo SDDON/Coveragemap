@@ -213,3 +213,49 @@ def test_checklist_update_recalculates_own_status():
     update_node(g, "comp", NodeUpdate(properties={"checklist": checklist}))
     assert json.loads(g.nodes["comp"]["checklist"]) == checklist
     assert g.nodes["comp"]["test_status"] == "Failed"
+
+
+def test_audit_cross_cutting_counts_internal_checklist():
+    from graph_service import audit_cross_cutting
+
+    session = MagicMock()
+    checklist_json = json.dumps([{"id": "chk_1", "text": "다국어(i18n) 텍스트 잘림 확인", "status": "Passed"}], ensure_ascii=False)
+
+    def _run(query, **kw):
+        if "RETURN elementId(n) AS id, labels(n)[0] AS label" in query:
+            return [
+                {"id": "n1", "label": "Screen", "name": "로그인 화면", "aliases": [], "checklist": checklist_json},
+                {"id": "n2", "label": "Screen", "name": "상점 화면", "aliases": [], "checklist": None},
+            ]
+        return []
+
+    session.run.side_effect = _run
+    res = audit_cross_cutting(session, "i18n")
+    assert res.total_screens_features == 2
+    assert [n["id"] for n in res.covered_nodes] == ["n1"]
+    assert [n["id"] for n in res.missing_nodes] == ["n2"]
+    assert res.coverage_rate == 50.0
+
+
+def test_get_next_test_targets_respects_depends_on_and_ignores_return():
+    from graph_service import get_next_test_targets
+
+    session = MagicMock()
+    captured_queries = []
+
+    def _run(query, **kw):
+        captured_queries.append(query)
+        return [
+            # TC2: 선행 TC1(Depends_On)이 Passed이고 Return 엣지는 쿼리에서 제외됨 -> 즉시 테스트 가능
+            {"id": "tc2", "label": "TestCase", "name": "TC2 버전 일치 확인", "clean_edges": [{"status": "Passed", "src_name": "TC1"}]},
+            # TC3: 선행 TC2가 아직 Untested -> 대기
+            {"id": "tc3", "label": "TestCase", "name": "TC3 후속 검증", "clean_edges": [{"status": "Untested", "src_name": "TC2"}]},
+        ]
+
+    session.run.side_effect = _run
+    targets = get_next_test_targets(session)
+    assert any("toUpper(type(r)) <> 'RETURN'" in q for q in captured_queries)
+    assert any("DEPENDS_ON" in q for q in captured_queries)
+    assert targets[0].id == "tc2" and targets[0].incoming_requirements_met is True
+    assert targets[1].id == "tc3" and targets[1].incoming_requirements_met is False
+

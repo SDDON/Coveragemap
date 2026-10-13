@@ -258,6 +258,34 @@ async def list_tools():
                 "properties": {}
             }
         ),
+        Tool(
+            name="mark_node_modified",
+            description="특정 기능/노드를 '스펙 변경됨(Modified)'으로 마킹하여 캔버스에서 오렌지 맥동(.node-modified-pulse) 및 하류 영향 반경(.highlight-affected)을 활성화합니다.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "node_id": {
+                        "type": "string",
+                        "description": "스펙이 변경된 노드의 ID"
+                    }
+                },
+                "required": ["node_id"]
+            }
+        ),
+        Tool(
+            name="acknowledge_node",
+            description="변경된 노드의 회귀 검증을 완료하고 '변경 확인 완료(Acknowledge)' 처리하여 오렌지 맥동 및 영향 반경 하이라이트를 해제합니다.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "node_id": {
+                        "type": "string",
+                        "description": "변경 확인을 완료할 노드의 ID"
+                    }
+                },
+                "required": ["node_id"]
+            }
+        ),
     ]
 
 
@@ -281,7 +309,7 @@ async def call_tool(name: str, arguments: dict):
         
         lines.append("## 노드 목록")
         for n in nodes:
-            status_icon = {"Passed": "✅", "Failed": "❌", "Untested": "⬜"}.get(n["test_status"], "⬜")
+            status_icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(n.get("test_status"), "⬜")
             aliases_str = ", ".join(n.get("aliases", []))
             lines.append(f"  {status_icon} [{n['label']}] {n['name']}  (id: {n['id']})")
             if aliases_str:
@@ -291,7 +319,7 @@ async def call_tool(name: str, arguments: dict):
         # Build name lookup
         id_to_name = {n["id"]: n["name"] for n in nodes}
         for e in edges:
-            status_icon = {"Passed": "✅", "Failed": "❌", "Untested": "⬜"}.get(e["test_status"], "⬜")
+            status_icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(e.get("test_status"), "⬜")
             src_name = id_to_name.get(e["source"], e["source"][:12])
             tgt_name = id_to_name.get(e["target"], e["target"][:12])
             lines.append(f"  {status_icon} {src_name} ──{e['type']}──▶ {tgt_name}  (id: {e['id']})")
@@ -557,6 +585,20 @@ async def call_tool(name: str, arguments: dict):
             f"  ⬜ Untested: {edge_stats['Untested']}",
         ]
         return [TextContent(type="text", text="\n".join(lines))]
+
+    elif name == "mark_node_modified":
+        node_id = arguments["node_id"]
+        result = _api("POST", f"/api/nodes/{urllib.parse.quote(node_id)}/mark-modified")
+        if isinstance(result, str) and result.startswith("Error"):
+            return [TextContent(type="text", text=result)]
+        return [TextContent(type="text", text=f"🟠 노드 ({node_id}) 스펙 변경(Modified) 마킹 완료. 하류 영향 범위가 활성화되었습니다.")]
+
+    elif name == "acknowledge_node":
+        node_id = arguments["node_id"]
+        result = _api("POST", f"/api/nodes/{urllib.parse.quote(node_id)}/acknowledge")
+        if isinstance(result, str) and result.startswith("Error"):
+            return [TextContent(type="text", text=result)]
+        return [TextContent(type="text", text=f"✅ 노드 ({node_id}) 변경 확인 완료(Acknowledged). 영향 반경 하이라이트가 해제되었습니다.")]
     
     return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

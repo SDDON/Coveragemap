@@ -35,7 +35,7 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
 9. **Inner Content vs Outer Rim Isolation (Halo Handle):**
    - Halo handles (`.halo-handle`) MUST strictly remain on the outer boundary (outer rim) and NEVER encroach on the node's inner content area (0px inward) to prevent click stealing on badges (✔/✖/⊘) and collapse buttons.
    - The handle's stacking level must stay at or below `z-index: var(--z-canvas-bg)` (0), strictly below `.custom-node` (1) and badges (50).
-   - **Target Drop Hitbox:** Currently the target handle is at the center (50%, 50%). When expanding target drop hitbox to cover the node body, it must be active only during connection drag (`.react-flow--connecting`) to preserve inner click isolation.
+   - **Target Drop Hitbox:** The target handle (`.target-drop-handle`) rests at the center (1px, `pointer-events: none`) by default, and expands to cover 100% of the node body strictly during connection drag (`.react-flow--connecting`) to preserve inner click isolation.
 10. **Parent Scale Immutability & Clean Light Theme:**
    - Active parent nodes must NEVER use `transform: scale` to prevent child coordinate detachment. Highlight using `box-shadow` and direct child (`>`) selectors only.
    - Subflows are strictly limited to Max Depth = 1. Cross-cutting concerns (Localization) must be flattened into attribute checkboxes/chips.
@@ -48,9 +48,9 @@ This project is a 'Living Document Platform' aimed at visualizing the non-linear
    - **No Dependency Cycles**: Never use `Depends_On` or progress `Transition` for backward/return navigation. Always use `type: "Return"` (Propagation Weight = 0) to prevent circular blocking deadlocks.
    - **3-Layer Verification Separation**: Strictly maintain Node (Context/Screen/Modal), Edge (Action/Transition Trigger), and Checklist (Static UI/Text/Dimmed Specs). Never nest sub-components beyond Max Depth = 1.
    - **Batch Regression via Tagging**: For fragmented, heterogeneous components (e.g. popups with inconsistent Dimmed behaviors), verify specs via node-internal checklists and batch-audit via `#Popup` tags and Focus+Context filtering.
-13. **Change Impact Ripple Highlight (Future Work Specification):**
-   - When a feature/node is modified (`properties.is_modified: true`), highlight it with `.node-modified-pulse` and mark downstream dependents with `.highlight-affected`.
-   - The effect persists until the tester verifies and acknowledges (`is_modified: false`) in the Inspector panel (see `AI_IMPLEMENTATION_SPEC.md` Section 4.4 & `docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md` Section 7).
+13. **Change Impact Ripple Highlight:**
+   - When a feature/node is modified (`properties.is_modified: true` via `POST /api/nodes/{id}/mark-modified`), highlight it with `.node-modified-pulse` and mark downstream dependents (up to 2 hops, excluding `Return` edges) with `.highlight-affected`.
+   - The effect persists until the tester verifies and acknowledges (`is_modified: false` via `POST /api/nodes/{id}/acknowledge`) in the Inspector panel (see `AI_IMPLEMENTATION_SPEC.md` Section 4.4 & `docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md` Section 7).
 
 ## 3-Tier Verification Pipeline
 Before concluding any task, the AI agent MUST execute:
