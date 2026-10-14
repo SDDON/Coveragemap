@@ -162,6 +162,7 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 ### 4.3. 화면 흐름(Flow)과 리소스(Resource)의 영향도 분리
 - **화면 전환 엣지(Flow Edge)**: 결함 시 다음 화면의 테스트를 완전히 `Blocked` 시킵니다.
 - **리소스 뱃지(LangKey, Sound 등)**: 결함이 발생해도 화면 전환 자체는 동작하므로 다음 노드를 `Blocked`시키지 않고, 해당 노드에만 **주의(⚠️ 앰버 테두리)** 및 동적 결함 칩을 표시합니다.
+- **로컬라이제이션 스코프 감사 및 글로벌 배지 규격**: 상세 모델링 및 배지 인터랙션 지침은 **[docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///d:/workspace/Coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)**를 준수합니다.
 
 ### 4.4. 변경 영향도 강조 및 수정 전파 (Change Impact Ripple Highlight)
 - **배경 및 목적**: 개발팀의 기획/UI 변경이 발생했을 때, 테스터가 재검증(Regression) 범위를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조합니다.

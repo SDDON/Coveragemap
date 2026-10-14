@@ -2,7 +2,7 @@
 
 **Document Version:** 1.0.0  
 **Target Audience:** Senior AI Coding Agents & QA Engineers  
-**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///e:/Workspace/coveragemap/UI_UX_DESIGN_SYSTEM.md)  
+**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///d:/workspace/Coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///d:/workspace/Coveragemap/UI_UX_DESIGN_SYSTEM.md), [CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///d:/workspace/Coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)  
 **Status:** Implemented (2026-10-11) — 구현 결과 및 원 명세와 달라진 결정 사항은 [8. 구현 결과 및 결정 기록](#8-구현-결과-및-결정-기록-implementation-record-2026-10-11) 참조
 
 ---
