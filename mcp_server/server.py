@@ -188,13 +188,17 @@ async def list_tools():
         ),
         Tool(
             name="audit_cross_cutting",
-            description="다국어(i18n), 화면비(Aspect Ratio), 사운드 등 전체 UI에 걸친 필수 횡단 관심사의 적용 여부를 전수 감사하고 누락된 화면(Gap)을 찾습니다. (예: '화면비 처리가 UI 전반에 다 되어있는지 궁금해')",
+            description="다국어(i18n), 화면비(Aspect Ratio), 사운드 등 전체 UI(또는 특정 화면 scope_root_id 하위 범위)에 걸친 필수 횡단 관심사의 적용 여부를 감사하고 누락된 화면(Gap)을 찾습니다.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "aspect": {
                         "type": "string",
-                        "description": "감사할 횡단 관심사 키워드 (예: '다국어', '화면비', '사운드', 'Aspect', 'i18n')"
+                        "description": "감사할 횡단 관심사 키워드 (예: '다국어', '화면비', '사운드', 'Localization', 'i18n')"
+                    },
+                    "scope_root_id": {
+                        "type": "string",
+                        "description": "(선택) 특정 화면(Screen/Container) 및 하위 Contains 자식 범위로 한정할 루트 노드 ID 또는 이름"
                     }
                 },
                 "required": ["aspect"]
@@ -474,7 +478,11 @@ async def call_tool(name: str, arguments: dict):
 
     elif name == "audit_cross_cutting":
         aspect = arguments["aspect"]
-        data = _api("GET", f"/api/qa/audit-cross-cutting?aspect={urllib.parse.quote(aspect)}")
+        scope_root_id = (arguments.get("scope_root_id") or "").strip()
+        qs = f"aspect={urllib.parse.quote(aspect)}"
+        if scope_root_id:
+            qs += f"&scope_root_id={urllib.parse.quote(scope_root_id)}"
+        data = _api("GET", f"/api/qa/audit-cross-cutting?{qs}")
         if isinstance(data, str):
             return [TextContent(type="text", text=data)]
             

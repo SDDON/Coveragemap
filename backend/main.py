@@ -242,10 +242,14 @@ def api_qa_impact_scope(q: str = Query(..., description="Changed node name or el
     return res
 
 @app.get("/api/qa/audit-cross-cutting")
-def api_qa_audit_cross_cutting(aspect: str = Query(..., description="Cross-cutting aspect (e.g. 다국어, 화면비, 사운드, i18n)"), session = Depends(get_db)):
-    """화면비, 다국어, 사운드 등 필수 횡단 관심사가 전체 UI에 누락 없이 매핑되어 있는지 전수 감사(Audit)합니다."""
+def api_qa_audit_cross_cutting(
+    aspect: str = Query(..., description="Cross-cutting aspect (e.g. 다국어, 화면비, 사운드, i18n)"),
+    scope_root_id: Optional[str] = Query(None, description="Optional root Screen/Container node ID or name for scoped audit"),
+    session = Depends(get_db)
+):
+    """화면비, 다국어, 사운드 등 필수 횡단 관심사가 전체 UI(또는 scope_root_id 하위 범위)에 누락 없이 매핑되어 있는지 감사(Audit)합니다."""
     from graph_service import audit_cross_cutting
-    return audit_cross_cutting(session, aspect)
+    return audit_cross_cutting(session, aspect, scope_root_id=scope_root_id)
 
 @app.get("/api/qa/next-targets")
 def api_qa_next_targets(session = Depends(get_db)):

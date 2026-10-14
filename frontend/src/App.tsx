@@ -126,6 +126,8 @@ export default function App() {
   const [openChecklistStatusId, setOpenChecklistStatusId] = useState<string | null>(null);
   // 결함 원인 역추적(Trace Root Cause) 활성 대상 노드 ID (AI_IMPLEMENTATION_SPEC 3.3)
   const [tracedRootNodeId, setTracedRootNodeId] = useState<string | null>(null);
+  // 화면(Screen/Container) 단위 다국어 스코프 감사 활성 루트 노드 ID (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 4.1)
+  const [scopedAuditRootId, setScopedAuditRootId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -605,11 +607,15 @@ export default function App() {
           let isBadgeEdge = false;
           if (globalNodes.has(e.target)) {
             const sourceNode = initialNodes.find(n => n.id === e.source);
-            if (sourceNode) ((sourceNode.data as any).badges as any[]).push({ ...globalNodes.get(e.target), edgeId: e.id, edgeType: e.type });
+            const gNode = globalNodes.get(e.target);
+            const badgeStatus = (e.test_status && e.test_status !== 'Untested') ? e.test_status : (gNode?.test_status || 'Untested');
+            if (sourceNode) ((sourceNode.data as any).badges as any[]).push({ ...gNode, edgeId: e.id, edgeType: e.type, test_status: badgeStatus });
             isBadgeEdge = true;
           } else if (globalNodes.has(e.source)) {
             const targetNode = initialNodes.find(n => n.id === e.target);
-            if (targetNode) ((targetNode.data as any).badges as any[]).push({ ...globalNodes.get(e.source), edgeId: e.id, edgeType: e.type });
+            const gNode = globalNodes.get(e.source);
+            const badgeStatus = (e.test_status && e.test_status !== 'Untested') ? e.test_status : (gNode?.test_status || 'Untested');
+            if (targetNode) ((targetNode.data as any).badges as any[]).push({ ...gNode, edgeId: e.id, edgeType: e.type, test_status: badgeStatus });
             isBadgeEdge = true;
           }
 
@@ -714,12 +720,13 @@ export default function App() {
     });
   }, [nodes, setNodes]);
 
-  // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모/원인 역추적)은 닫고 비웁니다.
+  // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모/원인 역추적/화면 다국어 감사)은 닫고 비웁니다.
   // (React Flow는 노드 data가 바뀌어도 selection을 새 객체로 다시 알려주므로 id 기준으로만 초기화)
   useEffect(() => {
     setBlockReasonDraft(null);
     setModifiedNoteDraft('');
     setTracedRootNodeId(null);
+    setScopedAuditRootId(null);
   }, [selectedNode?.id, selectedEdge?.id, isCreatingNode]);
 
   useEffect(() => {
@@ -1474,6 +1481,61 @@ export default function App() {
   const rootCauseScopeRef = useRef(rootCauseScope);
   rootCauseScopeRef.current = rootCauseScope;
 
+  /**
+   * 화면(Screen/Container) 단위 다국어 스코프 감사 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.2 & 4.1):
+   * scopedAuditRootId가 활성화되면 선택된 화면 및 직속 자식(Contains/Has 또는 1-hop) 노드 중
+   * Localization/다국어 배지(또는 태그/체크리스트)를 가진 노드들만 Focus+Context로 강조하고 나머지는 dim 처리합니다.
+   */
+  const scopedAuditScope = useMemo(() => {
+    const nodeIds = new Set<string>();
+    const edgeIds = new Set<string>();
+    if (!scopedAuditRootId) return { nodeIds, edgeIds, totalInScope: 0, matchedCount: 0, key: '' };
+    nodeIds.add(scopedAuditRootId);
+    const directChildren = nodes.filter(n => n.parentId === scopedAuditRootId && !n.hidden);
+    const candidateChildren = directChildren.length > 0
+      ? directChildren
+      : nodes.filter(n => !n.hidden && edges.some(e => e.source === scopedAuditRootId && e.target === n.id && edgeTypeOf(e) !== 'RETURN'));
+
+    const kwList = t.scopedAudit.keywords;
+    const hasI18nTarget = (n: Node) => {
+      const badges: any[] = (n.data as any)?.badges || [];
+      if (badges.some(b => {
+        const bName = String(b?.name || '').toLowerCase();
+        const bAliases: string[] = Array.isArray(b?.aliases) ? b.aliases.map((a: any) => String(a).toLowerCase()) : [];
+        return kwList.some(kw => bName.includes(kw) || bAliases.some(a => a.includes(kw)));
+      })) return true;
+      const nName = String((n.data as any)?.name || '').toLowerCase();
+      const nAliases: string[] = Array.isArray((n.data as any)?.aliases) ? (n.data as any).aliases.map((a: any) => String(a).toLowerCase()) : [];
+      const checklist: any[] = Array.isArray((n.data as any)?.properties?.checklist) ? (n.data as any).properties.checklist : [];
+      return kwList.some(kw =>
+        nName.includes(kw) ||
+        nAliases.some(a => a.includes(kw)) ||
+        checklist.some(c => String(c?.text || '').toLowerCase().includes(kw))
+      );
+    };
+
+    const matchedChildren = candidateChildren.filter(hasI18nTarget);
+    const highlightedChildren = matchedChildren.length > 0 ? matchedChildren : candidateChildren;
+    highlightedChildren.forEach(c => nodeIds.add(c.id));
+
+    edges.forEach(e => {
+      if (nodeIds.has(e.source) && nodeIds.has(e.target) && edgeTypeOf(e) !== 'RETURN') {
+        edgeIds.add(e.id);
+      }
+    });
+
+    const key = `${Array.from(nodeIds).sort().join(',')}|${Array.from(edgeIds).sort().join(',')}`;
+    return {
+      nodeIds,
+      edgeIds,
+      totalInScope: 1 + candidateChildren.length,
+      matchedCount: matchedChildren.length > 0 ? matchedChildren.length : candidateChildren.length,
+      key,
+    };
+  }, [scopedAuditRootId, nodes, edges]);
+  const scopedAuditScopeRef = useRef(scopedAuditScope);
+  scopedAuditScopeRef.current = scopedAuditScope;
+
 
   useEffect(() => {
     const activeNodes = new Set();
@@ -1493,7 +1555,13 @@ export default function App() {
         })
       : [];
 
-    if (selectedNode) {
+    if (scopedAuditScopeRef.current.nodeIds.size > 0) {
+      scopedAuditScopeRef.current.nodeIds.forEach(id => {
+        activeNodes.add(id);
+        if (id !== scopedAuditRootId) outgoing.add(id);
+      });
+      scopedAuditScopeRef.current.edgeIds.forEach(eid => edgeHighlights.add(eid));
+    } else if (selectedNode) {
       activeNodes.add(selectedNode.id);
 
       let queue = [{ id: selectedNode.id, depth: 0 }];
@@ -1602,7 +1670,7 @@ export default function App() {
           if (incoming.has(n.id)) cls += ' highlight-incoming';
         } else if (relatedNodes.has(n.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
+        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge || scopedAuditRootId) {
           cls += ' de-emphasized';
         }
         // 결함 원인 역추적(Root Cause Tracing, Spec 3.3) — 선행 결함 경로 맥동 강조
@@ -1634,7 +1702,7 @@ export default function App() {
           cls += ' active highlight-edge';
         } else if (relatedEdges.has(e.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge) {
+        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge || scopedAuditRootId) {
           cls += ' de-emphasized';
         }
         // 결함 원인 역추적 엣지 강조
@@ -1655,7 +1723,7 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, rootCauseScope.key, graphVersion]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, graphVersion]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
@@ -1781,18 +1849,12 @@ export default function App() {
           <ReactFlow nodeTypes={nodeTypes} edgeTypes={edgeTypes} minZoom={0.05}
                      onInit={setRfInstance}
         nodes={(() => {
-          if (!hoveredGlobalBadgeId || !rfInstance) return nodes;
-          const center = rfInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+          // CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.1 & 4.1:
+          // 배지 Hover 시 글로벌 노드를 화면 중앙에 강제 소환(hidden: false, position: center)하지 않고,
+          // 현재 캔버스에 이미 표시 중인 연결 노드들에만 경량 외곽선 하이라이트(.hovered-global-neighbor)를 부여합니다.
+          if (!hoveredGlobalBadgeId) return nodes;
           return nodes.map(n => {
-            if (n.id === hoveredGlobalBadgeId) {
-              return {
-                ...n,
-                hidden: false,
-                position: center,
-                style: { ...n.style, zIndex: 'var(--z-active-node)', boxShadow: '0 0 20px rgba(0, 229, 255, 0.5)' },
-                className: `${n.className || ''} hovered-global-neighbor`,
-              };
-            }
+            if (n.hidden) return n;
             const badges = (n.data as any)?.badges || [];
             if (badges.some((b: any) => b.id === hoveredGlobalBadgeId)) {
               return { ...n, className: `${n.className || ''} hovered-global-neighbor` };
@@ -1802,8 +1864,11 @@ export default function App() {
         })()}
         edges={(() => {
           if (!hoveredGlobalBadgeId || !rfInstance) return visibleEdges;
+          const globalNodeOnCanvas = nodes.find(gn => gn.id === hoveredGlobalBadgeId && !gn.hidden);
+          if (!globalNodeOnCanvas) return visibleEdges;
           const tempEdges: Edge[] = [];
           nodes.forEach(n => {
+            if (n.hidden) return;
             const badges = (n.data as any)?.badges || [];
             const badge = badges.find((b: any) => b.id === hoveredGlobalBadgeId);
             if (badge) {
@@ -1833,6 +1898,7 @@ export default function App() {
         onPaneClick={() => {
           setSelectedNode(null);
           setSelectedEdge(null);
+          setScopedAuditRootId(null);
           if (impactMode) deactivateImpact();
           setContextMenu(null);
         }}
@@ -1849,7 +1915,7 @@ export default function App() {
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge || hoveredGlobalBadgeId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
+        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -2308,10 +2374,38 @@ export default function App() {
                       {tracedRootNodeId === editFormData.id ? t.rootCause.clearButton : t.rootCause.traceButton}
                     </button>
                   )}
+                  {/* 화면(Screen/Container) 단위 다국어 스코프 감사 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 4.1) */}
+                  {editFormData.type === 'node' && !isCreatingNode && (
+                    (liveEditNode?.data as any)?.label === 'Screen' || Boolean((liveEditNode?.data as any)?.hasChildren)
+                  ) && (
+                    <button
+                      type="button"
+                      className={`scoped-audit-btn${scopedAuditRootId === editFormData.id ? ' active' : ''}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const targetId = editFormData.id;
+                        const nextId = scopedAuditRootId === targetId ? null : targetId;
+                        if (nextId && (liveEditNode?.data as any)?.isCollapsed) {
+                          window.dispatchEvent(new CustomEvent('toggleCollapseNode', { detail: targetId }));
+                        }
+                        setScopedAuditRootId(nextId);
+                        if (nextId) {
+                          fetch(`/api/qa/audit-cross-cutting?aspect=Localization&scope_root_id=${encodeURIComponent(nextId)}`).catch(() => {});
+                        }
+                      }}
+                    >
+                      {scopedAuditRootId === editFormData.id ? t.scopedAudit.clearButton : t.scopedAudit.startButton}
+                    </button>
+                  )}
                 </div>
                 {editFormData.type === 'node' && !isCreatingNode && tracedRootNodeId === editFormData.id && (
                   <div className="root-cause-banner">
                     {t.rootCause.banner(rootCauseScope.nodeIds.size)}
+                  </div>
+                )}
+                {editFormData.type === 'node' && !isCreatingNode && scopedAuditRootId === editFormData.id && (
+                  <div className="scoped-audit-banner">
+                    {t.scopedAudit.banner(scopedAuditScope.matchedCount, scopedAuditScope.totalInScope)}
                   </div>
                 )}
                 {editFormData.type === 'node' && !isCreatingNode && blockReasonDraft !== null && (

@@ -898,20 +898,37 @@ def get_impact_scope(session, query_str: str) -> Optional[ImpactScopeResponse]:
     )
 
 
-def audit_cross_cutting(session, aspect: str) -> CrossCuttingAuditResponse:
+def audit_cross_cutting(session, aspect: str, scope_root_id: Optional[str] = None) -> CrossCuttingAuditResponse:
     """
     다국어(i18n), 화면비(Aspect Ratio), 사운드 등 전체 UI 전반에 걸친 횡단 관심사(Cross-cutting Concerns)가
     각 Screen/Feature에 누락 없이 매핑되어 있는지 전수 감사(Audit)하여 사각지대(Gap)를 찾아냅니다.
+    scope_root_id가 주어지면 해당 루트 화면/컨테이너 및 그 하위 Contains/Has 자식 노드 범위로 한정합니다.
     """
     aspect_lower = aspect.lower().strip()
+    i18n_synonyms = {"다국어", "localization", "i18n", "l10n"}
+    aspect_keywords = (i18n_synonyms | {aspect_lower}) if aspect_lower in i18n_synonyms else {aspect_lower}
     
-    # 1. 감사의 대상이 되는 비-글로벌 노드들 (Screen, Feature, TestCase 등)
-    nodes_query = """
-    MATCH (n)
-    WHERE coalesce(n.is_global, 'false') <> 'true'
-    RETURN elementId(n) AS id, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, n.checklist AS checklist
-    """
-    records = list(session.run(nodes_query))
+    # 1. 감사의 대상이 되는 비-글로벌 노드들 (scope_root_id가 있으면 해당 루트 및 Contains/Has 자식만)
+    if scope_root_id and scope_root_id.strip():
+        nodes_query = """
+        MATCH (root)
+        WHERE elementId(root) = $scope_root_id OR root.id = $scope_root_id OR toLower(root.name) = toLower($scope_root_id)
+        OPTIONAL MATCH (root)-[r]->(child)
+        WHERE toUpper(type(r)) IN ['CONTAINS', 'HAS']
+        WITH collect(DISTINCT root) + collect(DISTINCT child) AS scoped_nodes
+        UNWIND scoped_nodes AS n
+        WITH DISTINCT n
+        WHERE n IS NOT NULL AND coalesce(n.is_global, 'false') <> 'true'
+        RETURN elementId(n) AS id, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, n.checklist AS checklist
+        """
+        records = list(session.run(nodes_query, scope_root_id=scope_root_id.strip()))
+    else:
+        nodes_query = """
+        MATCH (n)
+        WHERE coalesce(n.is_global, 'false') <> 'true'
+        RETURN elementId(n) AS id, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, n.checklist AS checklist
+        """
+        records = list(session.run(nodes_query))
     
     # 2. aspect 키워드와 매칭되는 글로벌 노드 ID들 조회
     global_query = """
@@ -924,7 +941,7 @@ def audit_cross_cutting(session, aspect: str) -> CrossCuttingAuditResponse:
     for g in global_recs:
         g_name = (g["name"] or "").lower()
         g_aliases = [str(a).lower() for a in (g["aliases"] or [])]
-        if aspect_lower in g_name or any(aspect_lower in a for a in g_aliases):
+        if any(kw in g_name or any(kw in a for a in g_aliases) for kw in aspect_keywords):
             matched_global_ids.add(g["id"])
             
     # 3. 글로벌 뱃지와 노드 간의 연결(Edge) 조회
@@ -954,8 +971,14 @@ def audit_cross_cutting(session, aspect: str) -> CrossCuttingAuditResponse:
         ]
         
         # 判定: 1) alias/name에 aspect 포함, 2) B안 내부 체크리스트 항목에 포함, 또는 3) matched global 노드와 연결됨
-        has_aspect_in_alias = any(aspect_lower in a for a in naliases) or (aspect_lower in nname.lower())
-        has_aspect_in_checklist = any(aspect_lower in t for t in checklist_texts)
+        has_aspect_in_alias = any(
+            any(kw in a for a in naliases) or (kw in (nname or "").lower())
+            for kw in aspect_keywords
+        )
+        has_aspect_in_checklist = any(
+            any(kw in t for t in checklist_texts)
+            for kw in aspect_keywords
+        )
         is_connected_to_global = nid in connected_to_matched_globals
         
         node_info = {"id": nid, "name": nname, "label": nlabel}

@@ -217,5 +217,62 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(summaryBadge).toBeVisible();
     await expect(summaryBadge).toContainText('100%');
   });
+
+  test('H. Global badge hover does not teleport global node, and Scoped Localization Audit highlights only i18n children', async ({ page, request }) => {
+    // 1. Create a global Localization badge node and attach it ONLY to ids.settings (a Contains child of ids.root)
+    const gRes = await request.post('/api/nodes', {
+      data: {
+        label: 'Component',
+        name: 'Localization',
+        aliases: ['i18n'],
+        test_status: 'Untested',
+        properties: { is_global: 'true', description: '다국어 말줄임 확인' },
+      },
+    });
+    expect(gRes.ok()).toBeTruthy();
+    const globalId = await gRes.json();
+
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.child, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.settings, target: globalId, type: 'Depends_On', test_status: 'Untested', properties: {} },
+    });
+
+    const responsePromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await responsePromise;
+
+    // 2. Hover over the Localization badge on ids.settings -> global node must remain hidden (no teleportation to center)
+    const settingsNode = nodeLocator(page, ids.settings);
+    const badgePill = settingsNode.locator('.badge-pill').first();
+    await expect(badgePill).toBeVisible();
+    await badgePill.hover({ force: true });
+    await expect(nodeLocator(page, globalId)).toBeHidden();
+
+    // 3. Select parent container (ids.root) and click [🌐 이 화면 다국어 검증 모드]
+    await selectNode(page, ids.root);
+    const scopedBtn = page.locator('.scoped-audit-btn');
+    await expect(scopedBtn).toBeVisible();
+    const auditPromise = page.waitForResponse(res => res.url().includes('/api/qa/audit-cross-cutting') && res.url().includes('scope_root_id='));
+    await scopedBtn.click();
+    const auditRes = await auditPromise;
+    expect(auditRes.ok()).toBeTruthy();
+
+    await expect(page.locator('.scoped-audit-banner')).toBeVisible();
+    // Parent (ids.root) and i18n child (ids.settings) are .active, while non-i18n sibling (ids.child) is .de-emphasized
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bde-emphasized\b/);
+
+    // 4. Mark the Localization badge Failed -> dynamic fault chip appears on ids.settings
+    const markFailBtn = badgePill.locator('button[title="Mark Failed"]');
+    await markFailBtn.click({ force: true });
+    await expect(settingsNode.locator('.fault-chip')).toBeVisible();
+  });
 });
+
 

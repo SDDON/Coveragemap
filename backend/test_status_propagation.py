@@ -259,3 +259,32 @@ def test_get_next_test_targets_respects_depends_on_and_ignores_return():
     assert targets[0].id == "tc2" and targets[0].incoming_requirements_met is True
     assert targets[1].id == "tc3" and targets[1].incoming_requirements_met is False
 
+
+def test_audit_cross_cutting_with_scope_root_id():
+    from graph_service import audit_cross_cutting
+
+    session = MagicMock()
+    captured = []
+
+    def _run(query, **kw):
+        captured.append((query, kw))
+        if "scope_root_id" in kw:
+            return [
+                {"id": "scr_1", "label": "Screen", "name": "타이틀 화면", "aliases": [], "checklist": None},
+                {"id": "child_i18n", "label": "Feature", "name": "약관 동의", "aliases": [], "checklist": None},
+                {"id": "child_other", "label": "Feature", "name": "캐시 복구", "aliases": [], "checklist": None},
+            ]
+        if "WHERE g.is_global = 'true'" in query:
+            return [{"id": "g_loc", "name": "다국어(I18N) 지원", "aliases": ["Localization"]}]
+        if "WHERE elementId(g) IN $g_ids" in query:
+            return [{"target_id": "child_i18n"}]
+        return []
+
+    session.run.side_effect = _run
+    res = audit_cross_cutting(session, "Localization", scope_root_id="Screen_Title")
+    assert any("CONTAINS" in q and kw.get("scope_root_id") == "Screen_Title" for q, kw in captured)
+    assert res.total_screens_features == 3
+    assert [n["id"] for n in res.covered_nodes] == ["child_i18n"]
+    assert [n["id"] for n in res.missing_nodes] == ["scr_1", "child_other"]
+
+

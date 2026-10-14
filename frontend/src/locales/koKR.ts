@@ -140,6 +140,16 @@ export const koKR = {
     banner: (count: number) => `🚨 선행 결함/차단 경로 ${count}개 노드를 역추적하여 캔버스에 강조 표시 중입니다.`,
   },
 
+  // 화면(Screen/Container) 단위 다국어 스코프 감사 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.2 & 4.1)
+  scopedAudit: {
+    startButton: '🌐 이 화면 다국어 검증 모드',
+    clearButton: '✕ 다국어 검증 모드 해제',
+    banner: (matchedCount: number, totalCount: number) =>
+      `🌐 이 화면 및 하위 다국어(Localization) 검증 대상 ${matchedCount}개 노드를 집중 하이라이트 중입니다. (범위 내 전체: ${totalCount}개)`,
+    faultChip: (name: string) => `🏷️ [${name}: 결함]`,
+    keywords: ['localization', 'i18n', 'l10n', '다국어', '언어', '번역'],
+  },
+
   // 전역 공통 노드(Badge) 설정
   globalNode: {
     title: '🌐 전역 공통 노드 (Badge화)',

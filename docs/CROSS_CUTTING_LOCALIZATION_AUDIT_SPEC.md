@@ -2,8 +2,8 @@
 
 **Document Version:** 1.0.0  
 **Target Audience:** Senior AI Coding Models (Argon, Opus 5.5, Gemini 4) & QA Engineers  
-**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///d:/workspace/Coveragemap/AI_IMPLEMENTATION_SPEC.md), [TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///d:/workspace/Coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md)  
-**Status:** Approved via `/grill-me` (2026-10-14) — 차기 구현 모델 지침서
+**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md)  
+**Status:** Implemented (2026-10-14) — 글로벌 배지 Hover 소환 제거, 화면 단위 다국어 스코프 감사(`scope_root_id` & `[🌐 이 화면 다국어 검증 모드]`), 동적 결함 칩(`.fault-chip`) 구현 및 검증 완료
 
 ---
 
@@ -92,6 +92,7 @@ flowchart TD
    - `scope_root_id`가 주어지면, 해당 노드 및 그 하위 `Contains` 자식 노드 범위 내에서만 다국어 누락/통과 여부를 집계하여 반환합니다.
 
 ### 4.3. 검증 기준 (Verification Criteria)
-- [ ] **Tier 1 검사**: `backend/.venv/Scripts/python.exe scripts/check_policy.py` 통과 (Exit Code 0).
-- [ ] **Hover 버그 검증**: 캔버스에서 노드의 `Localization` 배지 위에 마우스를 올려도 `SCREEN Localization` 카드가 화면 중앙에 튀어나오지 않는지 확인.
-- [ ] **스코프 감사 검증**: 부모 Screen 노드 선택 후 다국어 감사 실행 시, 해당 화면과 하위 텍스트 컴포넌트만 Focus 하이라이트되는지 확인.
+- [x] **Tier 1 검사**: `backend/.venv/Scripts/python.exe scripts/check_policy.py` 통과 (Exit Code 0).
+- [x] **Hover 버그 검증**: 캔버스에서 노드의 `Localization` 배지 위에 마우스를 올려도 `SCREEN Localization` 카드가 화면 중앙에 튀어나오지 않는지 확인.
+- [x] **스코프 감사 검증**: 부모 Screen 노드 선택 후 다국어 감사 실행 시, 해당 화면과 하위 텍스트 컴포넌트만 Focus 하이라이트되는지 확인.
+

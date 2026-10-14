@@ -502,7 +502,8 @@ body {
   margin-top: 6px;
 }
 .modified-chip,
-.checklist-badge {
+.checklist-badge,
+.fault-chip {
   font-size: 0.68rem;
   font-weight: 600;
   padding: 2px 8px;
@@ -511,10 +512,35 @@ body {
   white-space: nowrap;
 }
 .modified-chip { background: #f3e8ff; color: #6b21a8; border-color: #d8b4fe; }
+.fault-chip { background: #fee2e2; color: var(--status-failed-text); border-color: #fca5a5; }
 .checklist-badge-passed { background: #dcfce7; color: var(--status-passed-text); border-color: #86efac; }
 .checklist-badge-failed { background: #fee2e2; color: var(--status-failed-text); border-color: #fca5a5; }
 .checklist-badge-blocked { background: #fef3c7; color: var(--status-blocked-text); border-color: #fcd34d; }
 .checklist-badge-progress { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
+
+/* 화면(Screen/Container) 단위 다국어 스코프 감사 버튼 및 배너 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 4.1) */
+.scoped-audit-btn {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1.5px solid #93c5fd;
+  font-weight: 600;
+}
+.scoped-audit-btn.active {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+.scoped-audit-banner {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+}
 
 /* 부모 노드 접기(isCollapsed) 시 하위 노드 요약 진행률 배지 (AI_IMPLEMENTATION_SPEC 4.1) */
 .parent-collapse-summary {

@@ -60,6 +60,10 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
   // 부모 노드를 접었을 때(isCollapsed) 하위 자식 노드들의 통과/결함 요약 배지 (AI_IMPLEMENTATION_SPEC 4.1)
   const childSummary: { total: number; passed: number; failed: number; blocked: number } | null =
     isParent && data.isCollapsed && data.childSummary ? data.childSummary : null;
+  // Detail-on-Demand 동적 결함 칩 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.2): 실패한 전역 배지만 상단 붉은 결함 칩으로 노출
+  const failedBadges = Array.isArray(data.badges)
+    ? data.badges.filter((b: any) => b?.test_status === 'Failed')
+    : [];
 
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>
@@ -98,8 +102,8 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
           </div>
         )}
 
-        {/* 변경 표시 칩 + 체크리스트 진행률 배지 (값이 있을 때만 렌더링하여 노드를 컴팩트하게 유지) */}
-        {(isModified || checklistBadge) && (
+        {/* 변경 표시 칩 + 체크리스트 진행률 배지 + 동적 결함 칩 (값이 있을 때만 렌더링하여 노드를 컴팩트하게 유지) */}
+        {(isModified || checklistBadge || failedBadges.length > 0) && (
           <div className="node-status-chips">
             {isModified && (
               <span className="modified-chip" title={props.modified_note || ''}>{t.modified.chip}</span>
@@ -107,6 +111,11 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
             {checklistBadge && (
               <span className={`checklist-badge checklist-badge-${checklistBadge.tone}`}>{checklistBadge.text}</span>
             )}
+            {failedBadges.map((fb: any, idx: number) => (
+              <span key={fb.edgeId || fb.id || idx} className="fault-chip" title={fb.properties?.description || fb.name}>
+                {t.scopedAudit.faultChip(fb.name)}
+              </span>
+            ))}
           </div>
         )}
         
