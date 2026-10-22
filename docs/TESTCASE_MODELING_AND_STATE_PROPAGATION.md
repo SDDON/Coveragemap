@@ -1,9 +1,8 @@
 # TestCase Modeling & 4-Stage State Propagation Specification
 
-**Document Version:** 1.0.0  
+**Document Version:** 2.0.0  
 **Target Audience:** Senior AI Coding Agents & QA Engineers  
-**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///e:/Workspace/coveragemap/UI_UX_DESIGN_SYSTEM.md), [CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///e:/Workspace/coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)  
-**Status:** Implemented (2026-10-11) — 구현 결과 및 원 명세와 달라진 결정 사항은 [8. 구현 결과 및 결정 기록](#8-구현-결과-및-결정-기록-implementation-record-2026-10-11) 참조
+**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///e:/Workspace/coveragemap/UI_UX_DESIGN_SYSTEM.md)
 
 ---
 
@@ -18,10 +17,10 @@
 이 두 항목 사이에는 명확한 **선행 - 후행 의존성**이 존재합니다:
 > 텍스트 노출 자체가 실패(`Failed`)하면, 버전 숫자가 일치하는지 확인하는 후속 테스트는 수행할 수 없으므로 차단(`Blocked`)되어야 합니다.
 
-사용자는 이를 다음과 같이 직관적으로 모델링하였습니다:
+사용자는 이를 다음과 같이 직관적으로 모델링합니다:
 - `Screen: 타이틀화면` (부모 컨테이너) 안에 `Component: 클라이언트 버전` (자식 노드)을 배치.
-- 캔버스 좌측에 2개의 `TestCase` 노드를 배치하고 `Component`로 연결.
-- `TC 1`에서 `TC 2`로 선후 관계 화살표를 연결하고자 함.
+- 캔버스 좌측에 2개의 `TestCase` 노드를 배치하고 `Component`로 연결하거나, 노드 내부 체크리스트(B안)로 관리.
+- `TC 1`에서 `TC 2`로 선후 관계 화살표를 연결.
 
 ```mermaid
 flowchart LR
@@ -43,27 +42,14 @@ flowchart LR
 
 ---
 
-## 2. Gap Analysis in Current System (현재 시스템의 3대 한계 및 원인 분석)
+## 2. 핵심 설계 원칙 (Core Design Rationale)
 
-본 제안이 나온 근본적인 이유는 현재 코드베이스에 다음 3가지 구현상의 괴리가 존재하기 때문입니다:
-
-### 2.1. 한계 1: 노드 상태 변경 시 타겟 노드로의 전파 단절 (No Node-to-Node Rollup)
-- **현상**: 테스터가 `TC 1` 노드를 클릭하고 우측 패널에서 `Mark Passed`를 눌러도, 대상 컴포넌트(`클라이언트 버전`)는 여전히 `Untested` 상태로 남아있습니다.
-- **원인**:
-  - `frontend/src/App.tsx`의 `handleSaveStatus`는 노드를 수정할 때 대상 노드 본체의 `test_status`만 바꿀 뿐, 해당 노드에서 뻗어나가는 outgoing 엣지나 타겟 노드를 재계산하지 않습니다.
-  - 반면 `recalculateTargetStatus` 및 `backend/graph_service.py`의 `_recalc_target_node_status`는 오직 **"들어오는 엣지 자체의 test_status (`in_r.test_status`)"**만 보고 타겟 노드의 상태를 결정합니다.
-  - 이로 인해 테스터는 노드 상태 따로, 엣지 상태 따로, 컴포넌트 상태 따로 이중/삼중으로 수동 조작해야 하는 문제가 있습니다.
-
-### 2.2. 한계 2: Edit Node UI에 `Blocked` 상태 누락 (Missing Blocked Action)
-- **현상**: 기획서([AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md) 3.1)에는 4단계 상태(`Untested`, `Passed`, `Failed`, `Blocked`)가 명시되어 있으나, `App.tsx`의 Edit Node 패널에는 `Mark Passed`, `Mark Failed`, `Reset Status` 3개 버튼만 존재합니다.
-- **원인**:
-  - `Blocked`는 원래 "선행 조건 실패 시 시스템이 자동으로 산출하는 파생 상태(Computed State)"로 기획되었기 때문에 수동 마킹 버튼에서 제외되었습니다.
-  - 그러나 선행 노드(`TC 1`)가 `Failed`가 되었을 때 후행 노드(`TC 2`)로 `Blocked`를 전파하는 자동 트리거가 누락되어 있어 결과적으로 `Blocked` 상태가 도출되지 못했습니다.
-  - 또한, 네트워크 점검, 빌드 미배포 등 외부 환경 요인으로 인해 테스터가 특정 노드를 **수동 차단(Manual Blocked)**해야 하는 실무 요구를 반영하지 못했습니다.
-
-### 2.3. 한계 3: 캔버스 노드 방식 vs 노드 내부 체크리스트 방식의 가이드 부재
-- 화면 1개당 컴포넌트가 10개 이상이고 각 컴포넌트마다 3~5개의 TC가 캔버스 노드로 배치되면, 화면 하나 주변에 30~50개의 작은 노드가 생성되어 **그래프 폭발(Graph Clutter)**이 발생합니다.
-- 따라서 어떤 경우에 캔버스 독립 노드를 쓰고, 어떤 경우에 노드 속성 체크리스트로 관리할지에 대한 명확한 도메인 모델링 가이드가 필요합니다.
+1. **노드 상태 변경 시 타겟 노드로의 자동 롤업 (Node-to-Node Rollup)**:
+   - 테스터가 노드 상태 따로, 엣지 상태 따로 수동 조작하지 않도록, `Depends_On` 및 `Tests` 관계에서는 출발 노드의 상태 변경이 도착 노드로 자동 연쇄 전파되어야 합니다.
+2. **자동 차단(`Blocked`)과 수동 차단(`📌 Mark Blocked`)의 공존**:
+   - 선행 조건 실패 시 후속 노드가 자동으로 `Blocked(🟡)`로 전환되는 동시에, 네트워크 점검·빌드 미배포 등 외부 요인으로 인한 테스터의 수동 차단 고정(`is_manual_override: true` + `override_reason`)을 함께 지원해야 합니다.
+3. **캔버스 독립 노드(A안)와 노드 내부 체크리스트(B안)의 역할 분담**:
+   - 화면 1개당 컴포넌트가 10개 이상일 때 모든 세부 검증을 캔버스 노드로 만들면 그래프 폭발(Graph Clutter)이 발생하므로, 거시적 선후 의존 흐름(A안)과 일상적 UI/기능 스펙 점검(B안)의 모델링 기준을 명확히 분리합니다.
 
 ---
 
@@ -190,65 +176,77 @@ flowchart TD
 - Edit Node 패널에서 `Mark Blocked`를 누르면 `is_manual_override: true`로 마킹되고 사유(`override_reason`)를 필수로 입력받습니다.
 - 오버라이드된 노드는 선행 노드의 자동 계산에 의해 덮어쓰기 되지 않고 유지됩니다.
 
----
-
-## 5. Implementation Directives for Senior Model (차기 모델 구현 지시서)
-
-차기 AI 모델은 아래 명시된 파일과 함수를 수정하여 본 규격을 완성해야 합니다:
-
-### 5.1. 프론트엔드 작업 (`frontend/src/App.tsx`)
-1. **`Edit Node` 패널 UI 확장 (`lines ~1950-1956`)**:
-   - `Mark Passed`, `Mark Failed` 옆에 **`Mark Blocked`** 버튼 추가.
-   - `Blocked` 클릭 시 오버라이드 사유(`override_reason`) 입력 팝업/인풋 제공.
-2. **`handleSaveStatus` 노드 전파 로직 추가 (`lines ~840-915`)**:
-   - 노드 상태가 저장될 때, 해당 노드를 `source`로 하는 모든 outgoing 엣지를 탐색.
-   - `e.type === 'Depends_On'`인 경우:
-     - `newStatus === 'Failed' || newStatus === 'Blocked'`이면 타겟 노드를 `Blocked`로 자동 갱신.
-     - `newStatus === 'Passed'`이면 타겟 노드의 차단을 해제하여 `Untested`로 복귀.
-   - `e.type === 'Tests'`인 경우:
-     - 타겟 컴포넌트의 모든 incoming TC 노드들의 상태를 조회하여 롤업 계산 후 컴포넌트 상태 갱신.
-3. **`recalculateTargetStatus` 함수 개선 (`lines ~829-839`)**:
-   - 들어오는 엣지(`e.data.test_status`)뿐만 아니라, **출발지 노드(`sourceNode.data.test_status`)**의 상태도 함께 고려하여 계산하도록 개선.
-   - **`e.type === 'Return'`인 엣지는 집계 대상에서 제외**하여, 뒤로가기/복귀 화살표로 인한 상태 전파 무한 루프(Deadlock) 차단.
-4. **B안: 노드 내부 체크리스트 에디터 및 뱃지 연동**:
-   - `frontend/src/App.tsx`: Edit Node 폼에 `Checklist` 섹션을 추가하고, 항목 추가/삭제 및 개별 항목 상태(`Untested`/`Passed`/`Failed`/`Blocked`) 변경 시 노드 `properties.checklist` 및 종합 `test_status`를 자동 산출하여 낙관적 업데이트.
-   - `frontend/src/CoverageNode.tsx`: `data.properties.checklist`가 존재할 경우 카드 본체에 `[ 🟢 3/3 (100%) ]` 프로그레스 뱃지를 표시하도록 렌더링 추가.
-
-### 5.2. 백엔드 작업 (`backend/graph_service.py`)
-1. **`update_node` 함수 내 연쇄 전파 호출 추가 (`lines ~235-282`)**:
-   - 노드의 `test_status`가 변경되면, `_recalc_target_node_status(session, record["next_id"])`를 호출하여 outgoing 노드들의 상태를 실시간 연쇄 재계산 (단, `type = 'Return'`인 엣지는 전파 대상에서 제외).
-2. **`_recalc_target_node_status` Cypher 쿼리 개선 (`lines ~295-328`)**:
-   - 엣지 상태만 보는 대신, 출발 노드의 상태도 함께 수집하되 `Return` 엣지는 상태 전파에서 제외:
-     ```cypher
-     MATCH (target) WHERE elementId(target) = $target_id
-     OPTIONAL MATCH (src)-[in_r]->(target)
-     WHERE in_r.type IS NULL OR in_r.type <> 'Return'
-     WITH target, collect({
-         edge_status: coalesce(in_r.test_status, 'Untested'),
-         src_status: coalesce(src.test_status, 'Untested'),
-         edge_type: coalesce(in_r.type, 'Transition')
-     }) AS inputs
-     ...
-     ```
-   - `Depends_On` 관계에서 `src_status`가 `Failed` 또는 `Blocked`이면 타겟은 `Blocked` 처리.
-   - `Tests` 관계에서 모든 `src_status`가 `Passed`이면 타겟은 `Passed` 처리.
+### 4.4. 상태 합성 및 전파 세부 결정 원칙
+1. **관계 타입 정규화**: Neo4j에서 관계 타입은 속성이 아닌 `type(in_r)`로 조회하며, 대소문자 혼용(`Depends_On`/`DEPENDS_ON`) 방지를 위해 `toUpper`로 정규화합니다.
+2. **전파 대상 관계 한정**: 연쇄 전파(출발 **노드** 상태를 입력으로 사용)는 `Depends_On`·`Tests` 두 관계에만 적용합니다. `Transition`/`Contains` 등 Flow 엣지는 **엣지 자체의 상태**로 판정하고, `Return`은 입력에서 완전히 제외합니다(가중치 `0`).
+3. **`Tests` 실패 우선**: `Tests` 소스 중 하나라도 `Failed`이면 대상은 `Failed`로 전파되며, (`Failed`가 없고) `Blocked`가 있으면 `Blocked`로 산출됩니다.
+4. **`Depends_On`만 있는 노드의 복구**: 선행이 정상으로 돌아오면 자동으로 부여됐던 `Blocked`만 `Untested`로 해제하고, 테스터가 직접 마킹한 `Passed`/`Failed`는 유지합니다.
+5. **워크리스트 전파 및 사이클 안전성**: 큐(Worklist) 기반으로 하류를 순회하며 이미 처리한 노드는 재방문하지 않아 무한 루프를 방지합니다. 📌 고정 노드와 전역(`is_global`) 노드는 전파를 멈춥니다.
+6. **체크리스트 직렬화 및 프론트-서버 동기화**: `properties.checklist`는 Neo4j에 JSON 문자열로 저장하고 API 경계에서 배열로 역직렬화합니다. 프론트엔드는 낙관적 업데이트 직후 `GET /api/node-statuses`로 서버 상태 맵을 받아 동기화하여 레이아웃 점프와 줌 초기화를 방지합니다.
 
 ---
 
-## 6. Verification Guidelines (검증 기준)
-1. **Tier 1 (정적 검사)**: `python scripts/check_policy.py` 통과 (0 Exit Code).
-2. **E2E 테스트 시나리오**:
-   - [x] `TC 1`을 `Failed`로 마킹 시, `Depends_On`으로 연결된 `TC 2`가 즉시 `Blocked(🟡)`로 자동 변경되는가? *(pytest `test_status_propagation.py`, E2E `verify_state_engine_2026_10.spec.ts` A)*
-   - [x] `TC 1`을 다시 `Passed`로 복구 시, `TC 2`의 차단이 해제되는가? *(동일)*
-   - [x] `TC 1`과 `TC 2`가 모두 `Passed`일 때, 대상 `Component`가 자동으로 `Passed(🟢)`로 변경되는가? *(pytest `test_status_propagation.py`)*
-   - [x] Edit Node에서 `Mark Blocked`를 눌렀을 때 📌 핀 아이콘 및 사유가 정상 저장되는가? *(E2E B)*
+## 5. 커버 가능 테스트 범위 및 한계 (Testable Scope & Boundaries)
+
+### 5.1. CoverageMap이 강점을 가지는 6대 테스트 영역
+| 분류 | 설명 및 모델링 방식 |
+| :--- | :--- |
+| **① 비선형 UI 씬 전환 및 모달 복귀 흐름** | 화면/모달 간 정방향 이동은 `Transition` 엣지(`action` 트리거 명시)로, 닫기/취소/뒤로가기 복귀는 `Return` 엣지(전파 가중치 `0`, 순환 데드락 방지)로 모델링 |
+| **② 선후행 게이트 조건 및 연쇄 차단 (`Depends_On`)** | 선행 조건/API/시스템 노드가 `Failed` 또는 `Blocked`가 되면 후속 화면/기능 노드가 자동으로 `Blocked(🟡)`로 연쇄 전환되어 불필요한 테스트 낭비 방지 |
+| **③ 단일 화면·팝업 내부 기능 동작 및 정적 UI 점검** | 화면을 벗어나지 않는 연속 기능 동작(예: 서드파티 호출 → 인증 완료 → 팝업 자동 닫힘)이나 레이아웃/텍스트/Dimmed 처리 여부는 **B안(노드 내부 `properties.checklist`)** 또는 **A안(`TestCase` 노드 + `Tests` 엣지)**으로 검증 (체크리스트 100% 통과 시 부모 노드 자동 `Passed`, 1개라도 실패 시 자동 `Failed`) |
+| **④ 글로벌 횡단 관심사 (Cross-Cutting Concerns)** | 로컬라이제이션, 사운드, 네트워크 단절, 결제/권한 등 여러 화면에 걸치는 테스트는 `is_global: true` 전역 배지로 생성해 각 노드에 부착하고, 실패 시에만 붉은 결함 칩(`🔴`)으로 노출 (`audit_cross_cutting`으로 전수/화면 범위 감사) |
+| **⑤ 파편화된 공통 UI 패턴의 일괄 회귀 점검** | `#Popup` 등 별칭(Tag)을 노드 이름에 부여하고 좌측 사이드바 검색 및 Focus+Context 필터링으로 모든 팝업의 공통 스펙(Dimmed 터치 시 닫힘 여부 등)을 일괄 점검 |
+| **⑥ 스펙 변경 영향도 (`Change Impact Ripple`) 및 원인 역추적** | 기획 변경 시 `[⚡ 스펙 변경 표시]`로 최대 2-hop 후속 노드를 보라색(`.highlight-affected`)으로 하이라이트하고, 차단된 노드에서 `[🔍 결함 원인 역추적]`으로 최초 `Failed` 원흉 노드를 즉시 식별 |
+
+### 5.2. 이 모델에서 다루기 어렵거나 적합하지 않은 영역 (한계)
+1. **화이트박스 / 소스코드·엔진 에셋 의존 테스트 (정책적 금지)**: Unity/Unreal 프리팹·씬 파싱, 내부 클래스/변수 리플렉션 등은 블랙박스 QA 원칙(`AI_IMPLEMENTATION_SPEC.md` 1.3절)에 따라 엄격히 배제됩니다.
+2. **다차원 조합 폭발 (Combinatorial Testing) 및 수치 밸런스/확률 검증**: `캐릭터(50) × 무기(100) × 스킬(20)` 데미지 공식 검증이나 가챠 10,000회 확률 분포 검증은 그래프 노드로 표현 시 캔버스가 폭발하므로, CoverageMap에서는 `'가챠 실행 및 결과 연출 확인'` 기능 수준만 노드로 두고 세부 확률표는 외부 시트로 검증합니다.
+3. **연속적 조작감·물리 판정·시계열 성능 프로파일링**: 프레임 단위 타격 판정(히트박스), 지형 끼임, 30분 발열/메모리 누수/FPS 방어율 등 연속적 수치 데이터는 `Passed/Failed` 이산 상태 그래프로 표현하기 어렵습니다.
+4. **실시간 타이밍 경합 (Race Condition / 광클·동시 입력)**: 프레임 단위 동시 터치나 백그라운드 강제 전환 연타 등 비결정적 타이밍 이슈는 정적 상태 전이 간선으로 모델링하기 어렵습니다 (단, *'결제 중 네트워크 단절'*처럼 시나리오가 고정된 항목은 전역 배지나 체크리스트로 등록 가능).
+5. **2단계 이상 깊은 UI 컴포넌트 중첩**: `Max Depth = 1` 제약에 따라 `상점 → 탭 → 리스트 → 슬롯 → 툴팁` 식의 깊은 계층 중첩은 금지되며, 1단계 컨테이너 + 내부 체크리스트로 평탄화해야 합니다.
 
 ---
 
-## 7. 차기 기능 명세: 변경 영향도 강조 및 수정 전파 기능 (Change Impact Ripple Highlight)
+## 6. 실무 합의 모델링 패턴 (Standard QA Modeling Patterns)
 
-> **대상 에이전트:** 차기 상위 모델 (Argon, Claude Opus 5.5, GPT-5)  
-> **기능 목적:** 개발팀의 기획/코드 수정 발생 시, 테스터가 재검증(Regression) 스코프를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조하는 Living Document 특화 기능.
+### 6.1. 패턴 1: 연속된 팝업 내 기능 시퀀스는 '단일 팝업 노드 + 내부 체크리스트(B안)'로 압축
+- **예시 시나리오**: `타이틀 화면 - 로그인 팝업 - 서드 파티 로그인 - 인증 성공 - 팝업 창 자동 닫힘 - 로그인 처리 완료`
+- **권장 모델링**:
+  - **캔버스 노드 (3개)**: `[타이틀 화면]` ──(`Transition: 로그인 버튼 터치`)──▶ `[로그인 팝업 #Popup]` ──(`Transition: 인증 성공 및 자동 닫힘`)──▶ `[인게임 로비 (로그인 완료)]` (및 팝업 취소 시 `[로그인 팝업]` ──(`Return: 닫기/취소`)──▶ `[타이틀 화면]`)
+  - **`[로그인 팝업 #Popup]` 내부 체크리스트 (B안)**:
+    - `[ ] 서드파티(Google/Apple/Guest) 로그인 버튼 터치 시 외부 인증창 정상 호출`
+    - `[ ] 외부 인증 성공 시 팝업 창이 별도 조작 없이 자동으로 닫힘`
+    - `[ ] 인증 취소 또는 실패 시 에러 토스트 노출 및 팝업 유지`
+    - `[ ] 팝업 오픈 시 배경 Dimmed 처리 및 외부 영역 터치 동작 확인`
+- **이유**: 화면/모달 단위로만 노드를 유지해 캔버스 복잡도를 낮추고, 세부 동작 단계는 체크리스트 진행률 배지(`☑ 3/4`)와 자동 상태 합성으로 관리합니다.
+
+### 6.2. 패턴 2: 여러 화면에서 호출되는 공용 팝업은 '단일 노드 통합 + 진입 사전 조건 체크리스트'로 관리
+- **상황**: `로그인 팝업`이 `타이틀 화면`뿐만 아니라 `설정 화면(계정 연동)` 등 여러 진입점에서 호출되는 경우.
+- **권장 모델링**:
+  - 노드를 화면별로 복제(`타이틀용 로그인 팝업`, `설정용 로그인 팝업`)하지 않고 **하나의 `[로그인 팝업 #Popup]` 노드로 통합**합니다.
+  - 진입 경로별 확인 사항은 `로그인 팝업` 내부 체크리스트에 **진입 사전 조건 항목**(예: `[ ] [사전조건: 타이틀 진입] 비로그인 상태에서 호출 및 인증 후 로비 이동`, `[ ] [사전조건: 설정 진입] 게스트 상태에서 계정 연동 호출 및 연동 후 설정 화면 유지`)으로 구분하여 작성합니다.
+
+### 6.3. 패턴 3: 다국어(Localization) 검증은 '글로벌 배지(5대 문자 세트 위험군 가이드) + 특정 화면 고유 스펙 체크리스트' 2계층으로 분리
+- **상황**: 번역 텍스트의 문자 체계(한글/독일어/아랍어/태국어 등)에 따라 텍스트 박스 오버플로우, 줄바꿈, 성조 잘림, RTL 정렬 깨짐 등이 다르게 발생합니다.
+- **권장 모델링**:
+  1. **공통 시각/조판 품질 (`Global_Badge_I18N` 전역 배지 + `[🌐 이 화면 다국어 검증 모드]`)**:
+     - 모든 노드에 동일한 다국어 체크리스트를 복제하지 않고, `Global_Badge_I18N` 전역 배지의 `description`(가이드 툴팁)에 아래 **5대 문자 세트 위험군**을 표준 점검 기준으로 명시합니다:
+       | 위험군 | 대상 언어 예시 | 핵심 블랙박스 시각 검증 포인트 |
+       | :--- | :--- | :--- |
+       | **① 라틴/유럽어군 (팽창)** | EN, DE, FR, ES, RU | 원문 대비 30~50% 길이 팽창 시 버튼 영역 침범, 줄바꿈 밀림, 말줄임(`...`) 정상 동작 여부 |
+       | **② 한·중·일 (CJC 글리프)** | KO, JA, ZH-CN/TW | 단어/음절 단위 줄바꿈 금칙 처리 및 번체/간체·일본 한자 폰트 폴백 누락으로 인한 두부현상(`□`, Tofu) 여부 |
+       | **③ 성조·복모음 상하첨자** | TH (태국어), VI (베트남어) | 기본 자모 위아래로 쌓이는 성조/모음 기호가 줄 간격(Line Height)과 겹치거나 텍스트 박스 상하단에 잘리는(Vertical Clipping) 현상 |
+       | **④ 양방향 (BiDi / RTL)** | AR (아랍어), HE (히브리어) | 우→좌(RTL) UI 레이아웃/정렬 미러링 여부 및 숫자·영문 변수(LTR) 혼용 시 문자열 순서 역전 현상 |
+       | **⑤ 동적 변수 / 복수형 치환** | 전 언어 공통 (`{0}`, `%s`) | 유저 닉네임·재화 수량 등 가변 길이 인자 치환 시 미치환 문자열 노출 및 복수형 문법 분기 시 레이아웃 오버플로우 |
+     - 테스터는 화면 단위 `[🌐 이 화면 다국어 검증 모드]`(`scope_root_id`)를 켜고 배지의 `✓`/`✕` 원클릭 판정으로 점검하며, 결함 발견 시에만 붉은 동적 결함 칩(`🏷️ [Localization: 결함]`)을 노출합니다.
+  2. **특정 화면 고유 번역 스펙 (해당 노드의 B안 `properties.checklist`)**:
+     - 특정 팝업/화면에만 존재하는 고유 다국어 스펙(예: 가챠 확률 팝업의 `{0}%` 동적 변수 치환 및 테이블 열 너비 줄바꿈)만 해당 노드의 내부 체크리스트에 1줄로 추가합니다.
+
+---
+
+## 7. 변경 영향도 강조 및 수정 전파 기능 (Change Impact Ripple Highlight)
+
+개발팀의 기획/코드 수정 발생 시, 테스터가 재검증(Regression) 스코프를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조합니다.
 
 ```mermaid
 flowchart LR
@@ -265,7 +263,7 @@ flowchart LR
 ```
 
 ### 7.1. 데이터 모델 (Data Schema)
-노드 `properties`에 변경 이력 및 영향도 추적 필드를 추가:
+노드 `properties`에 변경 이력 및 영향도 추적 필드를 저장합니다:
 ```json
 {
   "properties": {
@@ -278,126 +276,25 @@ flowchart LR
 
 ### 7.2. UI/UX 표현 및 애니메이션 (Pure CSS Rule 1 준수)
 - **수정 노드 본체 (`CoverageNode.tsx`)**:
-  - `properties.is_modified === true`인 노드에 `.node-modified-pulse` CSS 클래스 부여.
-  - CSS 스타일: 바이올렛 테두리(#8b5cf6)와 부드러운 네온 글로우 펄스 애니메이션 (2s infinite ease-in-out).
-  - 카드 상단에 동적 칩 `✨ [Spec Updated]` 노출.
+  - `properties.is_modified === true`인 노드에 `.node-modified-pulse` CSS 클래스 부여 (바이올렛 테두리 `#8b5cf6` 및 2s 네온 글로우 펄스 애니메이션) 및 동적 칩 `✨ [Spec Updated]` 노출.
 - **다운스트림 영향권 파동 (Impact Ripple)**:
-  - 수정된 노드로부터 뻗어나가는 outgoing 엣지 및 1~2차 후속 노드에 `.highlight-affected` 스타일을 적용하여 재검증 영향권임을 시각화.
+  - 수정된 노드로부터 나가는 방향(`Return` 제외)으로 **최대 2 hop**까지의 후속 노드 및 엣지에 `.highlight-affected` 스타일을 적용하여 재검증 영향권임을 시각화합니다.
+  - 영향받는 자식 컴포넌트를 포함한 부모 `Screen`이 접혀 있을 때(`isCollapsed: true`)는 부모 카드에도 `.highlight-affected`와 `.parent-collapse-impact-summary`(`⚡ 영향 하위 컴포넌트 N개`) 배지를 상향 롤업합니다.
 
 ### 7.3. 테스터 검증 라이프사이클 (Acknowledge Lifecycle)
-1. **인지**: 테스터가 캔버스를 열었을 때 보라색 펄스가 깜빡이는 노드를 통해 당일 수정 사항을 1초 만에 식별.
-2. **확인**: 노드 클릭 시 우측 인스펙터 패널에 `⚠️ 변경 내역: 상점 바로가기 버튼 UI 개편` 안내 배너 노출.
+1. **인지**: 테스터가 캔버스를 열었을 때 보라색 펄스가 깜빡이는 노드를 통해 당일 수정 사항을 즉시 식별.
+2. **확인**: 노드 클릭 시 우측 인스펙터 패널에 변경 내역(`modified_note`) 안내 노출.
 3. **확인 완료 (Acknowledge)**:
-   - 테스터가 게임에서 확인 및 체크리스트 검증을 마친 후 **`[✓ 변경사항 확인 완료 (Acknowledge)]`** 버튼 클릭.
-   - 백엔드 `is_modified = false` 갱신 및 낙관적 업데이트로 펄스 효과 소멸, 정상 상태(Passed🟢)로 복귀.
-
-### 7.4. 차기 모델(Argon / Opus 5.5)을 위한 백엔드/프론트엔드 작업 지시
-1. **백엔드 (`backend/main.py` 및 `graph_service.py`)**:
-   - `POST /api/nodes/{id}/mark-modified`: 노드를 수정 상태로 지정 (`is_modified=true`, `modified_note` 기록).
-   - `POST /api/nodes/{id}/acknowledge`: 테스터의 확인 완료 처리 (`is_modified=false`).
-2. **프론트엔드 (`frontend/src/App.tsx`, `CoverageNode.tsx`, `index.css`)**:
-   - `index.css`: `.node-modified-pulse` 및 `@keyframes pulse-modified` 애니메이션 추가.
-   - `CoverageNode.tsx`: `is_modified` 플래그 감지 시 칩 노출 및 클래스 적용.
-   - `App.tsx`: 우측 인스펙터에 Acknowledge 버튼 및 `modified_note` 렌더링.
+   - 테스터가 게임에서 확인 및 체크리스트 검증을 마친 후 **`[✓ 변경사항 확인 완료 (Acknowledge)]`** (`POST /api/nodes/{id}/acknowledge`) 클릭.
+   - `is_modified = false`로 갱신되어 시각적 펄스 효과만 해제하며, 노드의 `test_status`는 자동으로 바꾸지 않고 테스터가 직접 판정 결과를 마킹합니다.
 
 ---
 
-## 8. 구현 결과 및 결정 기록 (Implementation Record, 2026-10-11)
+## 8. 실사용 시 예상되는 불편함 및 피드백 기반 재검토 백로그 (Known UX Friction & Backlog)
 
-> 위 1~7장의 원 명세는 기록 보존을 위해 그대로 두고, 실제 구현과 원 명세가 달라진 지점만 여기에 기록합니다.
+> 현재는 코드 수정 없이 현행 동작을 유지하며, 실제 모바일 게임 QA에 적용해 본 뒤 아래 항목에서 실무 불편 피드백이 발생할 경우 사용자 의사결정에 따라 우선적으로 기능 개선을 검토합니다.
 
-### 8.1. 구현 위치
-| 영역 | 파일 / 심볼 |
-| :--- | :--- |
-| 상태 합성 (순수 함수) | `backend/graph_service.py` → `compute_synthesized_status` |
-| 연쇄 전파 (워크리스트) | `backend/graph_service.py` → `_run_propagation`, `_propagate_to_dependents`, `_recalc_single_node_status`, `_recalc_target_node_status` |
-| 변경 표시 / 확인 | `backend/graph_service.py` → `mark_node_modified`, `acknowledge_node_modification` / `backend/main.py` → `POST /api/nodes/{id}/mark-modified`, `POST /api/nodes/{id}/acknowledge` |
-| 상태 재동기화 | `GET /api/node-statuses` → `{elementId: test_status}` (`get_node_statuses`) |
-| 프론트 미러 엔진 | `frontend/src/statusPropagation.ts` (`computeSynthesizedStatus`, `runPropagation`, `propagateToDependents`, `recalcTargetAndPropagate`, `applyStatusChanges`) |
-| Inspector UI | `frontend/src/App.tsx` → Mark Blocked + 사유 입력, 체크리스트 에디터(`saveChecklist`), 변경 영향도 섹션(`handleMarkModified`, `handleAcknowledge`, `affectedScope`) |
-| 노드 카드 | `frontend/src/CoverageNode.tsx` → 📌 핀, 체크리스트 진행률 배지, `✨ [Spec Updated]` 칩, `.node-modified-pulse` |
-| 테스트 | `backend/test_status_propagation.py`, `backend/test_edit_api.py`, `e2e-tests/tests/verify_state_engine_2026_10.spec.ts` |
-
-### 8.2. 원 명세 대비 결정 사항
-1. **5.2의 Cypher 정정**: Neo4j에서 관계 타입은 속성이 아니므로 `in_r.type`이 아니라 `type(in_r)`로 읽고, 대소문자 혼용(`Depends_On`/`DEPENDS_ON`)을 막기 위해 `toUpper`로 정규화합니다.
-2. **전파 대상 관계 한정**: 연쇄 전파(소스 **노드** 상태를 입력으로 사용)는 `Depends_On`·`Tests` 두 관계에만 적용합니다. `Transition`/`Contains` 등 Flow 엣지는 기존처럼 **엣지 자체의 상태**로 판정(3.4의 진입선 규칙 유지)하고, `Return`은 입력에서 완전히 제외합니다.
-3. **`Tests` 실패 우선**: 4.2 다이어그램의 "`Blocked` 또는 `Failed`" 모호성을 해소하여, `Tests` 소스 중 하나라도 `Failed`이면 대상은 `Failed`, (`Failed`가 없고) `Blocked`가 있으면 `Blocked`로 정했습니다.
-4. **`Depends_On`만 있는 노드의 복구**: 선행이 정상으로 돌아오면 자동으로 부여됐던 `Blocked`만 `Untested`로 해제하고, 테스터가 직접 마킹한 `Passed`/`Failed`는 유지합니다.
-5. **워크리스트 전파 + 사이클 안전성**: 재귀 대신 큐 기반으로 하류를 순회하며 이미 처리한 노드는 다시 넣지 않아, `Return`이 아닌 순환이 남아 있어도 무한 루프가 생기지 않습니다. 📌 고정 노드와 전역(Badge) 노드는 전파를 멈춥니다.
-6. **체크리스트 저장 형식**: Neo4j 속성은 중첩 객체를 저장할 수 없으므로 `properties.checklist`를 JSON 문자열로 직렬화해 저장하고, API 경계에서 배열로 역직렬화합니다.
-7. **Acknowledge는 상태를 바꾸지 않음 (7.3 정정)**: 7.3의 "정상 상태(Passed🟢)로 복귀"는 테스트 결과를 자동 조작하는 위험이 있어 채택하지 않았습니다. Acknowledge는 `is_modified=false`로 시각 효과만 해제하며, 재검증 결과는 테스터가 직접 마킹합니다. 같은 이유로 변경 표시 시 상태를 `Untested`로 자동 리셋하지도 않습니다.
-8. **영향권 범위**: `.highlight-affected`는 변경 노드에서 나가는 방향으로 `Return`을 제외하고 **최대 2 hop**까지(7.2의 "1~2차 후속 노드") 적용합니다.
-9. **프론트-서버 정합성**: 프론트엔드 `edges` 상태에는 전역 배지(`isBadgeEdge`) 엣지가 노드 내부 칩으로 흡수되어 빠져 있으므로(`Contains`/`Has` 엣지는 2026-10-22부터 `.edge-contains`로 `edges`에 정상 포함), 로컬 계산은 낙관적 표시용으로만 쓰고 저장 직후 `GET /api/node-statuses`로 서버 결과를 받아 덮어씁니다. (`/api/graph` 재조회를 하지 않으므로 레이아웃·줌이 유지됨)
-
-### 8.3. 추가 완료 반영 (2026-10-14 ~ 2026-10-22)
-- **Root Cause Tracing 버튼 (AI_IMPLEMENTATION_SPEC 3.3, 2026-10-14)**: Inspector 패널의 **[🔍 결함 원인 역추적 (Trace Root Cause)]** 버튼이 프론트엔드 역방향 BFS(`rootCauseScope`) 및 `.highlight-root-cause` 붉은 펄스 애니메이션과 연결 완료되었으며, 백엔드/MCP 질의용으로는 `GET /api/qa/status-summary?q=...`(`ask_test_status`)가 제공됩니다 (`7d53cfb`).
-- **2026-10-22 3대 추가 명세 구현 완료**:
-  1. **`Contains`/`Has` 일급 도메인 엣지 렌더링 복구 ([CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md](file:///e:/Workspace/coveragemap/docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md))**: `Contains`/`Has` 엣지가 드롭되지 않고 `.edge-contains` 은은한 점선 플로팅 엣지로 캔버스에 렌더링되며(부모 상단 헤더 120px 기준 교차점 계산), 선택·상태 마킹·삭제 시 자식 노드의 `parentId` 해제가 즉시 동기화됩니다.
-  2. **접힌 부모 Screen 영향도 상향 롤업 ([COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md](file:///e:/Workspace/coveragemap/docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md))**: 접힌 부모 `Screen`(`isCollapsed: true`)의 하위 자식 컴포넌트가 글로벌 영향도(`impactMode`) 또는 스펙 변경 리플(`affectedScope`)에 포함될 때 부모 카드에 `.impact-highlighted` / `.highlight-affected` 클래스와 `.parent-collapse-impact-summary`(`⚡ 영향 하위 컴포넌트 N개`) 배지가 표시됩니다.
-  3. **MCP 노드 상세 인스펙터 및 고급 검색 ([MCP_NODE_INSPECTION_TOOL_SPEC.md](file:///e:/Workspace/coveragemap/docs/MCP_NODE_INSPECTION_TOOL_SPEC.md))**: 백엔드 `GET /api/nodes/{id}/details` 및 MCP `get_node_details` 도구 추가, `find_node`의 `aliases`/`label`/`is_global`/`include_details` 확장으로 터미널 우회 스크립트 없이 모든 노드 메타데이터와 연결 엣지를 즉시 조회할 수 있습니다.
-
----
-
-## 9. 커버 가능 테스트 범위, 실무 모델링 가이드 및 향후 재검토 백로그 (2026-10-14)
-
-> 본 섹션은 모바일 게임 블랙박스 QA 실무 관점에서 CoverageMap이 **다룰 수 있는 테스트 vs 다루기 어려운 테스트**를 명확히 정의하고, 실무 모델링 합의 원칙 및 **실사용 시 예상되는 불편함(피드백 기반 재검토 백로그)**을 정리한 가이드입니다.
-
-### 9.1. 커버 가능한 테스트 vs 다루기 어려운 테스트 요약
-
-#### ✅ 1) CoverageMap이 강점을 가지는 6대 테스트 영역
-| 분류 | 설명 및 모델링 방식 |
-| :--- | :--- |
-| **① 비선형 UI 씬 전환 및 모달 복귀 흐름** | 화면/모달 간 정방향 이동은 `Transition` 엣지(`action` 트리거 명시)로, 닫기/취소/뒤로가기 복귀는 `Return` 엣지(전파 가중치 `0`, 순환 데드락 방지)로 모델링 |
-| **② 선후행 게이트 조건 및 연쇄 차단 (`Depends_On`)** | 선행 조건/API/시스템 노드가 `Failed` 또는 `Blocked`가 되면 후속 화면/기능 노드가 자동으로 `Blocked(🟡)`로 연쇄 전환되어 불필요한 테스트 낭비 방지 |
-| **③ 단일 화면·팝업 내부 기능 동작 및 정적 UI 점검** | 화면을 벗어나지 않는 연속 기능 동작(예: 서드파티 호출 → 인증 완료 → 팝업 자동 닫힘)이나 레이아웃/텍스트/Dimmed 처리 여부는 **B안(노드 내부 `properties.checklist`)** 또는 **A안(`TestCase` 노드 + `Tests` 엣지)**으로 검증 (체크리스트 100% 통과 시 부모 노드 자동 `Passed`, 1개라도 실패 시 자동 `Failed`) |
-| **④ 글로벌 횡단 관심사 (Cross-Cutting Concerns)** | 로컬라이제이션, 사운드, 네트워크 단절, 결제/권한 등 여러 화면에 걸치는 테스트는 `is_global: true` 전역 배지로 생성해 각 노드에 부착하고, 실패 시에만 붉은 결함 칩(`🔴`)으로 노출 (`audit_cross_cutting`으로 전수 감사) |
-| **⑤ 파편화된 공통 UI 패턴의 일괄 회귀 점검** | `#Popup` 등 별칭(Tag)을 노드 이름에 부여하고 좌측 사이드바 검색 및 Focus+Context 필터링으로 모든 팝업의 공통 스펙(Dimmed 터치 시 닫힘 여부 등)을 일괄 점검 |
-| **⑥ 스펙 변경 영향도 (`Change Impact Ripple`) 및 원인 역추적** | 기획 변경 시 `[⚡ 스펙 변경 표시]`로 최대 2-hop 후속 노드를 보라색(`.highlight-affected`)으로 하이라이트하고, 차단된 노드에서 `[🔍 결함 원인 역추적]`으로 최초 `Failed` 원흉 노드를 즉시 식별 |
-
-#### ⚠️ 2) 이 모델에서 다루기 어렵거나 적합하지 않은 영역 (한계)
-1. **화이트박스 / 소스코드·엔진 에셋 의존 테스트 (정책적 금지)**: Unity/Unreal 프리팹·씬 파싱, 내부 클래스/변수 리플렉션 등은 블랙박스 QA 원칙(`AI_IMPLEMENTATION_SPEC.md` 7절)에 따라 엄격히 배제됩니다.
-2. **다차원 조합 폭발 (Combinatorial Testing) 및 수치 밸런스/확률 검증**: `캐릭터(50) × 무기(100) × 스킬(20)` 데미지 공식 검증이나 가챠 10,000회 확률 분포 검증은 그래프 노드로 표현 시 캔버스가 폭발하므로, CoverageMap에서는 `'가챠 실행 및 결과 연출 확인'` 기능 수준만 노드로 두고 세부 확률표는 외부 시트로 검증합니다.
-3. **연속적 조작감·물리 판정·시계열 성능 프로파일링**: 프레임 단위 타격 판정(히트박스), 지형 끼임, 30분 발열/메모리 누수/FPS 방어율 등 연속적 수치 데이터는 `Passed/Failed` 이산 상태 그래프로 표현하기 어렵습니다.
-4. **실시간 타이밍 경합 (Race Condition / 광클·동시 입력)**: 프레임 단위 동시 터치나 백그라운드 강제 전환 연타 등 비결정적 타이밍 이슈는 정적 상태 전이 간선으로 모델링하기 어렵습니다 (단, *'결제 중 네트워크 단절'*처럼 시나리오가 고정된 항목은 전역 배지나 체크리스트로 등록 가능).
-5. **2단계 이상 깊은 UI 컴포넌트 중첩**: `Max Depth = 1` 제약에 따라 `상점 → 탭 → 리스트 → 슬롯 → 툴팁` 식의 깊은 계층 중첩은 금지되며, 1단계 컨테이너 + 내부 체크리스트로 평탄화해야 합니다.
-
----
-
-### 9.2. 실무 합의 모델링 패턴 (`/grill-me` 의사결정 반영)
-
-#### 패턴 1: 연속된 팝업 내 기능 시퀀스는 '단일 팝업 노드 + 내부 체크리스트(B안)'로 압축
-- **예시 시나리오**: `타이틀 화면 - 로그인 팝업 - 서드 파티 로그인 - 인증 성공 - 팝업 창 자동 닫힘 - 로그인 처리 완료`
-- **권장 모델링**:
-  - **캔버스 노드 (3개)**: `[타이틀 화면]` ──(`Transition: 로그인 버튼 터치`)──▶ `[로그인 팝업 #Popup]` ──(`Transition: 인증 성공 및 자동 닫힘`)──▶ `[인게임 로비 (로그인 완료)]` (및 팝업 취소 시 `[로그인 팝업]` ──(`Return: 닫기/취소`)──▶ `[타이틀 화면]`)
-  - **`[로그인 팝업 #Popup]` 내부 체크리스트 (B안)**:
-    - `[ ] 서드파티(Google/Apple/Guest) 로그인 버튼 터치 시 외부 인증창 정상 호출`
-    - `[ ] 외부 인증 성공 시 팝업 창이 별도 조작 없이 자동으로 닫힘`
-    - `[ ] 인증 취소 또는 실패 시 에러 토스트 노출 및 팝업 유지`
-    - `[ ] 팝업 오픈 시 배경 Dimmed 처리 및 외부 영역 터치 동작 확인`
-- **이유**: 화면/모달 단위로만 노드를 유지해 캔버스 복잡도를 낮추고, 세부 동작 단계는 체크리스트 진행률 배지(`☑ 3/4`)와 자동 상태 합성으로 관리합니다.
-
-#### 패턴 2: 여러 화면에서 호출되는 공용 팝업은 '단일 노드 통합 + 진입 사전 조건 체크리스트'로 관리
-- **상황**: `로그인 팝업`이 `타이틀 화면`뿐만 아니라 `설정 화면(계정 연동)` 등 여러 진입점에서 호출되는 경우.
-- **권장 모델링**:
-  - 노드를 화면별로 복제(`타이틀용 로그인 팝업`, `설정용 로그인 팝업`)하지 않고 **하나의 `[로그인 팝업 #Popup]` 노드로 통합**합니다.
-  - 진입 경로별 확인 사항은 `로그인 팝업` 내부 체크리스트에 **진입 사전 조건 항목**(예: `[ ] [사전조건: 타이틀 진입] 비로그인 상태에서 호출 및 인증 후 로비 이동`, `[ ] [사전조건: 설정 진입] 게스트 상태에서 계정 연동 호출 및 연동 후 설정 화면 유지`)으로 구분하여 작성합니다.
-
-#### 패턴 3: 다국어(Localization) 검증은 '글로벌 배지(5대 문자 세트 위험군 가이드) + 특정 화면 고유 스펙 체크리스트' 2계층으로 분리
-- **상황**: 번역 텍스트의 문자 체계(한글/독일어/아랍어/태국어 등)에 따라 텍스트 박스 오버플로우, 줄바꿈, 성조 잘림, RTL 정렬 깨짐 등이 다르게 발생합니다.
-- **권장 모델링**:
-  1. **공통 시각/조판 품질 (`Global_Badge_I18N` 전역 배지 + `[🌐 이 화면 다국어 검증 모드]`)**:
-     - 모든 노드에 동일한 다국어 체크리스트를 복제하지 않고, `Global_Badge_I18N` 전역 배지의 `description`(가이드 툴팁)에 **5대 문자 세트 위험군**(① 라틴/유럽어군 30~50% 팽창·말줄임, ② CJC 줄바꿈 금칙·두부현상(`□`), ③ 태국/베트남 복모음·성조 상하첨자 행간 겹침/상하단 잘림, ④ 아랍/히브리 양방향 RTL 미러링·숫자 혼용 역전, ⑤ `{0}` 가변 인자 치환 오버플로우)을 명시합니다.
-     - 테스터는 화면 단위 `[🌐 이 화면 다국어 검증 모드]`를 켜고 배지의 `✓`/`✕` 원클릭 판정으로 점검하며, 결함 발견 시에만 붉은 동적 결함 칩(`🏷️ [Localization: 결함]`)을 노출합니다.
-  2. **특정 화면 고유 번역 스펙 (해당 노드의 B안 `properties.checklist`)**:
-     - 특정 팝업/화면에만 존재하는 고유 다국어 스펙(예: 가챠 확률 팝업의 `{0}%` 동적 변수 치환 및 테이블 열 너비 줄바꿈)만 해당 노드의 내부 체크리스트에 1줄로 추가합니다.
-
----
-
-### 9.3. 실사용 시 예상되는 불편함 및 피드백 기반 재검토 백로그 (Known UX Friction & Backlog)
-
-> 현재는 코드 수정 없이 현행 동작을 유지하며, 실제 모바일 게임 QA에 적용해 본 뒤 아래 항목에서 실무 불편 피드백이 발생할 경우 우선적으로 기능 개선을 재검토합니다.
-
-#### 1) 부분 결함 시 타 수단 우회 테스트 후 후속 노드 `Passed` 고정(`📌`) 미지원 (OR 게이트 우회 문제)
+### 8.1. 부분 결함 시 타 수단 우회 테스트 후 후속 노드 `Passed` 고정(`📌`) 미지원 (OR 게이트 우회 문제)
 - **현재 동작 및 예상 불편**:
   - `로그인 팝업` 내부 체크리스트 중 *Apple 로그인*이 `Failed`이고 *Google/게스트 로그인*이 `Passed`인 경우, 체크리스트 합성에 의해 `로그인 팝업` 노드는 `Failed(🔴)`가 되며, 이에 의존하는 후속 노드(`인게임 로비`)는 자동으로 `Blocked(🟡)`가 됩니다.
   - 테스터가 정상 동작하는 Google/게스트 로그인으로 우회 진입하여 `인게임 로비`를 테스트한 뒤 웹 UI에서 `Mark Passed(🟢)`로 변경할 수 있으나, 현재 UI에서 `Mark Passed` 클릭 시 `is_manual_override: false`로 저장됩니다 (`Mark Blocked`만 `is_manual_override: true` 부여).
@@ -405,28 +302,28 @@ flowchart LR
 - **향후 재검토 방안**:
   - 실사용 중 우회 테스트 결과가 덮어써지는 불편이 확인될 경우, 웹 UI에서 **[우회 검증 완료 (`Passed` 📌 수동 고정)]** 옵션을 제공하거나, 의존성 엣지에 **OR 게이트(대체 경로 허용)** 속성을 부여하는 방안을 검토합니다.
 
-#### 2) 다중 진입(`Transition` N개) 통합 노드의 자동 `Passed` 합성 조건
+### 8.2. 다중 진입(`Transition` N개) 통합 노드의 자동 `Passed` 합성 조건
 - **현재 동작 및 예상 불편**:
   - `타이틀 화면`과 `설정 화면` 양쪽에서 하나의 통합 `로그인 팝업`으로 각각 `Transition` 엣지를 연결하면, 상태 합성 엔진(`compute_synthesized_status`)은 유입되는 **모든 `Transition` 엣지 자체의 상태가 `Passed`**여야만 노드의 자동 `Passed` 합성을 허용합니다.
   - 따라서 노드 내부 체크리스트를 100% `Passed`로 채워도, 연결된 진입 `Transition` 엣지들을 일일이 클릭해 `Passed`로 바꿔주지 않으면 통합 노드가 `Untested(⚪)`에 머물 수 있습니다.
 - **향후 재검토 방안**:
   - 엣지 단위 상태 마킹이 번거롭다는 피드백이 있을 경우, `Transition` 엣지는 기본 통과(또는 노드 내부 체크리스트 우선)로 간주하는 합성 규칙 단순화를 검토합니다.
 
-#### 3) 부모-자식(`Contains`) 컨테이너 내부 자식 노드의 자동 `Passed` 합성 제약
-- **현재 동작 및 예상 불편 (2026-10-22 업데이트)**:
-  - `Contains` 엣지 증발 버그가 해결되어([CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md](file:///e:/Workspace/coveragemap/docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md)) 이제 캔버스에서 `.edge-contains` 점선 엣지를 직접 선택하고 상태를 마킹할 수 있습니다.
-  - 다만 상태 합성(`compute_synthesized_status`)에서는 여전히 `Return`만 가중치 0으로 제외하고 `Contains`/`Has`는 일반 진입 엣지로 포함하므로, 자식 노드의 체크리스트를 100% 통과시켜도 `Contains` 엣지 자체를 `Passed`로 바꾸지 않으면 자식 노드가 자동 `Passed`로 승격되지 않고 `Untested`로 남을 수 있습니다 (`Failed`는 정상 반영됨).
+### 8.3. 부모-자식(`Contains`) 컨테이너 내부 자식 노드의 자동 `Passed` 합성 제약
+- **현재 동작 및 예상 불편**:
+  - 캔버스에서 `.edge-contains` 점선 엣지를 직접 선택하고 상태를 마킹할 수 있으나, 상태 합성(`compute_synthesized_status`)에서는 `Return`만 가중치 `0`으로 제외하고 `Contains`/`Has`는 일반 진입 엣지로 포함합니다.
+  - 따라서 자식 노드의 체크리스트를 100% 통과시켜도 `Contains` 엣지 자체를 `Passed`로 바꾸지 않으면 자식 노드가 자동 `Passed`로 승격되지 않고 `Untested`로 남을 수 있습니다 (`Failed`는 정상 반영됨).
 - **향후 재검토 방안**:
-  - 부모-자식 그룹핑(`Contains`/`Has`)을 순수 구조적 포함 관계(가중치 0)로만 취급하길 원하는 피드백이 확인되면, `compute_synthesized_status` 및 프론트엔드 `statusPropagation.ts`에서 `Return`뿐만 아니라 `Contains`/`Has` 관계도 상태 합성 입력에서 제외하도록 개선합니다.
+  - 부모-자식 그룹핑(`Contains`/`Has`)을 순수 구조적 포함 관계(가중치 `0`)로만 취급하길 원하는 피드백이 확인되면, `compute_synthesized_status` 및 프론트엔드 `statusPropagation.ts`에서 `Return`뿐만 아니라 `Contains`/`Has` 관계도 상태 합성 입력에서 제외하도록 개선합니다.
 
-#### 4) MCP 대화형 생성 시 내부 체크리스트(`properties.checklist`) 및 엣지 `action` 직접 입력 미지원
+### 8.4. MCP 대화형 생성 시 내부 체크리스트(`properties.checklist`) 및 엣지 `action` 직접 입력 미지원
 - **현재 동작 및 예상 불편**:
   - 현재 MCP 서버(`mcp_server/server.py`)의 `create_node`는 `label`, `name`, `aliases`만 받고 `properties`(체크리스트 등) 인자를 받지 않으며, `create_edge`도 `action` 속성을 받지 않습니다.
-  - 따라서 AI 에이전트(MCP)와의 대화만으로 그래프 골격을 만든 뒤, 세부 체크리스트나 엣지 트리거(`action`)는 웹 UI의 Inspector 패널이나 JSON 프리셋에서 추가 입력해야 합니다 (단, 조회는 2026-10-22 추가된 `get_node_details` 및 확장된 `find_node`로 가능).
+  - 따라서 AI 에이전트(MCP)와의 대화만으로 그래프 골격을 만든 뒤, 세부 체크리스트나 엣지 트리거(`action`)는 웹 UI의 Inspector 패널이나 JSON 프리셋에서 추가 입력해야 합니다 (단, 조회는 `get_node_details` 및 확장된 `find_node`로 가능).
 - **향후 재검토 방안**:
   - MCP 대화를 통한 테스트 케이스 일괄 생성 빈도가 높아지면, `create_node` / `update_node` 및 `create_edge` MCP 도구 스키마에 `checklist` 배열과 `action` 문자열 파라미터를 확장합니다.
 
-#### 5) 전역 배지(`is_global`)의 엣지 방향성 및 영향도 리포트(`get_impact_scope`) 라벨 필터
+### 8.5. 전역 배지(`is_global`)의 엣지 방향성 및 영향도 리포트(`get_impact_scope`) 라벨 필터
 - **현재 동작 및 예상 불편**:
   - 웹 UI에서 전역 배지를 부착하면 `대상노드 → 전역배지` 방향으로 `Depends_On`이 생성되어 배지가 실패해도 대상 노드가 `Blocked`되지 않고 붉은 결함 칩(`🔴`)만 표시되지만, 외부 JSON 프리셋에서 역방향(`전역배지 → 대상노드`)으로 작성할 경우 배지 실패 시 대상 노드가 `Blocked`로 전환될 수 있습니다.
   - 또한 `get_impact_scope` API의 텍스트 요약(`recommended_regression_scope`)은 현재 `Screen`, `Feature`, `TestCase` 라벨만 필터링하여 반환하므로 `Component`, `Modal`, `Data` 등 다른 라벨 노드는 요약 텍스트에서 누락될 수 있습니다 (단, 캔버스 `.highlight-affected` 시각 하이라이트 및 접힌 부모 롤업에는 정상 표시됨).

@@ -5,18 +5,18 @@
 - Methodology: Category-Partition + BVA + Pairwise + Workload Testing.
 
 ## Feature Inventory
-| # | Feature | Source (requirement) | Tier 1 | Tier 2 | Tier 3 |
-|---|---------|---------------------|:------:|:------:|:------:|
-| 1 | F1: Local Data Pipeline (Neo4j Seed) | ORIGINAL_REQUEST R1 | 5 | 5 | ✓ |
-| 2 | F2: Core Visualization (Focus+Context) | ORIGINAL_REQUEST R2 | 5 | 5 | ✓ |
-| 3 | F3: Living TC (Test Coverage Marking) | ORIGINAL_REQUEST R3 | 5 | 5 | ✓ |
-| 4 | F4: Graph Editing (Nodes & Edges) | ORIGINAL_REQUEST R4 | 5 | 5 | ✓ |
-| 5 | F5: Config Panel & Loading UI | ORIGINAL_REQUEST R5 | 5 | 5 | ✓ |
-| 6 | F6: Alias Dictionary (Standardization) | ORIGINAL_REQUEST R6 | 5 | 5 | ✓ |
+| # | Feature | Specification Reference | Tier 1 | Tier 2 |
+|---|---------|-------------------------|:------:|:------:|
+| 1 | F1: Local Data Pipeline (Neo4j Seed) | `AI_IMPLEMENTATION_SPEC.md` Sec 2 | 5 | 5 |
+| 2 | F2: Core Visualization (Focus+Context) | `AI_IMPLEMENTATION_SPEC.md` Sec 5 Rule 1 | 5 | 5 |
+| 3 | F3: Living TC (4-Stage Status & Propagation) | `AI_IMPLEMENTATION_SPEC.md` Sec 3 | 5 | 5 |
+| 4 | F4: Graph Editing (Nodes, Edges & Checklists) | `AI_IMPLEMENTATION_SPEC.md` Sec 3.5 & 4.1 | 5 | 5 |
+| 5 | F5: Config Panel & Loading UI | `AI_IMPLEMENTATION_SPEC.md` Sec 4 & 5 | 5 | 5 |
+| 6 | F6: Alias Dictionary (Standardization) | `AI_IMPLEMENTATION_SPEC.md` Sec 2.1 | 5 | 5 |
 
 ## Test Architecture
-- Test runner: Playwright (Node.js/TypeScript)
-- Invocation: `cd e2e-tests && npm run test`
+- Backend unit/service test runner: `cd backend && uv run pytest -q` (`test_status_propagation.py`, `test_edit_service.py`, `test_edit_api.py`, `test_graph_service.py`, `test_api_graph.py`, `test_seed.py`)
+- E2E test runner: Playwright (Node.js/TypeScript) — `cd e2e-tests && npm run test`
 - Pass/Fail semantics: All tests must pass with exit code 0 when run against the fully implemented application.
 - Test case format: Playwright `.spec.ts` files. Expected output format is Playwright's default reporter (list/html).
 - Directory layout:
@@ -28,6 +28,7 @@
       - `tier2.spec.ts` (Boundary & Corner)
       - `tier3.spec.ts` (Cross-Feature)
       - `tier4.spec.ts` (Real-World Application)
+      - `verify_state_engine_2026_10.spec.ts` (4-Stage Propagation, Checklist, Impact Ripple, Scoped Audit, Contains Edge & Collapsed Parent Rollup)
 
 ## Real-World Application Scenarios (Tier 4)
 | # | Scenario | Features Exercised | Complexity |

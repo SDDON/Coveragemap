@@ -11,15 +11,6 @@
   - Alias Dictionary: Backend standardizes tags/aliases; Frontend enforces via Dropdown.
   - Living TC: Visual markers for 4-stage test status (`Untested`, `Passed`, `Failed`, `Blocked`).
 
-## Milestones
-| # | Name | Scope | Dependencies | Status |
-|---|------|-------|-------------|--------|
-| 1 | Backend Foundation | Neo4j Docker, auto-seed 20+ nodes, FastAPI setup, NetworkX integration, Graph fetch API | none | DONE |
-| 2 | Core Visualization | React Flow setup, API fetch, Focus+Context feature (de-emphasize BG nodes on focus) | M1 | DONE |
-| 3 | Alias & Config Control | Backend Alias Dictionary (normalize terms). Config Panel (depth/filter) with debounce & overlay. Dropdown auto-complete. | M2 | DONE |
-| 4 | Living TC & Graph Editing | Test states (`Untested`/`Passed`/`Failed`/`Blocked`) styling & propagation. Node/Edge creation, edit, deletion APIs & UI. | M3 | DONE |
-| 5 | E2E Final Pass | E2E Test execution (3-Tier Verification Pipeline: `check_policy.py`, `pytest`, Playwright E2E) | M1, M2, M3, M4 | DONE |
-
 ## Interface Contracts
 ### FastAPI <-> React
 - `GET /api/graph`: Returns JSON representation of the graph (nodes, edges) standardized by NetworkX. Include Alias normalization.

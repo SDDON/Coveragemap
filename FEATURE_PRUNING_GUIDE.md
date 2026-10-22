@@ -23,15 +23,8 @@ graph TD
         F[프리셋 JSON 저장/로드]
     end
 
-    subgraph Tier1 [" ✅ 1단계 제거 완료 (2026-10-11) "]
-        G[원시 Cypher Export 모달]
-        H[바둑판 Grid Layout]
-        I[Node Raw Inspector 디버그 JSON]
-        J[미사용 고아 파일 OffsetEdge.tsx]
-    end
-
-    subgraph Tier2 [" 🟡 2단계 구조적 단순화 (Architecture Impact) "]
-        K[글로벌 노드 배지 & 고스트 엣지 시스템]
+    subgraph Simplification [" 🟡 구조적 단순화 검토 대상 (Architecture Impact) "]
+        K[글로벌 노드 배지 이벤트 구조 & 평탄화 여부]
         L[임의 키-값 Custom Properties 편집기]
         M[Workspace 관리자의 브라우저 prompt/confirm 팝업]
     end
@@ -51,100 +44,44 @@ graph TD
 | **계층 구조 (Subflow)** | 부모-자식 노드 포함 관계(`CONTAINS`), Collapse/Expand(`+/-`) 및 요약 프로그레스 | SSOT 4.1, 5 Rule 6 | 단일 부모 제약 및 Max Depth=1 준수 |
 | **순수 CSS 시각화** | Focus+Context 관계 하이라이트 (선택 노드 Focus, 비선택 노드 40% Dimmed, 진입 Blue, 진출 Orange) | SSOT 5 Rule 1 | Zero-JS Styling, 12단계 Z-Index 준수 |
 | **핸들 조작성 (Halo UX)** | 노드 외곽 둘레 도넛 링 핸들 (`.halo-handle`, Z-Index 0 이하 격리) | SSOT 5 Rule 5 | 클릭 가로채기(Click Stealing) 방지 |
-| **안전한 영속성** | 프리셋 저장/불러오기 (`Preset JSON`, 트랜잭션 보장, 자동 백업 `_autobackup_*`) | SSOT 1.3, 2.1 | 블랙박스 QA 표준 입력/저장 방식 (CSV 일괄 가져오기는 2026-10 결정으로 제거됨) |
+| **안전한 영속성** | 프리셋 저장/불러오기 (`Preset JSON`, 트랜잭션 보장, 자동 백업 `_autobackup_*`) | SSOT 1.3, 2.1 | 블랙박스 QA 표준 입력/저장 방식 |
 
 ---
 
-## 3. 1단계: 즉시 제거 권장 기능 (Tier 1: Low Risk / Cleanup)
+## 3. 구조적 단순화 검토 대상 (Architecture Simplification Backlog)
 
-> [!NOTE]
-> **2026-10-11 완료**: 아래 3.1~3.4 항목과 연관 번역 키(`toolbar.exportCypher`, `toolbar.cypherCopied`, `toolbar.gridLayout`)를 모두 제거했습니다. `npm run build`(tsc 포함), `check_policy.py`, pytest, Playwright E2E 통과.
+데이터 모델 및 QA 워크플로우 고도화에 맞춰 사용자 의사결정 후 제거 또는 단순화를 검토할 수 있는 미결 항목들입니다.
 
-비즈니스 로직에 악영향을 주지 않으며, SSOT 규격 원칙에 부합하지 않거나 이미 더 우수한 메커니즘으로 대체된 기능들입니다.
+### 3.1. 글로벌 노드 배지 커스텀 이벤트 구조 및 평탄화 범위
+- **위치**: `frontend/src/App.tsx` (`rightPanelTab === 'globals'`, `impactMode`), `frontend/src/CoverageNode.tsx` (`node-badges-section`, `badge-pill`)
+- **검토 포인트**:
+  - 배지 선택 및 상태 변경 시 사용되는 커스텀 윈도우 이벤트(`selectBadgeNode`, `markBadgeStatus`)를 React Context 또는 콜백 prop으로 일원화할지 여부.
+  - SSOT 4.2장 및 5장 Rule 6에 따라, 횡단 관심사(다국어, 사운드 등)를 현행 전역 노드 배지(`is_global: true`) 방식으로 유지할지, 혹은 노드 내부 속성/동적 이슈 칩으로 더 단순화할지 여부.
 
-### 3.1. 원시 Cypher 내보내기 (`Export Cypher`)
-- **위치**: `frontend/src/App.tsx` 내 `generateCypher`, `showCypherExport`, 상단 툴바 버튼
-- **제거 사유**: 
-  - SSOT 1.3장(블랙박스 QA 제로-코드 정책)에 명시된 대로 QA 엔지니어는 데이터베이스 쿼리에 접근하지 않습니다.
-  - 이미 안전한 트랜잭션과 자동 백업(`_autobackup_*`)을 지원하는 **Preset (JSON) 저장/불러오기**가 완비되어 있으므로 완전 중복입니다.
-
-### 3.2. 바둑판 그리드 정렬 (`🗂 Grid Layout`)
-- **위치**: `frontend/src/App.tsx` 툴바 버튼, `frontend/src/layout.ts` 내 `getGridLayoutedElements`
-- **제거 사유**:
-  - CoverageMap의 본질은 "엣지(흐름) 기반의 비선형 의존성 시각화"입니다.
-  - 단순 4열 그리드 정렬은 엣지 방향성과 계층 구조를 완전히 무시하고 노드를 흩뿌려 선이 꼬이는 스파게티 현상을 초래합니다.
-  - 이미 엣지 방향과 그룹 계층을 완벽히 계산하는 **ELK.js 계층형 오토레이아웃(`⟳ Re-layout`)**으로 단일화하는 것이 바람직합니다.
-
-### 3.3. 노드 원시 JSON 인스펙터 (`🔍 Node Raw Inspector (Debug)`)
-- **위치**: `frontend/src/App.tsx` 우측 Edit 탭 하단 `<details>` 블록
-- **제거 사유**:
-  - 초기 개발 시 내부 메타데이터 디버깅용으로 삽입된 JSON 덤프 뷰입니다.
-  - 상단 폼 컨트롤(이름, 라벨, 카테고리, 상태 등)에서 모든 편집이 제공되므로 실무 테스터에게는 시각적 노이즈에 불과합니다.
-
-### 3.4. 미사용 고아 컴포넌트 (`frontend/src/OffsetEdge.tsx`)
-- **위치**: `frontend/src/OffsetEdge.tsx`
-- **제거 사유**:
-  - `FloatingEdge.tsx`로 단일화되어 프로젝트 어디에서도 import되거나 등록되지 않은 완전한 죽은 코드(Dead Code)입니다.
-
----
-
-## 4. 2단계: 구조적 단순화 검토 (Tier 2: Architecture Simplification)
-
-새로운 테스트 방법론의 데이터 모델 및 워크플로우에 맞춰 제거 또는 대폭 단순화를 검토할 수 있는 항목들입니다.
-
-### 4.1. 글로벌 노드 배지 & Impact Overlay 시스템 (호버 고스트 엣지 제거 완료)
-- **위치**: `frontend/src/App.tsx` (`rightPanelTab === 'globals'`, `impactMode` 등), `frontend/src/CoverageNode.tsx` (`node-badges-section`, `badge-pill` 등)
-- **현황 및 개선 완료 사항**:
-  - 우측 패널에서 글로벌 노드를 생성하여 일반 노드 카드 내부에 의존성 알약(Pill Badge)으로 부착합니다.
-  - 과거 배지 마우스 호버 시 캔버스 중앙에 임시 노드를 배치하고 가상 점선 엣지(`hover-edge-...`)를 생성하던 무거운 고스트 엣지 메커니즘은 **제거 완료**되었으며, 현재는 경량 포털 툴팁(`app-tooltip`)과 클릭 기반 `impactMode` 하이라이트(접힌 부모 `Screen`으로의 `.impact-highlighted` 상향 롤업 포함)로 깔끔하게 동작합니다.
-  - 다만 커스텀 윈도우 이벤트(`selectBadgeNode`, `markBadgeStatus`)가 남아 있으므로, 향후 추가 단순화 시 React Context 또는 콜백 prop으로 일원화할 수 있습니다.
-- **단순화 방향 (SSOT 권장)**:
-  - SSOT 4.2장 및 5장 Rule 6에 따르면, 횡단 관심사(다국어, 사운드 등)는 무거운 별도 노드 엔티티 대신 **단순 속성 체크리스트 또는 동적 이슈 칩(Dynamic Issue Chips)**으로 평탄화(Flattening)하도록 규정되어 있습니다.
-
-### 4.2. 임의의 키-값 동적 속성 편집기 (`Custom Properties`)
+### 3.2. 임의의 키-값 동적 속성 편집기 (`Custom Properties`)
 - **위치**: `frontend/src/App.tsx` 우측 Edit 탭 내 `SYSTEM_RESERVED_KEYS` 제외 프로퍼티 편집 UI
-- **단순화 방향**:
-  - 새로운 테스트 방법론이 정형화된 테스트 케이스 스키마를 요구한다면, 임의의 key-value 추가 기능을 제거하고 고정 필드(`name`, `label`, `aliases`, `test_status`, `description`, `issue_link`)로 고정하여 데이터 정규성을 높일 수 있습니다.
+- **검토 포인트**:
+  - 정형화된 테스트 케이스 스키마만 사용할 경우, 임의의 key-value 추가 기능을 제거하고 고정 필드(`name`, `label`, `aliases`, `test_status`, `description`, `issue_link`, `checklist`)로만 제한하여 데이터 정규성을 높일지 여부.
 
-### 4.3. 워크스페이스 관리자 모달 내 브라우저 팝업 편집
+### 3.3. 워크스페이스 관리자 모달 내 브라우저 팝업 편집
 - **위치**: `frontend/src/App.tsx` 내 `showWorkspaceManager` 모달
-- **단순화 방향**:
-  - 브라우저 네이티브 `prompt()` / `confirm()` 기반의 전역 별칭 일괄 수정/삭제는 예기치 않은 데이터 변조 위험이 있습니다.
-  - 워크스페이스는 단순한 필터링/시작화면 선택 UI만 남기고, 무거운 인라인 편집 모달은 축소할 수 있습니다.
+- **검토 포인트**:
+  - 브라우저 네이티브 `prompt()` / `confirm()` 기반의 전역 별칭 일괄 수정/삭제는 예기치 않은 데이터 변조 위험이 있으므로, 워크스페이스는 필터링/시작화면 선택 UI만 남기고 인라인 편집 모달을 축소할지 여부.
 
 ---
 
-## 5. 다음 작업자를 위한 단계별 실행 지침 (Implementation Guide)
+## 4. 작업 시 무결성 및 정책 검증 기준 (Verification Gate)
 
-1단계(즉시 제거 권장)를 작업할 때 다음 순서대로 진행합니다:
-
-### Step 1. 파일 삭제
-- `frontend/src/OffsetEdge.tsx` 삭제
-
-### Step 2. `frontend/src/layout.ts` 정리
-- `getGridLayoutedElements` 함수 삭제 (ELK `getLayoutedElements`만 단일 유지)
-
-### Step 3. `frontend/src/App.tsx` 정리
-1. **Cypher Export 관련 제거**:
-   - `generateCypher` 함수 제거
-   - `showCypherExport`, `cypherQuery` useState 제거
-   - 상단 툴바의 `<button ...>Export Cypher</button>` JSX 제거
-   - 하단의 `{showCypherExport && (...)}` 모달 JSX 제거
-2. **Grid Layout 관련 제거**:
-   - 상단 툴바의 `<button ...>🗂 Grid Layout</button>` JSX 제거
-   - `getGridLayoutedElements` import 제거
-3. **Node Raw Inspector 관련 제거**:
-   - Edit 탭 하단의 `<details>...🔍 Node Raw Inspector (Debug)...</details>` JSX 제거
-
-### Step 4. `frontend/src/locales/koKR.ts` 동기화
-- 제거된 기능과 연관된 번역 키(`toolbar.exportCypher`, `toolbar.cypherCopied`, `toolbar.gridLayout` 등) 정리
-
-### Step 5. 무결성 및 정책 검증
-작업 완료 후 반드시 3-Tier 검증 파이프라인의 기준을 통과해야 합니다:
+위 구조적 단순화 항목을 실행할 때에는 작업 완료 후 반드시 3-Tier 검증 파이프라인을 통과해야 합니다:
 ```bash
 # 1. Tier 1 정적 정책 검사 (반드시 exit code 0)
 python scripts/check_policy.py
 
 # 2. TypeScript 정적 컴파일 검사 (타입/임포트 에러 0건)
 cd frontend && npx tsc --noEmit
+
+# 3. Tier 2 백엔드 및 E2E 테스트
+cd backend && uv run pytest -q
+cd e2e-tests && npm test
 ```
+

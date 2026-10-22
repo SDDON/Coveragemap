@@ -74,7 +74,7 @@ graph LR
    - 계층형 오토레이아웃(`getLayoutedElements`), 부모-자식 서브플로우 렌더링, 순수 CSS 기반 Focus+Context 딤 처리.
 4. **MCP Server & E2E (Agent Layer)**:
    - AI 에이전트가 그래프를 직접 제어하고 회귀 검증을 수행하는 인터페이스.
-   - **Zero-Script Node Inspection 정책**: AI 에이전트는 노드의 전역 여부(`is_global`), 체크리스트(`checklist`), 진입/진출 엣지 및 부모-자식 계층을 파악할 때 별도 터미널 스크립트로 Neo4j를 우회 조회하지 않고, 반드시 MCP `get_node_details` 도구(`GET /api/nodes/{id}/details`) 및 확장된 `find_node`(`label`, `is_global`, `include_details` 필터 지원)를 통해 조회해야 합니다 ([docs/MCP_NODE_INSPECTION_TOOL_SPEC.md](file:///e:/Workspace/coveragemap/docs/MCP_NODE_INSPECTION_TOOL_SPEC.md) 준수).
+   - **Zero-Script Node Inspection 정책**: AI 에이전트는 노드의 전역 여부(`is_global`), 체크리스트(`checklist`), 진입/진출 엣지 및 부모-자식 계층을 파악할 때 별도 터미널 스크립트로 Neo4j를 우회 조회하지 않고, 반드시 MCP `get_node_details` 도구(`GET /api/nodes/{id}/details`) 및 확장된 `find_node`(`label`, `is_global`, `include_details` 필터 지원)를 통해 조회해야 합니다.
 
 ---
 
@@ -133,17 +133,15 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 - **수동 차단(Manual Blocked) 지원**: 외부 요인으로 인한 차단 시 Edit Node 패널에서 수동으로 `Blocked` 지정이 가능하며 필수 사유(`override_reason`)를 기록합니다.
 - **인지 부하 완화를 위한 B안(노드 내부 체크리스트) 권장**: 화면 내 수십 개 TC로 인한 그래프 폭발(Graph Clutter)을 방지하기 위해, 단순 UI 검증 항목은 캔버스 노드로 분기하지 않고 노드 내부 `properties.checklist` 속성으로 관리하며, 체크리스트 종합 결과에 따라 노드 상태가 자동 판정됩니다.
 
-> [!NOTE]
-> **구현 현황 (2026-10-11 반영 완료)**
-> - **백엔드**: `backend/graph_service.py`의 순수 함수 `compute_synthesized_status` + 워크리스트 전파(`_run_propagation`). `update_node`/엣지 CRUD 직후 하류(`Depends_On`/`Tests`)로 연쇄 전파되며, 📌 고정 노드와 전역(Badge) 노드는 건너뜁니다.
-> - **프론트엔드**: `frontend/src/statusPropagation.ts`가 동일 규칙을 미러링하여 낙관적으로 즉시 반영하고, 저장 후 경량 엔드포인트 `GET /api/node-statuses`(`{elementId: test_status}`)로 서버 결과와 재동기화합니다. (`/api/graph` 재조회 없음 → 레이아웃/줌 보존, Rule 3)
-> - **결정 사항**:
->   1. 관계 타입은 `type(r)`로 읽고 대문자로 정규화합니다. (원 명세 5.2의 `r.type` Cypher는 동작하지 않음)
->   2. 연쇄 전파 대상은 `Depends_On`·`Tests` 두 관계뿐입니다. 화면 전환 등 Flow 엣지(`Transition`, `Contains`…)는 **엣지 자체의 상태**로만 판정하고, `Return`은 가중치 0으로 완전히 제외합니다.
->   3. `Tests` 소스 중 하나라도 `Failed`이면 대상은 `Failed`(결함 전파)이며, 이는 `Blocked`보다 우선합니다.
->   4. 입력이 `Depends_On`뿐인 노드는 선행이 정상으로 돌아오면 자신의 마킹 상태를 유지합니다(자동 `Blocked`였다면 `Untested`로 해제).
->   5. `properties.checklist`는 Neo4j에 JSON 문자열로 저장하고 API 경계에서 배열로 역직렬화합니다. 비어 있지 않은 체크리스트는 `Failed > Blocked > 모두 Passed > Untested` 순으로 노드 상태를 결정합니다.
->   6. 📌 Mark Blocked는 사유 입력이 필수이며 `is_manual_override=true`, `override_reason`을 함께 저장합니다. Mark Passed / Mark Failed / Reset Status를 누르면 고정이 해제됩니다.
+### 3.6. 상태 합성 및 전파 엔진 세부 규칙
+- **백엔드/프론트엔드 동기화**: 백엔드(`backend/graph_service.py`의 `compute_synthesized_status` 및 `_run_propagation`)와 프론트엔드(`frontend/src/statusPropagation.ts`)가 동일한 합성 규칙을 공유합니다. 프론트엔드는 낙관적 업데이트 후 경량 엔드포인트 `GET /api/node-statuses`(`{elementId: test_status}`)로 서버 결과와 재동기화하여 레이아웃 점프와 줌 초기화를 방지합니다(Rule 3).
+- **불변 합성 규칙**:
+  1. 관계 타입은 Neo4j `type(r)`로 조회하고 대문자로 정규화합니다.
+  2. 연쇄 전파(출발 노드의 상태를 입력으로 사용) 대상은 `Depends_On`·`Tests` 두 관계뿐입니다. 화면 전환 등 Flow 엣지(`Transition`, `Contains` 등)는 **엣지 자체의 상태**로만 판정하고, `Return`은 가중치 `0`으로 완전히 제외합니다.
+  3. `Tests` 소스 중 하나라도 `Failed`이면 대상은 `Failed`(결함 전파)이며, 이는 `Blocked`보다 우선합니다.
+  4. 입력이 `Depends_On`뿐인 노드는 선행이 정상으로 돌아오면 자신의 마킹 상태를 유지합니다(자동 `Blocked`였다면 `Untested`로 해제).
+  5. `properties.checklist`는 Neo4j에 JSON 문자열로 저장하고 API 경계에서 배열로 역직렬화합니다. 비어 있지 않은 체크리스트는 `Failed > Blocked > 모두 Passed > Untested` 순으로 노드 상태를 결정합니다.
+  6. 📌 `Mark Blocked`는 사유 입력이 필수이며 `is_manual_override=true`, `override_reason`을 함께 저장합니다. `Mark Passed` / `Mark Failed` / `Reset Status`를 누르면 수동 고정이 해제됩니다.
 
 ---
 
@@ -152,9 +150,9 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 ### 4.1. 부모 그룹 접기/펼치기 (Parent Collapse/Expand) 및 `Contains` 일급 엣지 정책
 - 대규모 화면 내의 수많은 서브 기능(버튼, 팝업, 세부 UI 등 10개 이상)은 `Parent Node`로 묶입니다.
 - **평소 (Collapsed)**: `isCollapsed: true` 상태에서는 하위 자식 노드들이 캔버스에서 숨겨지며, 부모 헤더에 `[ 🟢 통과: 12 / 🔴 결함: 2 (85%) ]` 형태의 프로그레스 요약 뱃지만 표시됩니다.
-  - **접힌 부모로의 영향도 상향 롤업 (Parent Impact Rollup)**: 접힌 부모 `Screen`(`isCollapsed: true`)의 하위 자식 컴포넌트가 글로벌 영향도(`impactMode`) 또는 스펙 변경 영향권(`affectedScope`)에 1개 이상 포함될 때, 부모 카드에도 `.impact-highlighted` / `.highlight-affected` 클래스를 상향 롤업하여 딤(Dim) 처리에서 보호하고 `.parent-collapse-impact-summary`(`⚡ 영향 하위 컴포넌트 N개`) 요약 배지를 표시합니다 ([docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md](file:///e:/Workspace/coveragemap/docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md) 준수).
+  - **접힌 부모로의 영향도 상향 롤업 (Parent Impact Rollup)**: 접힌 부모 `Screen`(`isCollapsed: true`)의 하위 자식 컴포넌트가 글로벌 영향도(`impactMode`) 또는 스펙 변경 영향권(`affectedScope`)에 1개 이상 포함될 때, 부모 카드에도 `.impact-highlighted` / `.highlight-affected` 클래스를 상향 롤업하여 딤(Dim) 처리에서 보호하고 `.parent-collapse-impact-summary`(`⚡ 영향 하위 컴포넌트 N개`) 요약 배지를 표시합니다.
 - **검증 시 (Expanded)**: 우측 상단의 `+` 버튼을 누르면 자식 노드들이 ELK.js 그리드 배치로 부모 컨테이너 내부에 펼쳐집니다.
-- **`Contains`/`Has` 일급 도메인 엣지 렌더링**: `Contains`(또는 `Has`) 관계는 자식 노드의 `parentId` 설정에만 소비하고 드롭해서는 안 되며, 반드시 `.edge-contains` 은은한 점선 플로팅 엣지로 캔버스에 일급 렌더링(부모-자식 중첩 시 부모 상단 헤더 최대 120px 박스 기준 교차점 계산)하여 선택·상태 마킹·삭제가 가능해야 합니다. 해당 엣지가 삭제되거나 다른 타입으로 변경되면 자식 노드의 `parentId`와 `extent`를 즉시 해제합니다 ([docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md](file:///e:/Workspace/coveragemap/docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md) 준수).
+- **`Contains`/`Has` 일급 도메인 엣지 렌더링**: `Contains`(또는 `Has`) 관계는 자식 노드의 `parentId` 설정에만 소비하고 드롭해서는 안 되며, 반드시 `.edge-contains` 은은한 점선 플로팅 엣지로 캔버스에 일급 렌더링(부모-자식 중첩 시 부모 상단 헤더 최대 120px 박스 기준 교차점 계산)하여 선택·상태 마킹·삭제가 가능해야 합니다. 해당 엣지가 삭제되거나 다른 타입으로 변경되면 자식 노드의 `parentId`와 `extent`를 즉시 해제합니다.
 
 ### 4.2. 관점별 동적 결함 칩 (Dynamic Issue Chips)
 - 현지화(LangKey), 사운드, 네트워크 지연 등 무한히 확장되는 서브카테고리는 노드 카드에 고정 테이블로 나열하지 않습니다.
@@ -162,26 +160,21 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 - **결함 발생 시**: 결함이 발생한 관점만 동적으로 빨간색 알약 칩(`🏷️ [현지화: LangKey_Arena]`)으로 카드 내부에 노출됩니다.
 - **Detail-on-Demand**: 칩이나 노드를 클릭하면 우측 **Inspector 패널**에서 세부 에러 내용과 연결된 테스트 케이스 전문이 표시됩니다.
 
-### 4.3. 화면 흐름(Flow)과 리소스(Resource)의 영향도 분리
+### 4.3. 화면 흐름(Flow)과 리소스(Resource)의 영향도 분리 및 다국어 스코프 감사
 - **화면 전환 엣지(Flow Edge)**: 결함 시 다음 화면의 테스트를 완전히 `Blocked` 시킵니다.
 - **리소스 뱃지(LangKey, Sound 등)**: 결함이 발생해도 화면 전환 자체는 동작하므로 다음 노드를 `Blocked`시키지 않고, 해당 노드에만 **주의(⚠️ 앰버 테두리)** 및 동적 결함 칩을 표시합니다.
-- **로컬라이제이션 스코프 감사 및 글로벌 배지 규격**: 상세 모델링 및 배지 인터랙션 지침은 **[docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///e:/Workspace/coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)**를 준수합니다.
+- **글로벌 배지 인터랙션 및 화면 단위 다국어 스코프 감사**:
+  - 배지 호버 시 캔버스 중앙에 글로벌 노드를 강제 소환(Teleportation)하거나 카메라 뷰포트를 이동시키지 않으며, 포털 가이드 툴팁(`app-tooltip`)과 기존 노출 노드의 외곽선 하이라이트(`.hovered-global-neighbor`)만 제공합니다.
+  - 부모 `Screen` 선택 시 Inspector의 `[🌐 이 화면 다국어 검증 모드]`(`GET /api/qa/audit-cross-cutting?aspect=Localization&scope_root_id=...`)를 통해 해당 화면과 하위 자식 컴포넌트 범위만 Focus+Context로 집중 감사할 수 있습니다 (세부 5대 문자 세트 위험군 가이드는 [docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md) 6장 참조).
 
 ### 4.4. 변경 영향도 강조 및 수정 전파 (Change Impact Ripple Highlight)
-- **배경 및 목적**: 개발팀의 기획/UI 변경이 발생했을 때, 테스터가 재검증(Regression) 범위를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조합니다.
+- **배경 및 목적**: 개발팀의 기획/UI 변경이 발생했을 때, 테스터가 재검증(Regression) 범위를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조합니다 ([docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md Section 7](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md#7-변경-영향도-강조-및-수정-전파-기능-change-impact-ripple-highlight) 참조).
 - **순수 CSS 시각 효과 (Zero-JS Styling)**:
-  - 수정된 노드(`properties.is_modified: true`): `.node-modified-pulse` CSS 클래스(바이올렛 테두리 및 펄스 글로우) 및 동적 알약 칩(`✨ [Spec Updated]`).
-  - 다운스트림 영향권 노드/엣지: `.highlight-affected` 스타일을 적용해 영향도 전파를 시각화하며, 영향받는 자식 컴포넌트를 품은 접힌 부모 `Screen`(`isCollapsed: true`)에도 `.highlight-affected` 및 `.parent-collapse-impact-summary` 배지를 상향 롤업합니다.
-- **테스터 라이프사이클 (Acknowledge)**:
-  - 테스터가 수정 내역을 확인하고 검증을 마치면 Inspector 패널의 `[✓ 변경사항 확인 완료 (Acknowledge)]` 버튼을 통해 펄스 효과를 해제하고 정상 상태로 복귀시킵니다.
-- **상세 규격 및 차기 모델(Argon / Opus 5.5) 구현 가이드**: [docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md Section 7](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md#7-차기-기능-명세-변경-영향도-강조-및-수정-전파-기능-change-impact-ripple-highlight) 및 [docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md](file:///e:/Workspace/coveragemap/docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md)를 준수합니다.
-
-> [!NOTE]
-> **구현 현황 (2026-10-11 ~ 2026-10-22 반영 완료)**
-> - API: `POST /api/nodes/{id}/mark-modified` (body `{note}` → `is_modified=true`, `modified_note`, `modified_at`), `POST /api/nodes/{id}/acknowledge` (`is_modified=false`, `acknowledged_at`).
-> - UI: Inspector의 "변경 영향도" 섹션(메모 입력 + `✨ 변경 표시` / `✓ 변경사항 확인 완료 (Acknowledge)`), 노드 카드의 `✨ [Spec Updated]` 칩 + `.node-modified-pulse`.
-> - 영향권(`.highlight-affected`): 변경 노드에서 **나가는 방향, `Return` 제외, 최대 2 hop**까지의 노드/엣지를 프론트엔드에서 BFS로 계산해 CSS 클래스로만 표시하며, 접힌 부모 Screen(`isCollapsed: true`)으로 상향 롤업 및 하위 영향 컴포넌트 개수(`impactedChildCount`) 배지를 노출합니다.
-> - 결정 사항: 변경 표시/확인은 **테스트 상태를 바꾸지 않습니다.** (변경 표시 시 자동 `Untested` 리셋이나 Acknowledge 시 자동 `Passed` 처리를 하지 않음 — 재검증 결과는 테스터가 직접 마킹)
+  - 수정된 노드(`properties.is_modified: true`, `POST /api/nodes/{id}/mark-modified`): `.node-modified-pulse` CSS 클래스(바이올렛 테두리 및 펄스 글로우) 및 동적 알약 칩(`✨ [Spec Updated]`).
+  - 다운스트림 영향권 노드/엣지: 변경 노드에서 나가는 방향으로 `Return`을 제외하고 **최대 2 hop**까지 `.highlight-affected` 스타일을 적용해 영향도 전파를 시각화하며, 영향받는 자식 컴포넌트를 품은 접힌 부모 `Screen`(`isCollapsed: true`)에도 `.highlight-affected` 및 `.parent-collapse-impact-summary` 배지를 상향 롤업합니다.
+- **테스터 라이프사이클 (Acknowledge) 및 상태 불변 원칙**:
+  - 테스터가 수정 내역을 확인하고 검증을 마치면 Inspector 패널의 `[✓ 변경사항 확인 완료 (Acknowledge)]`(`POST /api/nodes/{id}/acknowledge`) 버튼을 통해 `is_modified=false`로 갱신하고 펄스 효과를 해제합니다.
+  - 변경 표시(`mark-modified`)나 확인 완료(`acknowledge`)는 노드의 `test_status`를 자동으로 변경하거나 리셋하지 않으며, 재검증 통과/실패 여부는 테스터가 직접 마킹합니다.
 
 ---
 
@@ -244,24 +237,11 @@ AI 모델은 코드에 임의의 숫자(`z-index: 99`, `z-index: 9999`)를 직�
 - **외곽 림(Outer Rim)**: 핸들(`.halo-handle`)의 히트 영역은 노드 외곽 테두리선(Border 0px 기준)으로부터 **바깥쪽으로만 균일한 완충 두께(Rim)**를 형성해야 하며, 노드 내부(0px 안쪽)로는 단 1px도 침범하지 않는 외곽 도넛 링 형태로 존재해야 합니다.
 - **Z-Index 계층 보장**: 핸들의 계층은 항상 `z-index: var(--z-canvas-bg)`(0) 이하로 머물러야 하며, 노드 본체(`z-index: 1`) 및 뱃지(`--z-node-badge: 50`)보다 상위로 올라와 내부 클릭 이벤트를 덮어서는 안 됩니다.
 
-#### 3. 드롭 타겟 핸들(Target Handle) 히트박스 및 드롭 수신 UX 개선 과제 (차기 모델 구현 과제)
-- **현재 구조의 문제점 (Known Issue)**:
-  - 타겟 핸들(`<Handle type="target" id="target" />`)이 `CoverageNode.tsx`에서 `top: 50%, left: 50%`, `1px x 1px`의 극소 점으로 노드 정중앙에 은닉되어 있습니다.
-  - 이로 인해 사용자가 엣지를 끌어올 때 대상 노드 카드 영역이나 테두리 근처에 드롭하면 연결이 체결되지 않고, **반드시 '정중앙(50%, 50%)' 좌표까지 마우스를 밀어 넣어야만 연결되는 심각한 조작성 저하**가 발생합니다.
-- **차기 모델을 위한 구현 명세 및 불변 제약조건 (Implementation Spec for Next Model)**:
-  1. **광범위한 드롭 영역 확보**: 사용자가 대상 노드의 카드 영역(중앙, 모서리, 본체) 어디에 마우스를 드롭하더라도 자연스럽게 타겟 핸들로 연결이 체결되어야 합니다.
-  2. **Rule 5 불변 제약 준수 (No Click Stealing)**:
-     - 평상시(Idle)에는 노드 내부의 버튼/뱃지(✔/✖/⊘), 접기(+/-) 버튼 클릭 이벤트 및 노드 드래그(Pan)를 절대로 가로채지 말아야 합니다.
-     - React Flow의 연결 드래그 진행 상태(예: `.react-flow--connecting` 상태 클래스 또는 연결 진행 플래그)를 활용하여, 연결 중일 때만 타겟 핸들의 히트박스를 노드 전역(`inset: 0` 등)으로 확장하거나 드롭 타겟 포인터 이벤트를 활성화하는 방식을 적용합니다.
-  3. **검증 기준 통과 보장**:
-     - `python scripts/check_policy.py` (Tier 1 정적 정책 검사 통과)
-     - `cd backend; uv run pytest -q` 및 `cd e2e-tests; npm test` (기존 엣지 생성/삭제/뱃지 클릭 테스트 전원 통과)
-
-> [!NOTE]
-> **구현 현황 (2026-10-11 반영 완료)**: 타겟 핸들에 `className="target-drop-handle"`을 부여하고(`CoverageNode.tsx`), `index.css`에서
-> - 평상시: 중앙 1px 점 + `pointer-events: none` + `z-index: var(--z-canvas-bg)` → 내부 클릭을 절대 가로채지 않음
-> - `.react-flow--connecting` 상태(`App.tsx`의 `onConnectStart`/`onConnectEnd`로 루트에 부여): `inset 0` 전체 크기 + `pointer-events: all` + `z-index: var(--z-active-node)` → 카드 어디에 놓아도 연결
-> - 자기 자신으로의 연결은 `isValidConnection`으로 차단합니다.
+#### 3. 드롭 타겟 핸들(Target Drop Hitbox) 격리 원칙
+- 타겟 핸들(`<Handle type="target" id="target" className="target-drop-handle" />`)은 평상시 내부 클릭을 가로채지 않으면서도 연결 드래그 시에는 카드 전역 드롭을 수용해야 합니다:
+  - **평상시 (Idle)**: 중앙 `1px × 1px` 점 + `pointer-events: none` + `z-index: var(--z-canvas-bg)`로 유지하여 내부 배지(✔/✖/⊘)·접기(`+/-`) 버튼 클릭 및 노드 드래그를 절대 가로채지 않습니다.
+  - **연결 드래그 중 (`.react-flow--connecting`)**: `App.tsx`의 `onConnectStart`/`onConnectEnd`로 루트에 부여된 `.react-flow--connecting` 상태에서 `inset: 0` 전체 크기 + `pointer-events: all` + `z-index: var(--z-active-node)`로 자동 확장되어 대상 노드 카드 어디에 드롭하더라도 연결이 체결됩니다.
+  - **자기 연결 차단**: 자기 자신으로의 루프 연결은 `isValidConnection`으로 차단합니다.
 
 ### 🌟 Rule 6: 단일 부모 트리 제약, 부모 노드 스케일 불변 및 클린 라이트 테마 표준 (Parent Constraints & Light Theme)
 
