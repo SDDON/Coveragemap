@@ -131,7 +131,7 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 - **선-후행 의존성 (`Depends_On`)**: 선행 TC가 `Failed` 또는 `Blocked`로 전이되면 후행 TC는 자동으로 `Blocked(🟡)`로 전파됩니다.
 - **컴포넌트 자동 롤업**: 타겟 컴포넌트에 연결된 모든 `Tests` 관계의 TC가 `Passed`이면 컴포넌트는 `Passed(🟢)`로 자동 승격됩니다.
 - **수동 차단(Manual Blocked) 지원**: 외부 요인으로 인한 차단 시 Edit Node 패널에서 수동으로 `Blocked` 지정이 가능하며 필수 사유(`override_reason`)를 기록합니다.
-- **인지 부하 완화를 위한 B안(노드 내부 체크리스트) 권장**: 화면 내 수십 개 TC로 인한 그래프 폭발(Graph Clutter)을 방지하기 위해, 단순 UI 검증 항목은 캔버스 노드로 분기하지 않고 노드 내부 `properties.checklist` 속성으로 관리하며, 체크리스트 종합 결과에 따라 노드 상태가 자동 판정됩니다.
+- **인지 부하 완화를 위한 B안(노드 내부 체크리스트) 권장 및 외부 테이블 문서 조합 원칙**: 화면 내 수십 개 TC로 인한 그래프 폭발(Graph Clutter)을 방지하기 위해, 단순 UI 검증 항목은 캔버스 노드로 분기하지 않고 노드 내부 `properties.checklist` 속성으로 관리하며, 체크리스트 종합 결과에 따라 노드 상태가 자동 판정됩니다. 단, 확인할 검증 항목이 길어지거나 복잡한 경우에는 노드 내부 체크리스트에 무리하게 우겨넣지 않고, `issue_link` 등을 통해 전통적인 테이블(스프레드시트) 형태의 테스트 문서와 조합하여 사용하는 것이 권장됩니다.
 
 ### 3.6. 상태 합성 및 전파 엔진 세부 규칙
 - **백엔드/프론트엔드 동기화**: 백엔드(`backend/graph_service.py`의 `compute_synthesized_status` 및 `_run_propagation`)와 프론트엔드(`frontend/src/statusPropagation.ts`)가 동일한 합성 규칙을 공유합니다. 프론트엔드는 낙관적 업데이트 후 경량 엔드포인트 `GET /api/node-statuses`(`{elementId: test_status}`)로 서버 결과와 재동기화하여 레이아웃 점프와 줌 초기화를 방지합니다(Rule 3).
@@ -182,7 +182,7 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 
 차세대 AI 모델은 코드를 작성할 때 다음의 **골든 룰(Golden Rules)**을 절대로 위반해서는 안 됩니다:
 
-### 🌟 Rule 1: Focus+Context 순수 CSS 정책 (Zero-JS Styling)
+### 🌟 Rule 1: Focus+Context 순수 CSS 정책 (Zero-JS Styling) 및 특정 콘텐츠 중심 탐색
 - 노드나 엣지 컴포넌트(`CoverageNode.tsx`, `FloatingEdge.tsx`) 내에서 자바스크립트로 인라인 스타일(`style={{ opacity: 0.4 }}`)을 계산해 주입하는 행위는 **영구 금지**됩니다.
 - 모든 선택, 딤, 방향성 하이라이트는 React Flow 컨테이너의 클래스 조작을 통해 순수 CSS로 제어합니다:
   - `.has-selection`: 캔버스에 선택이 활성화되었을 때 최상위에 부여.
@@ -191,6 +191,11 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
   - `.highlight-outgoing`: 진출 노드 (주황색 테두리 하이라이트).
   - `.highlight-root-cause`: 근본 원인 경로 (빨간색 펄스 애니메이션).
   - `.has-selection .react-flow__node:not(.active)`: 비선택 노드 딤 처리 (opacity 0.4, 흑백 필터).
+- **부모 화면 + 내부 자식 컴포넌트 '콘텐츠 묶음(Content Unit, Depth 0)' 탐색**:
+  - 포커스 기준 노드(`pinnedFocusNodeId`, `searchQuery` 매칭 노드, 또는 일반 `selectedNode`)가 자식 노드를 가진 부모 컨테이너인 경우, 부모 노드와 직속 자식 컴포넌트(`Contains`/`Has`) 전부를 시작 시드(`depth = 0`)로 함께 등록합니다. 이를 통해 `maxDepth = 1`일 때도 자식 컴포넌트에서 외부 화면·팝업·TC로 이어지는 진입/진출 흐름이 끊기지 않고 한 번에 강조됩니다.
+  - 반대로 BFS 탐색으로 도달한 이웃 노드가 어떤 부모 컨테이너의 자식인 경우(특히 부모가 `isCollapsed: true`로 접혀 있는 경우), 해당 부모 컨테이너도 `activeNodes` 및 `incoming`/`outgoing`에 함께 롤업하여 접힌 화면이 딤 처리되지 않도록 보장합니다.
+- **특정 콘텐츠 포커스 고정 (`pinnedFocusNodeId`) 및 검색 강조 유지**:
+  - Inspector의 **`📌 이 콘텐츠 포커스 고정`**(`.pin-focus-btn`)이 켜지거나 `Search Highlight`(`searchQuery`)가 입력된 상태에서는, 테스터가 상태 마킹을 위해 주변 노드/엣지를 클릭해 `selectedNode`/`selectedEdge`가 바뀌거나 빈 캔버스(`onPaneClick`)를 클릭하더라도 하이라이트 BFS 기준 시드가 덮어써지지 않고 유지됩니다(현재 클릭해 편집 중인 노드/엣지도 `activeNodes`/`edgeHighlights`에 함께 포함).
 
 ### 🌟 Rule 2: 12단계 표준 Z-Index 계층 체계
 AI 모델은 코드에 임의의 숫자(`z-index: 99`, `z-index: 9999`)를 직접 작성할 수 없으며, 반드시 아래의 CSS 변수 토큰만을 사용해야 합니다:
@@ -204,11 +209,11 @@ AI 모델은 코드에 임의의 숫자(`z-index: 99`, `z-index: 9999`)를 직�
   --z-active-node: 40;       /* 선택/포커스된 활성 노드 및 연결 핸들 */
   --z-node-badge: 50;        /* 노드 내부 뱃지 및 액션 버튼 */
   --z-canvas-controls: 100;  /* 줌 인/아웃, 미니맵, 컨트롤 */
-  --z-floating-panel: 200;   /* 우측 인스펙터 패널, 헤더 바 */
+  --z-floating-panel: 200;   /* 우측 인스펙터 패널, 헤더 바, 포커스 고정 배너 */
   --z-context-menu: 500;     /* 마우스 우클릭 메뉴, 드롭다운 */
   --z-tooltip: 1000;         /* 뱃지 및 인라인 툴팁 (Portal) */
   --z-loading-overlay: 2000; /* 네트워크/연산 로딩 오버레이 */
-  --z-modal: 3000;           /* 워크스페이스 관리자, 모달 창 */
+  --z-modal: 3000;           /* 프리셋 관리자, 도움말 등 모달 창 */
   --z-toast: 9999;           /* 최상위 알림 토스트 */
 }
 ```

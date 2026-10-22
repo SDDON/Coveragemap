@@ -113,7 +113,6 @@ export default function App() {
   const [graphVersion, setGraphVersion] = useState(0);
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, show: boolean } | null>(null);
-  const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
   const [showPresetManager, setShowPresetManager] = useState(false);
 
   // E. 연결 드래그 중일 때만 타겟 드롭 히트박스를 노드 전체로 확장하기 위한 플래그 (.react-flow--connecting)
@@ -128,6 +127,8 @@ export default function App() {
   const [tracedRootNodeId, setTracedRootNodeId] = useState<string | null>(null);
   // 화면(Screen/Container) 단위 다국어 스코프 감사 활성 루트 노드 ID (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 4.1)
   const [scopedAuditRootId, setScopedAuditRootId] = useState<string | null>(null);
+  // 특정 콘텐츠 중심 확인을 위한 포커스 고정 노드 ID (Content Focus Pinning)
+  const [pinnedFocusNodeId, setPinnedFocusNodeId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -171,6 +172,7 @@ export default function App() {
       setSelectedNode(null);
       setSelectedEdge(null);
       setSearchQuery('');
+      setPinnedFocusNodeId(null);
     } catch (err) {
       console.error('Failed to activate impact mode', err);
     }
@@ -843,6 +845,7 @@ export default function App() {
     applyLocalStatusChanges(recalcTargetAndPropagate(
       nodesRef.current.filter(n => !deletedIds.has(n.id)), remainingEdges, affectedTargets
     ));
+    setPinnedFocusNodeId(prev => (prev && deletedIds.has(prev) ? null : prev));
     if (deletedIds.size > 0) syncStatusesFromServer();
   }, [pushUndo, edges, setEdges, applyLocalStatusChanges, syncStatusesFromServer]);
 
@@ -1015,6 +1018,7 @@ export default function App() {
       const changes = recalcTargetAndPropagate(remainingNodes, remainingEdges, affectedTargets);
       setNodes(applyStatusChanges(remainingNodes, changes));
       setEdges(remainingEdges);
+      setPinnedFocusNodeId(prev => (prev === deletedNodeId ? null : prev));
       syncStatusesFromServer();
     } else if (editFormData.type === "edge") { 
       const edge = edges.find(e => e.id === editFormData.id);
@@ -1092,8 +1096,15 @@ export default function App() {
   const handleSaveStatus = async (newStatus: string, override?: { reason: string }) => {
     if (editFormData.type === 'node') {
       const node = nodes.find(n => n.id === editFormData.id);
-      const cleanProps = { ...(editFormData.properties || {}) };
+      const formProps = { ...(editFormData.properties || {}) };
+      const description = formProps.description;
+      const issue_link = formProps.issue_link;
+      const isGlobalVal = formProps.is_global;
+      const cleanProps = { ...formProps };
       SYSTEM_RESERVED_KEYS.forEach(k => delete cleanProps[k]);
+      if (isGlobalVal !== undefined) {
+        cleanProps.is_global = String(isGlobalVal);
+      }
       const isManual = !!override;
       const overrideReason = override?.reason ?? '';
       const payload = {
@@ -1101,6 +1112,8 @@ export default function App() {
         name: editFormData.name,
         aliases: typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
         test_status: newStatus,
+        description: description,
+        issue_link: issue_link,
         properties: cleanProps
       };
       if (isCreatingNode) {
@@ -1162,6 +1175,9 @@ export default function App() {
             badges: newBadges,
             properties: {
               ...((n.data as any)?.properties || {}),
+              ...(description !== undefined ? { description } : {}),
+              ...(issue_link !== undefined ? { issue_link } : {}),
+              ...(isGlobalVal !== undefined ? { is_global: String(isGlobalVal) } : {}),
               is_manual_override: isManual,
               override_reason: overrideReason
             }
@@ -1171,7 +1187,7 @@ export default function App() {
       // 2) 하류(Depends_On / Tests) 연쇄 전파 — 방금 마킹한 노드는 exclude 되어 덮어쓰지 않음
       const changes = propagateToDependents(updatedNodes, edgesRef.current, editFormData.id);
       setNodes(applyStatusChanges(updatedNodes, changes));
-      setEditFormData({ ...editFormData, status: newStatus, properties: cleanProps });
+      setEditFormData({ ...editFormData, status: newStatus, properties: formProps });
 
       // 3) 저장 (백엔드 update_node가 동일 규칙으로 연쇄 전파) → 서버 결과로 재동기화
       await persist(`/api/nodes/${editFormData.id}`, {
@@ -1276,7 +1292,11 @@ export default function App() {
             name: payload.name,
             aliases: payload.aliases,
             test_status: payload.test_status,
-            properties: payload.properties,
+            properties: {
+              ...payload.properties,
+              ...(payload.description !== undefined ? { description: payload.description } : {}),
+              ...(payload.issue_link !== undefined ? { issue_link: payload.issue_link } : {}),
+            },
             badges: []
           }
         };
@@ -1671,13 +1691,179 @@ export default function App() {
   scopedAuditScopeRef.current = scopedAuditScope;
 
 
+  // 고정된 포커스 노드가 그래프 재로드/필터 변경으로 사라지면 고정 해제
   useEffect(() => {
-    const activeNodes = new Set();
-    const relatedNodes = new Set();
-    const incoming = new Set();
-    const outgoing = new Set();
-    const edgeHighlights = new Set();
-    const relatedEdges = new Set();
+    if (pinnedFocusNodeId && !loading && !nodes.some(n => n.id === pinnedFocusNodeId)) {
+      setPinnedFocusNodeId(null);
+    }
+  }, [pinnedFocusNodeId, nodes, loading]);
+
+  /**
+   * 특정 콘텐츠 중심 확인을 위한 N-Depth BFS 하이라이트 범위 산출:
+   * - (1) 기준 노드가 자식 노드를 가진 부모 컨테이너(hasChildren 또는 c.parentId === seedId)인 경우,
+   *   부모 노드와 직속 자식 컴포넌트 전부를 시작 시드(depth = 0, Content Unit)로 함께 등록하고
+   *   부모-자식 간 Contains/Has 엣지를 edgeHighlights에 포함합니다.
+   * - (2) BFS 탐색으로 도달한 이웃 노드(nextNode)가 어떤 부모 컨테이너의 자식(parentId)인 경우,
+   *   해당 부모 컨테이너(parentId)도 activeNodes 및 incoming/outgoing에 함께 롤업하여 접힌 화면이 딤 처리되지 않도록 합니다.
+   */
+  const computeContentFocusScope = useCallback((
+    baseSeedIds: string[],
+    currentNodes: Node[],
+    currentEdges: Edge[],
+    depthLimit: number
+  ) => {
+    const activeNodes = new Set<string>();
+    const incoming = new Set<string>();
+    const outgoing = new Set<string>();
+    const edgeHighlights = new Set<string>();
+    const seedUnitIds = new Set<string>();
+
+    const isContainsEdge = (e: Edge) => {
+      const et = String((e.data as any)?.type || e.label || '').toLowerCase();
+      return et === 'contains' || et === 'has';
+    };
+
+    const getParentId = (nodeId: string): string | undefined => {
+      const nodeObj = currentNodes.find(n => n.id === nodeId);
+      if (nodeObj?.parentId) return nodeObj.parentId;
+      return currentEdges.find(e => e.target === nodeId && isContainsEdge(e))?.source;
+    };
+
+    const getDirectChildIds = (parentId: string): string[] => {
+      return currentNodes
+        .filter(c =>
+          c.parentId === parentId ||
+          currentEdges.some(e => e.source === parentId && e.target === c.id && isContainsEdge(e))
+        )
+        .map(c => c.id);
+    };
+
+    for (const seedId of baseSeedIds) {
+      const seedNode = currentNodes.find(n => n.id === seedId);
+      if (!seedNode) continue;
+      seedUnitIds.add(seedId);
+      const directChildIds = getDirectChildIds(seedId);
+      if ((seedNode.data as any)?.hasChildren || directChildIds.length > 0) {
+        for (const childId of directChildIds) {
+          seedUnitIds.add(childId);
+        }
+      }
+      // 자식 컴포넌트 단독 선택 시 해당 부모 컨테이너도 activeNodes에 포함 (방향성 테두리 오염 없이 컨테이너 가시성 유지)
+      const seedParentId = getParentId(seedId);
+      if (seedParentId) {
+        activeNodes.add(seedParentId);
+        currentEdges.forEach(ce => {
+          if (isContainsEdge(ce) && ce.source === seedParentId && ce.target === seedId) {
+            edgeHighlights.add(ce.id);
+          }
+        });
+      }
+    }
+
+    seedUnitIds.forEach(id => activeNodes.add(id));
+
+    for (const e of currentEdges) {
+      if (seedUnitIds.has(e.source) && seedUnitIds.has(e.target)) {
+        edgeHighlights.add(e.id);
+      }
+    }
+
+    const queue: Array<{ id: string; depth: number }> = Array.from(seedUnitIds).map(id => ({ id, depth: 0 }));
+    const visited = new Set<string>(seedUnitIds);
+    const traversedEdges = new Set<string>(edgeHighlights);
+
+    const enqueueAtDepth = (nodeId: string, nextDepth: number) => {
+      activeNodes.add(nodeId);
+      if (!visited.has(nodeId)) {
+        visited.add(nodeId);
+        queue.push({ id: nodeId, depth: nextDepth });
+      }
+    };
+
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) continue;
+      const { id, depth } = item;
+      if (depth >= depthLimit) continue;
+
+      // Contains/Has는 부모-자식 구조 엣지이므로 BFS 흐름 탐색에서는 제외하여 역방향 incoming/outgoing 오염을 방지합니다.
+      const adjacentEdges = currentEdges.filter(
+        e => (e.source === id || e.target === id) && !isContainsEdge(e)
+      );
+      for (const edge of adjacentEdges) {
+        if (traversedEdges.has(edge.id)) continue;
+        traversedEdges.add(edge.id);
+        edgeHighlights.add(edge.id);
+
+        const nextNode = edge.source === id ? edge.target : edge.source;
+        const isOutgoing = edge.source === id;
+        const nextDepth = depth + 1;
+
+        if (!seedUnitIds.has(nextNode) && (depth === 0 || !visited.has(nextNode))) {
+          if (isOutgoing) {
+            outgoing.add(nextNode);
+          } else {
+            incoming.add(nextNode);
+          }
+        }
+
+        const parentId = getParentId(nextNode);
+        if (parentId) {
+          activeNodes.add(parentId);
+          currentEdges.forEach(ce => {
+            if (isContainsEdge(ce) && ce.source === parentId && ce.target === nextNode) {
+              edgeHighlights.add(ce.id);
+            }
+          });
+          if (!seedUnitIds.has(parentId) && (depth === 0 || !visited.has(parentId))) {
+            if (isOutgoing) {
+              outgoing.add(parentId);
+            } else {
+              incoming.add(parentId);
+            }
+          }
+          // 다중 홉(nextDepth < depthLimit)에서 부모 컨테이너(특히 접힌 부모)를 경유하는 연쇄 탐색 지원
+          if (nextDepth < depthLimit) {
+            enqueueAtDepth(parentId, nextDepth);
+            const parentObj = currentNodes.find(n => n.id === parentId);
+            if ((parentObj?.data as any)?.isCollapsed) {
+              for (const siblingId of getDirectChildIds(parentId)) {
+                enqueueAtDepth(siblingId, nextDepth);
+              }
+            }
+          }
+        }
+
+        // 도달한 노드가 부모 컨테이너이고 추가 홉 여유(nextDepth < depthLimit)가 있으면 직속 자식도 동일 홉으로 확장
+        if (nextDepth < depthLimit) {
+          const nextNodeObj = currentNodes.find(n => n.id === nextNode);
+          const childIds = getDirectChildIds(nextNode);
+          if ((nextNodeObj?.data as any)?.hasChildren || childIds.length > 0) {
+            for (const childId of childIds) {
+              enqueueAtDepth(childId, nextDepth);
+              currentEdges.forEach(ce => {
+                if (isContainsEdge(ce) && ce.source === nextNode && ce.target === childId) {
+                  edgeHighlights.add(ce.id);
+                }
+              });
+            }
+          }
+        }
+
+        enqueueAtDepth(nextNode, nextDepth);
+      }
+    }
+
+    return { activeNodes, incoming, outgoing, edgeHighlights, seedUnitIds };
+  }, []);
+
+  useEffect(() => {
+    const activeNodes = new Set<string>();
+    const relatedNodes = new Set<string>();
+    const incoming = new Set<string>();
+    const outgoing = new Set<string>();
+    const edgeHighlights = new Set<string>();
+    const relatedEdges = new Set<string>();
 
     const searchSeeds = searchQuery 
       ? nodes.filter(n => {
@@ -1689,78 +1875,68 @@ export default function App() {
         })
       : [];
 
+    const hasPinnedFocus = Boolean(pinnedFocusNodeId && nodes.some(n => n.id === pinnedFocusNodeId));
+
     if (scopedAuditScopeRef.current.nodeIds.size > 0) {
       scopedAuditScopeRef.current.nodeIds.forEach(id => {
         activeNodes.add(id);
         if (id !== scopedAuditRootId) outgoing.add(id);
       });
       scopedAuditScopeRef.current.edgeIds.forEach(eid => edgeHighlights.add(eid));
+    } else if (hasPinnedFocus || searchSeeds.length > 0) {
+      const baseSeeds: string[] = [];
+      if (hasPinnedFocus && pinnedFocusNodeId) {
+        baseSeeds.push(pinnedFocusNodeId);
+      }
+      for (const s of searchSeeds) {
+        if (!baseSeeds.includes(s.id)) baseSeeds.push(s.id);
+      }
+      const scope = computeContentFocusScope(baseSeeds, nodes, edges, maxDepth);
+      scope.activeNodes.forEach(id => activeNodes.add(id));
+      scope.incoming.forEach(id => incoming.add(id));
+      scope.outgoing.forEach(id => outgoing.add(id));
+      scope.edgeHighlights.forEach(eid => edgeHighlights.add(eid));
+
+      // 상태 마킹 시 포커스 유지 규칙:
+      // pinnedFocusNodeId 또는 searchQuery 활성 상태에서는 주변 노드/엣지를 클릭해 selectedNode/selectedEdge가 바뀌어도
+      // BFS 시드를 덮어쓰지 않고 유지하며, 현재 클릭해 편집 중인 대상도 선명하게 표시합니다.
+      if (selectedNode) {
+        activeNodes.add(selectedNode.id);
+        if (selectedNode.parentId) {
+          activeNodes.add(selectedNode.parentId);
+        }
+        edges.forEach(e => {
+          if (
+            (e.source === selectedNode.id && scope.activeNodes.has(e.target)) ||
+            (e.target === selectedNode.id && scope.activeNodes.has(e.source))
+          ) {
+            edgeHighlights.add(e.id);
+          }
+        });
+      }
+      if (selectedEdge) {
+        edgeHighlights.add(selectedEdge.id);
+        activeNodes.add(selectedEdge.source);
+        activeNodes.add(selectedEdge.target);
+        const srcParent = nodes.find(n => n.id === selectedEdge.source)?.parentId;
+        const tgtParent = nodes.find(n => n.id === selectedEdge.target)?.parentId;
+        if (srcParent) activeNodes.add(srcParent);
+        if (tgtParent) activeNodes.add(tgtParent);
+      }
     } else if (selectedNode) {
-      activeNodes.add(selectedNode.id);
-
-      let queue = [{ id: selectedNode.id, depth: 0 }];
-      const visited = new Set([selectedNode.id]);
-      
-      while (queue.length > 0) {
-        const item = queue.shift();
-        if (!item) continue;
-        const id = item.id;
-        const depth = item.depth;
-        if (depth >= maxDepth) continue;
-
-        const adjacentEdges = edges.filter(e => e.source === id || e.target === id);
-        for (const edge of adjacentEdges) {
-          edgeHighlights.add(edge.id);
-          const nextNode = edge.source === id ? edge.target : edge.source;
-          
-          if (edge.source === id) {
-            if (!outgoing.has(nextNode)) outgoing.add(nextNode);
-          } else {
-            if (!incoming.has(nextNode)) incoming.add(nextNode);
-          }
-          
-          if (!visited.has(nextNode)) {
-            visited.add(nextNode);
-            activeNodes.add(nextNode);
-            queue.push({ id: nextNode, depth: depth + 1 });
-          }
-        }
-      }
-    } else if (searchSeeds.length > 0) {
-      let queue = searchSeeds.map(n => ({ id: n.id, depth: 0 }));
-      const visited = new Set(searchSeeds.map(n => n.id));
-      
-      searchSeeds.forEach(n => activeNodes.add(n.id));
-      
-      while (queue.length > 0) {
-        const item = queue.shift();
-        if (!item) continue;
-        const id = item.id;
-        const depth = item.depth;
-        if (depth >= maxDepth) continue;
-
-        const adjacentEdges = edges.filter(e => e.source === id || e.target === id);
-        for (const edge of adjacentEdges) {
-          edgeHighlights.add(edge.id);
-          const nextNode = edge.source === id ? edge.target : edge.source;
-          
-          if (edge.source === id) {
-            if (!outgoing.has(nextNode)) outgoing.add(nextNode);
-          } else {
-            if (!incoming.has(nextNode)) incoming.add(nextNode);
-          }
-          
-          if (!visited.has(nextNode)) {
-            visited.add(nextNode);
-            activeNodes.add(nextNode);
-            queue.push({ id: nextNode, depth: depth + 1 });
-          }
-        }
-      }
+      const scope = computeContentFocusScope([selectedNode.id], nodes, edges, maxDepth);
+      scope.activeNodes.forEach(id => activeNodes.add(id));
+      scope.incoming.forEach(id => incoming.add(id));
+      scope.outgoing.forEach(id => outgoing.add(id));
+      scope.edgeHighlights.forEach(eid => edgeHighlights.add(eid));
     } else if (selectedEdge) {
       edgeHighlights.add(selectedEdge.id);
       activeNodes.add(selectedEdge.source);
       activeNodes.add(selectedEdge.target);
+      const srcParent = nodes.find(n => n.id === selectedEdge.source)?.parentId;
+      const tgtParent = nodes.find(n => n.id === selectedEdge.target)?.parentId;
+      if (srcParent) activeNodes.add(srcParent);
+      if (tgtParent) activeNodes.add(tgtParent);
       
       // Highlight sibling edges that point to the same target node to show the "Test Group"
       const siblingEdges = edges.filter(e => e.target === selectedEdge.target && e.id !== selectedEdge.id);
@@ -1819,7 +1995,7 @@ export default function App() {
           if (incoming.has(n.id)) cls += ' highlight-incoming';
         } else if (relatedNodes.has(n.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge || scopedAuditRootId) {
+        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId) {
           cls += ' de-emphasized';
         }
         // 결함 원인 역추적(Root Cause Tracing, Spec 3.3) — 선행 결함 경로 맥동 강조
@@ -1863,7 +2039,7 @@ export default function App() {
           cls += ' active highlight-edge';
         } else if (relatedEdges.has(e.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hoveredNode || hoveredEdge || scopedAuditRootId) {
+        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId) {
           cls += ' de-emphasized';
         }
         // 결함 원인 역추적 엣지 강조
@@ -1885,10 +2061,24 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, collapsedKey, graphVersion]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, pinnedFocusNodeId, computeContentFocusScope, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, collapsedKey, graphVersion]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
+
+    const edgePriority = (edge: Edge): number => {
+      const cls = edge.className || '';
+      let score = 0;
+      if (cls.includes('active')) score += 100;
+      if (cls.includes('highlight-root-cause')) score += 50;
+      if (cls.includes('highlight-affected')) score += 25;
+      if (cls.includes('impact-edge')) score += 25;
+      if (cls.includes('status-failed')) score += 4;
+      else if (cls.includes('status-blocked')) score += 3;
+      else if (cls.includes('status-passed')) score += 2;
+      else if (cls.includes('status-untested')) score += 1;
+      return score;
+    };
     
     edges.forEach(e => {
       const sNode = nodes.find(n => n.id === e.source);
@@ -1902,7 +2092,8 @@ export default function App() {
       if (newSource === newTarget) return;
       
       const isRerouted = newSource !== e.source || newTarget !== e.target;
-      const key = `${newSource}-${newTarget}-${e.type}`;
+      const domainType = String((e.data as any)?.type || e.label || e.type || 'floating');
+      const key = `${newSource}-${newTarget}-${domainType}`;
       
       let finalEdge = { ...e, source: newSource as string, target: newTarget as string };
       if (isRerouted) {
@@ -1910,7 +2101,8 @@ export default function App() {
         finalEdge.label = '...';
         finalEdge.type = 'floating'; // Ensure it stays floating
         
-        if (!edgeMap.has(key)) {
+        const existing = edgeMap.get(key);
+        if (!existing || edgePriority(finalEdge) > edgePriority(existing)) {
           edgeMap.set(key, finalEdge);
         }
       } else {
@@ -1974,14 +2166,6 @@ export default function App() {
               </label>
             </div>
             <div style={{ marginTop: '24px', borderTop: '1px solid var(--panel-border)', paddingTop: '24px', display: 'flex', justifyContent: 'center', gap: '12px' }}>
-              <button 
-                onClick={() => setShowWorkspaceManager(true)} 
-                style={{ padding: '12px 24px', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--panel-border)', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
-                onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-main)'; e.currentTarget.style.borderColor = 'var(--text-main)'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--panel-border)'; }}
-              >
-                {t.workspace.openManager}
-              </button>
               <button 
                 onClick={() => setShowPresetManager(true)} 
                 style={{ padding: '12px 24px', background: '#eff6ff', color: '#2563eb', border: '1.5px solid #93c5fd', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', fontWeight: 600 }}
@@ -2081,7 +2265,7 @@ export default function App() {
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
+        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || pinnedFocusNodeId || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -2341,148 +2525,31 @@ export default function App() {
                         </>
                       );
                     })()}
-                    {editFormData.properties?.is_global === 'true' && (
-                      <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div className="form-group" style={{ margin: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>Verification Guide (Description)</label>
-                          <textarea 
-                            value={editFormData.properties?.description || ''} 
-                            onChange={e => {
-                              const newProps = { ...(editFormData.properties || {}), description: e.target.value };
-                              setEditFormData({...editFormData, properties: newProps});
-                            }}
-                            placeholder="e.g. Verify that all language keys are translated properly."
-                            style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', minHeight: '60px', resize: 'vertical' }}
-                          />
-                        </div>
-                        <div className="form-group" style={{ margin: 0 }}>
-                          <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>{t.nodeForm.issueLink}</label>
-                          <textarea 
-                            rows={3}
-                            value={editFormData.properties?.issue_link || ''} 
-                            onChange={e => {
-                              const newProps = { ...(editFormData.properties || {}), issue_link: e.target.value };
-                              setEditFormData({...editFormData, properties: newProps});
-                            }}
-                            placeholder="https://jira...&#10;https://github..."
-                            style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', resize: 'vertical' }}
-                          />
-                        </div>
+                    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>Verification Guide (Description)</label>
+                        <textarea 
+                          value={editFormData.properties?.description || ''} 
+                          onChange={e => {
+                            const newProps = { ...(editFormData.properties || {}), description: e.target.value };
+                            setEditFormData({...editFormData, properties: newProps});
+                          }}
+                          placeholder="e.g. Verify that all language keys are translated properly."
+                          style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', minHeight: '60px', resize: 'vertical' }}
+                        />
                       </div>
-                    )}
-                  </div>
-
-                  <div className="form-group" style={{ marginTop: '16px' }}>
-                    <h4 style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: '#0f172a', fontWeight: 600 }}>Custom Properties</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {Object.entries(editFormData.properties || {})
-                        .filter(([k]) => !SYSTEM_RESERVED_KEYS.has(k))
-                        .map(([k, v]) => (
-                          <div key={k} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <input 
-                              type="text" 
-                              value={k} 
-                              readOnly
-                              title={k}
-                              style={{ 
-                                flex: '0 0 110px', 
-                                maxWidth: '120px', 
-                                backgroundColor: '#f1f5f9', 
-                                border: '1.5px solid #cbd5e1', 
-                                color: '#334155', 
-                                padding: '6px 8px', 
-                                borderRadius: '6px', 
-                                fontSize: '0.85rem', 
-                                fontWeight: 600,
-                                textOverflow: 'ellipsis',
-                                overflow: 'hidden',
-                                whiteSpace: 'nowrap'
-                              }}
-                            />
-                            <input 
-                              type="text" 
-                              value={v as string} 
-                              title={String(v)}
-                              onChange={e => {
-                                const newProps = { ...editFormData.properties, [k]: e.target.value };
-                                setEditFormData({...editFormData, properties: newProps});
-                              }}
-                              style={{ 
-                                flex: 1, 
-                                minWidth: 0,
-                                border: '1.5px solid #cbd5e1', 
-                                backgroundColor: '#ffffff', 
-                                color: '#0f172a', 
-                                padding: '6px 8px', 
-                                borderRadius: '6px', 
-                                fontSize: '0.85rem',
-                                textOverflow: 'ellipsis'
-                              }}
-                            />
-                            <button 
-                              onClick={() => {
-                                const newProps = { ...editFormData.properties };
-                                delete newProps[k];
-                                setEditFormData({...editFormData, properties: newProps});
-                              }}
-                              title={t.nodeForm.deleteProperty}
-                              style={{ 
-                                background: '#fee2e2', 
-                                border: '1px solid #fca5a5', 
-                                color: '#b91c1c', 
-                                padding: '0 8px', 
-                                borderRadius: '6px', 
-                                cursor: 'pointer', 
-                                fontSize: '0.85rem', 
-                                fontWeight: 600,
-                                height: '32px'
-                              }}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                      ))}
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px', alignItems: 'center' }}>
-                        <input 
-                          type="text" 
-                          placeholder="Key" 
-                          id="newPropKey"
-                          style={{ flex: '0 0 110px', maxWidth: '120px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 8px', borderRadius: '6px', fontSize: '0.85rem' }}
-                        />
-                        <input 
-                          type="text" 
-                          placeholder="Value" 
-                          id="newPropVal"
-                          style={{ flex: 1, minWidth: 0, border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', padding: '6px 8px', borderRadius: '6px', fontSize: '0.85rem' }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                              const keyInput = document.getElementById('newPropKey') as HTMLInputElement;
-                              const valInput = document.getElementById('newPropVal') as HTMLInputElement;
-                              if (keyInput.value && !editFormData.properties?.[keyInput.value]) {
-                                const newProps = { ...(editFormData.properties || {}), [keyInput.value]: valInput.value };
-                                setEditFormData({...editFormData, properties: newProps});
-                                keyInput.value = '';
-                                valInput.value = '';
-                              }
-                            }
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>{t.nodeForm.issueLink}</label>
+                        <textarea 
+                          rows={3}
+                          value={editFormData.properties?.issue_link || ''} 
+                          onChange={e => {
+                            const newProps = { ...(editFormData.properties || {}), issue_link: e.target.value };
+                            setEditFormData({...editFormData, properties: newProps});
                           }}
+                          placeholder="https://jira...&#10;https://github..."
+                          style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', resize: 'vertical' }}
                         />
-                        <button 
-                          className="primary"
-                          onClick={() => {
-                            const keyInput = document.getElementById('newPropKey') as HTMLInputElement;
-                            const valInput = document.getElementById('newPropVal') as HTMLInputElement;
-                            if (keyInput.value && !editFormData.properties?.[keyInput.value]) {
-                              const newProps = { ...(editFormData.properties || {}), [keyInput.value]: valInput.value };
-                              setEditFormData({...editFormData, properties: newProps});
-                              keyInput.value = '';
-                              valInput.value = '';
-                            }
-                          }}
-                          style={{ padding: '0 12px', fontSize: '1rem', fontWeight: 'bold', height: '32px' }}
-                        >
-                          +
-                        </button>
                       </div>
                     </div>
                   </div>
@@ -2561,6 +2628,28 @@ export default function App() {
                       }}
                     >
                       {scopedAuditRootId === editFormData.id ? t.scopedAudit.clearButton : t.scopedAudit.startButton}
+                    </button>
+                  )}
+                  {/* 특정 콘텐츠 포커스 고정 (Content Focus Pinning) */}
+                  {editFormData.type === 'node' && !isCreatingNode && (
+                    <button
+                      type="button"
+                      className={`pin-focus-btn${pinnedFocusNodeId === editFormData.id ? ' active' : ''}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const targetId = editFormData.id;
+                        const nextId = pinnedFocusNodeId === targetId ? null : targetId;
+                        setPinnedFocusNodeId(nextId);
+                        if (nextId && rfInstance) {
+                          const scope = computeContentFocusScope([nextId], nodesRef.current, edgesRef.current, maxDepth);
+                          const focusNodes = nodesRef.current.filter(n => !n.hidden && scope.activeNodes.has(n.id));
+                          if (focusNodes.length > 0) {
+                            rfInstance.fitView({ nodes: focusNodes, padding: 0.25, duration: 500 });
+                          }
+                        }
+                      }}
+                    >
+                      {pinnedFocusNodeId === editFormData.id ? t.contentFocus.unpinButton : t.contentFocus.pinButton}
                     </button>
                   )}
                 </div>
@@ -2950,51 +3039,27 @@ export default function App() {
         </div>
       )}
 
-      {/* Workspace Manager Modal */}
-      {showWorkspaceManager && (
-        <div className="workspace-manager-modal" onClick={() => setShowWorkspaceManager(false)}>
-          <div className="glass-panel" style={{ width: '500px', maxWidth: '90%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 600 }}>{t.workspaceManager.title}</h2>
-              <button onClick={() => setShowWorkspaceManager(false)} style={{ background: 'none', border: 'none', color: 'var(--text-main)', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
-            </div>
-            <div className="workspace-list">
-              {aliases.map(a => (
-                <div key={a} className="workspace-item">
-                  <span style={{ fontWeight: 500 }}>{a}</span>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button className="primary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={async () => {
-                      const newAlias = prompt(t.workspaceManager.renamePrompt(a), a);
-                      if (newAlias && newAlias.trim() && newAlias.trim() !== a) {
-                        if (confirm(t.workspaceManager.renameConfirm(a, newAlias.trim()))) {
-                          try {
-                            const res = await fetch(`/api/aliases/${encodeURIComponent(a)}?new_alias=${encodeURIComponent(newAlias.trim())}`, { method: 'PUT' });
-                            if (res.ok) triggerRefresh();
-                            else alert('Failed to rename workspace');
-                          } catch (e) { alert('Error renaming workspace'); }
-                        }
-                      }
-                    }}>{t.common.edit}</button>
-                    <button className="danger" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={async () => {
-                      if (confirm(t.workspaceManager.deleteConfirm(a))) {
-                        try {
-                          const res = await fetch(`/api/aliases/${encodeURIComponent(a)}`, { method: 'DELETE' });
-                          if (res.ok) {
-                            if (filterText === a) { setFilterText(''); localStorage.removeItem('savedWorkspace'); }
-                            triggerRefresh();
-                          }
-                          else alert('Failed to delete workspace');
-                        } catch (e) { alert('Error deleting workspace'); }
-                      }
-                    }}>{t.common.delete}</button>
-                  </div>
-                </div>
-              ))}
-              {aliases.length === 0 && <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>No workspaces found.</div>}
-            </div>
+      {/* 특정 콘텐츠 포커스 고정 플로팅 배너 (Content Focus Pinning — 기존 Workspace 관리자 모달은 제거됨) */}
+      {pinnedFocusNodeId && (() => {
+        const pinnedNode = nodes.find(n => n.id === pinnedFocusNodeId);
+        if (!pinnedNode) return null;
+        const pinnedName = (pinnedNode.data as any)?.name || pinnedNode.id;
+        return (
+          <div
+            className="pinned-focus-banner"
+            style={impactMode ? { bottom: 88 } : undefined}
+          >
+            <span>{t.contentFocus.banner(pinnedName)}</span>
+            <button
+              type="button"
+              className="pinned-focus-unpin-btn"
+              onClick={() => setPinnedFocusNodeId(null)}
+            >
+              {t.contentFocus.unpinBannerButton}
+            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Preset Manager Modal */}
       <PresetManagerModal

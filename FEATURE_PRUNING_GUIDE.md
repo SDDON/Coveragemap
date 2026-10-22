@@ -25,8 +25,6 @@ graph TD
 
     subgraph Simplification [" 🟡 구조적 단순화 검토 대상 (Architecture Impact) "]
         K[글로벌 노드 배지 이벤트 구조 & 평탄화 여부]
-        L[임의 키-값 Custom Properties 편집기]
-        M[Workspace 관리자의 브라우저 prompt/confirm 팝업]
     end
 ```
 
@@ -42,7 +40,7 @@ graph TD
 | **수동 예외 처리** | 수동 오버라이드 (📌 Manual Override) 및 사유 코멘트(`override_reason`) 보존 | SSOT 3.2 | 자동 합성 덮어쓰기 방지 |
 | **추적성 (Tracing)** | 결함 발생 시 최초 원인까지 역방향 백트래킹 및 붉은 펄스 애니메이션 (`Root Cause Tracing`) | SSOT 3.3 | 블로커 및 결함 발생 경로 추적 |
 | **계층 구조 (Subflow)** | 부모-자식 노드 포함 관계(`CONTAINS`), Collapse/Expand(`+/-`) 및 요약 프로그레스 | SSOT 4.1, 5 Rule 6 | 단일 부모 제약 및 Max Depth=1 준수 |
-| **순수 CSS 시각화** | Focus+Context 관계 하이라이트 (선택 노드 Focus, 비선택 노드 40% Dimmed, 진입 Blue, 진출 Orange) | SSOT 5 Rule 1 | Zero-JS Styling, 12단계 Z-Index 준수 |
+| **순수 CSS 시각화** | Focus+Context 관계 하이라이트 (선택 노드 Focus, 비선택 노드 40% Dimmed, 진입 Blue, 진출 Orange) 및 특정 콘텐츠 포커스 고정(`📌`) | SSOT 5 Rule 1 | Zero-JS Styling, 12단계 Z-Index 준수 |
 | **핸들 조작성 (Halo UX)** | 노드 외곽 둘레 도넛 링 핸들 (`.halo-handle`, Z-Index 0 이하 격리) | SSOT 5 Rule 5 | 클릭 가로채기(Click Stealing) 방지 |
 | **안전한 영속성** | 프리셋 저장/불러오기 (`Preset JSON`, 트랜잭션 보장, 자동 백업 `_autobackup_*`) | SSOT 1.3, 2.1 | 블랙박스 QA 표준 입력/저장 방식 |
 
@@ -57,16 +55,6 @@ graph TD
 - **검토 포인트**:
   - 배지 선택 및 상태 변경 시 사용되는 커스텀 윈도우 이벤트(`selectBadgeNode`, `markBadgeStatus`)를 React Context 또는 콜백 prop으로 일원화할지 여부.
   - SSOT 4.2장 및 5장 Rule 6에 따라, 횡단 관심사(다국어, 사운드 등)를 현행 전역 노드 배지(`is_global: true`) 방식으로 유지할지, 혹은 노드 내부 속성/동적 이슈 칩으로 더 단순화할지 여부.
-
-### 3.2. 임의의 키-값 동적 속성 편집기 (`Custom Properties`)
-- **위치**: `frontend/src/App.tsx` 우측 Edit 탭 내 `SYSTEM_RESERVED_KEYS` 제외 프로퍼티 편집 UI
-- **검토 포인트**:
-  - 정형화된 테스트 케이스 스키마만 사용할 경우, 임의의 key-value 추가 기능을 제거하고 고정 필드(`name`, `label`, `aliases`, `test_status`, `description`, `issue_link`, `checklist`)로만 제한하여 데이터 정규성을 높일지 여부.
-
-### 3.3. 워크스페이스 관리자 모달 내 브라우저 팝업 편집
-- **위치**: `frontend/src/App.tsx` 내 `showWorkspaceManager` 모달
-- **검토 포인트**:
-  - 브라우저 네이티브 `prompt()` / `confirm()` 기반의 전역 별칭 일괄 수정/삭제는 예기치 않은 데이터 변조 위험이 있으므로, 워크스페이스는 필터링/시작화면 선택 UI만 남기고 인라인 편집 모달을 축소할지 여부.
 
 ---
 

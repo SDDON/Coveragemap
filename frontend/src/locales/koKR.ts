@@ -18,11 +18,10 @@ export const koKR = {
     close: '닫기',
   },
 
-  // 워크스페이스 선택 화면 / 상단 표시
+  // 워크스페이스 선택 화면 / 상단 표시 (Workspace 관리자 모달은 FEATURE_PRUNING_GUIDE 3.2에 따라 제거됨)
   workspace: {
     selectGuide: '작업할 도메인(모듈)을 선택하세요. 선택한 도메인과 1~2 Depth 내의 경계 노드들만 로드되어 최적의 성능으로 작업할 수 있습니다.',
     dontShowAgain: '다시 보지 않기 (자동 진입)',
-    openManager: '⚙️ Workspace 관리자',
     loadPreset: '📂 샘플 프리셋 로드',
     loadAll: '전체 그래프 로드 (Heavy)',
     all: '전체 워크스페이스',
@@ -77,7 +76,6 @@ export const koKR = {
   // 노드 편집 폼
   nodeForm: {
     issueLink: 'Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능',
-    deleteProperty: '속성 삭제',
   },
 
   // 📌 수동 차단 (Manual Override, TESTCASE 스펙 4.3)
@@ -170,13 +168,12 @@ export const koKR = {
     refresh: '🔄 새로고침',
   },
 
-  // Workspace(alias) 관리자
-  workspaceManager: {
-    title: 'Workspace 관리자',
-    renamePrompt: (alias: string) => `'${alias}'의 새 이름을 입력하세요:`,
-    renameConfirm: (alias: string, next: string) =>
-      `'${alias}' 태그를 가진 모든 노드의 태그가 '${next}'(으)로 변경됩니다. 계속하시겠습니까?`,
-    deleteConfirm: (alias: string) => `'${alias}' 태그를 모든 노드에서 삭제합니다. 계속하시겠습니까?`,
+  // 특정 콘텐츠 중심 확인 및 포커스 고정 (Content Focus Pinning — 기존 Workspace 관리자 모달은 제거됨)
+  contentFocus: {
+    pinButton: '📌 이 콘텐츠 포커스 고정',
+    unpinButton: '📌 포커스 고정 해제',
+    banner: (name: string) => `📌 집중 콘텐츠: ${name}`,
+    unpinBannerButton: '고정 해제 ✕',
   },
 
   // 전역 노드 영향도(Impact) 표시
