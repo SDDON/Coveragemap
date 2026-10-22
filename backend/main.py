@@ -100,6 +100,15 @@ def api_get_globals(session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.get("/api/nodes/{node_id}/details")
+def api_get_node_details(node_id: str, session = Depends(get_db)):
+    """특정 노드의 전체 프로퍼티, 전역 여부, 체크리스트, 부모/자식 및 진입/진출 엣지를 상세 조회합니다."""
+    from graph_service import get_node_full_details
+    res = get_node_full_details(session, node_id)
+    if not res:
+        raise HTTPException(status_code=404, detail=f"'{node_id}'에 해당하는 노드를 찾을 수 없습니다.")
+    return res
+
 @app.get("/api/nodes/{node_id}")
 def api_get_node(node_id: str, session = Depends(get_db)):
     try:
@@ -109,6 +118,8 @@ def api_get_node(node_id: str, session = Depends(get_db)):
         data = res.data()
         data["properties"] = deserialize_props_from_neo4j(data.get("properties") or {})
         return data
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

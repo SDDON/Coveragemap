@@ -124,13 +124,14 @@ export const koKR = {
     chip: '✨ [Spec Updated]',
   },
 
-  // 부모 노드 접기/펼치기 요약 배지 (AI_IMPLEMENTATION_SPEC 4.1)
+  // 부모 노드 접기/펼치기 요약 배지 (AI_IMPLEMENTATION_SPEC 4.1 / COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 4.3)
   parentCollapse: {
     summary: (passed: number, failed: number, blocked: number, total: number) => {
       const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
       const blockedPart = blocked > 0 ? ` / 🟡 차단: ${blocked}` : '';
       return `🟢 통과: ${passed} / 🔴 결함: ${failed}${blockedPart} (${pct}%)`;
     },
+    affectedChildCount: (count: number) => `⚡ 영향 하위 컴포넌트 ${count}개`,
   },
 
   // 결함 원인 역추적 (Root Cause Tracing, AI_IMPLEMENTATION_SPEC 3.3)

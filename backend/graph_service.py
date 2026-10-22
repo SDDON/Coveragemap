@@ -1063,3 +1063,143 @@ def get_next_test_targets(session) -> List[NextTestTarget]:
     return targets
 
 
+def get_node_full_details(session, query_str: str) -> Optional[Dict[str, Any]]:
+    """
+    특정 노드의 전체 프로퍼티(전역 여부 is_global, 체크리스트 checklist 등),
+    부모/자식 계층, 그리고 연결된 모든 진입(Incoming)/진출(Outgoing) 엣지를 상세 조회합니다.
+    (MCP_NODE_INSPECTION_TOOL_SPEC 3.1 & 4.1)
+    """
+    q = (query_str or "").strip()
+    if not q:
+        return None
+
+    find_query = """
+    MATCH (n)
+    WHERE elementId(n) = $q
+       OR n.id = $q
+       OR toLower(n.name) = toLower($q)
+       OR ANY(a IN coalesce(n.aliases, []) WHERE toLower(toString(a)) = toLower($q))
+       OR toLower(n.name) CONTAINS toLower($q)
+       OR ANY(a IN coalesce(n.aliases, []) WHERE toLower(toString(a)) CONTAINS toLower($q))
+    WITH n,
+         CASE
+           WHEN elementId(n) = $q OR n.id = $q THEN 0
+           WHEN toLower(n.name) = toLower($q) THEN 1
+           WHEN ANY(a IN coalesce(n.aliases, []) WHERE toLower(toString(a)) = toLower($q)) THEN 2
+           WHEN toLower(n.name) CONTAINS toLower($q) THEN 3
+           ELSE 4
+         END AS match_rank
+    ORDER BY match_rank ASC, size(coalesce(n.name, '')) ASC, coalesce(n.name, '') ASC
+    LIMIT 1
+    RETURN elementId(n) AS id,
+           labels(n)[0] AS label,
+           n.name AS name,
+           coalesce(n.aliases, []) AS aliases,
+           coalesce(n.test_status, 'Untested') AS test_status,
+           properties(n) AS properties
+    """
+    rec = session.run(find_query, q=q).single()
+    if not rec:
+        return None
+
+    node_id = rec["id"]
+    props = deserialize_props_from_neo4j(dict(rec["properties"] or {}))
+    is_global = str(props.get("is_global", "false")).lower() == "true"
+    checklist = props.get("checklist") if isinstance(props.get("checklist"), list) else []
+
+    in_query = """
+    MATCH (src)-[r]->(n)
+    WHERE elementId(n) = $id
+    RETURN elementId(r) AS id,
+           type(r) AS type,
+           coalesce(r.test_status, 'Untested') AS test_status,
+           r.action AS action,
+           properties(r) AS properties,
+           elementId(src) AS source_id,
+           coalesce(src.name, elementId(src)) AS source_name,
+           labels(src)[0] AS source_label,
+           coalesce(src.test_status, 'Untested') AS source_status
+    """
+    incoming_edges = []
+    for r in session.run(in_query, id=node_id):
+        incoming_edges.append({
+            "id": r["id"],
+            "type": _normalize_string(r["type"]),
+            "test_status": r["test_status"],
+            "action": r["action"],
+            "properties": dict(r["properties"] or {}),
+            "source_id": r["source_id"],
+            "source_name": r["source_name"],
+            "source_label": r["source_label"] or "Node",
+            "source_status": r["source_status"],
+        })
+
+    out_query = """
+    MATCH (n)-[r]->(tgt)
+    WHERE elementId(n) = $id
+    RETURN elementId(r) AS id,
+           type(r) AS type,
+           coalesce(r.test_status, 'Untested') AS test_status,
+           r.action AS action,
+           properties(r) AS properties,
+           elementId(tgt) AS target_id,
+           coalesce(tgt.name, elementId(tgt)) AS target_name,
+           labels(tgt)[0] AS target_label,
+           coalesce(tgt.test_status, 'Untested') AS target_status
+    """
+    outgoing_edges = []
+    for r in session.run(out_query, id=node_id):
+        outgoing_edges.append({
+            "id": r["id"],
+            "type": _normalize_string(r["type"]),
+            "test_status": r["test_status"],
+            "action": r["action"],
+            "properties": dict(r["properties"] or {}),
+            "target_id": r["target_id"],
+            "target_name": r["target_name"],
+            "target_label": r["target_label"] or "Node",
+            "target_status": r["target_status"],
+        })
+
+    parent = None
+    for e in incoming_edges:
+        if str(e["type"]).lower() in ("contains", "has"):
+            parent = {
+                "id": e["source_id"],
+                "name": e["source_name"],
+                "label": e["source_label"],
+                "test_status": e["source_status"],
+            }
+            break
+
+    children = [
+        {
+            "id": e["target_id"],
+            "name": e["target_name"],
+            "label": e["target_label"],
+            "test_status": e["target_status"],
+        }
+        for e in outgoing_edges
+        if str(e["type"]).lower() in ("contains", "has")
+    ]
+
+    return {
+        "id": node_id,
+        "label": rec["label"] or "Node",
+        "name": rec["name"] or node_id,
+        "aliases": [str(a) for a in (rec["aliases"] or []) if a is not None],
+        "test_status": rec["test_status"] or "Untested",
+        "is_global": is_global,
+        "description": props.get("description"),
+        "issue_link": props.get("issue_link"),
+        "is_manual_override": str(props.get("is_manual_override", "false")).lower() == "true",
+        "override_reason": props.get("override_reason"),
+        "is_modified": str(props.get("is_modified", "false")).lower() == "true",
+        "modified_note": props.get("modified_note"),
+        "checklist": checklist,
+        "properties": props,
+        "parent": parent,
+        "children": children,
+        "incoming_edges": incoming_edges,
+        "outgoing_edges": outgoing_edges,
+    }

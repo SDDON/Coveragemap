@@ -60,6 +60,9 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
   // 부모 노드를 접었을 때(isCollapsed) 하위 자식 노드들의 통과/결함 요약 배지 (AI_IMPLEMENTATION_SPEC 4.1)
   const childSummary: { total: number; passed: number; failed: number; blocked: number } | null =
     isParent && data.isCollapsed && data.childSummary ? data.childSummary : null;
+  // 부모 노드를 접었을 때(isCollapsed) 영향받는 하위 자식 컴포넌트 개수 배지 (COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 3.2 & 4.2)
+  const impactedChildCount: number =
+    isParent && data.isCollapsed && typeof data.impactedChildCount === 'number' ? data.impactedChildCount : 0;
   // Detail-on-Demand 동적 결함 칩 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.2): 실패한 전역 배지만 상단 붉은 결함 칩으로 노출
   const failedBadges = Array.isArray(data.badges)
     ? data.badges.filter((b: any) => b?.test_status === 'Failed')
@@ -74,7 +77,8 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
       <div className={`custom-node${isModified ? ' node-modified-pulse' : ''}`} style={customNodeStyle}>
         {/* Collapse/Expand button for parent nodes */}
         {data.hasChildren && (
-          <button className="collapse-btn" 
+          <button className="collapse-btn nodrag nopan" 
+               onPointerDown={(e) => e.stopPropagation()}
                onClick={(e) => {
                  e.stopPropagation();
                  window.dispatchEvent(new CustomEvent('toggleCollapseNode', { detail: id }));
@@ -99,6 +103,13 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
         {childSummary && childSummary.total > 0 && (
           <div className="parent-collapse-summary">
             {t.parentCollapse.summary(childSummary.passed, childSummary.failed, childSummary.blocked, childSummary.total)}
+          </div>
+        )}
+
+        {/* 부모 노드 접기 시 하위 자식 영향도 요약 배지 (COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 3.2 & 4.2) */}
+        {impactedChildCount > 0 && (
+          <div className="parent-collapse-impact-summary">
+            {t.parentCollapse.affectedChildCount(impactedChildCount)}
           </div>
         )}
 

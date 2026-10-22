@@ -2,8 +2,8 @@
 
 **Document Version:** 1.0.0  
 **Target Audience:** Next AI Coding Models (Argon, Claude Opus 5.5, Gemini 4) & Core Contributors  
-**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///d:/workspace/Coveragemap/AI_IMPLEMENTATION_SPEC.md), [TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///d:/workspace/Coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md), [CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///d:/workspace/Coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)  
-**Status:** Ready for Implementation (Drafted: 2026-10-22)
+**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md), [CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///e:/Workspace/coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)  
+**Status:** Implemented (2026-10-22)
 
 ---
 
@@ -95,7 +95,7 @@ for (const id of frontier) {
      - 예: `[ 🔍 영향 하위 컴포넌트: 3개 ]`
 2. **`affectedScope` (스펙 변경 리플) 활성화 시**:
    - 접힌 부모 Screen 노드에 `.highlight-affected` 클래스가 부여되어 **바이올렛 펄스 테두리**가 활성화됩니다.
-   - 부모 카드 상태 칩 영역([CoverageNode.tsx:107](file:///d:/workspace/Coveragemap/frontend/src/CoverageNode.tsx#L107))에 `✨ [하위 변경: N개]` 칩 노출.
+   - 부모 카드 상태 칩 영역([CoverageNode.tsx:107](file:///e:/Workspace/coveragemap/frontend/src/CoverageNode.tsx#L107))에 `✨ [하위 변경: N개]` 칩 노출.
 
 ### 3.3. 원칙 3: Focus+Context 및 순수 CSS 제약 준수 (Zero-JS Styling)
 - JS 인라인 스타일 조작 금지 (`AI_IMPLEMENTATION_SPEC Rule 1`).
@@ -173,7 +173,7 @@ for (const id of frontier) {
    - `cd backend; uv run pytest -q` (기존 10개 테스트 전원 통과).
    - `cd e2e-tests; npm test` (기존 E2E 테스트 전원 통과).
 3. **수동 / 휴먼 검증 시나리오**:
-   - [ ] `타이틀 화면` 우측 상단의 `−` 버튼을 눌러 화면을 접음(`Collapsed`).
-   - [ ] 우측 Globals 패널에서 `다국어(I18N)` 글로벌 노드의 `[🔍 Impact]` 버튼 클릭.
-   - [ ] 접혀 있는 `타이틀 화면` 카드가 딤(그레이스케일) 처리되지 않고 선명한 보라색 글로우 테두리(`.impact-highlighted`)로 유지되는지 확인.
-   - [ ] `타이틀 화면` 내부의 자식 컴포넌트 중 하나를 `[⚡ 스펙 변경 표시]` 했을 때, 접힌 `타이틀 화면` 카드 외곽에 `.highlight-affected` 바이올렛 테두리가 정상 노출되는지 확인.
+   - [x] `타이틀 화면` 우측 상단의 `−` 버튼을 눌러 화면을 접음(`Collapsed`).
+   - [x] 우측 Globals 패널에서 `다국어(I18N)` 글로벌 노드의 `[🔍 Impact]` 버튼 클릭.
+   - [x] 접혀 있는 `타이틀 화면` 카드가 딤(그레이스케일) 처리되지 않고 선명한 보라색 글로우 테두리(`.impact-highlighted`)로 유지되는지 확인.
+   - [x] `타이틀 화면` 내부의 자식 컴포넌트 중 하나를 `[⚡ 스펙 변경 표시]` 했을 때, 접힌 `타이틀 화면` 카드 외곽에 `.highlight-affected` 바이올렛 테두리가 정상 노출되는지 확인.

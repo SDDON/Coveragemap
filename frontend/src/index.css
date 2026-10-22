@@ -101,6 +101,14 @@ body {
 .react-flow__node {
   will-change: transform;
 }
+/* 12-Tier Z-Index: 자식/일반 노드는 항상 부모 컨테이너(--z-parent-node: 20) 위에 위치하여
+   부모 컨테이너가 선택(selected)되어도 내부 자식 노드의 핸들 드래그/클릭을 가리지 않도록 보장 */
+.react-flow__node:not([style*="width"]) {
+  z-index: var(--z-child-node) !important;
+}
+.react-flow__node.selected:not([style*="width"]) {
+  z-index: var(--z-active-node) !important;
+}
 
 .has-selection .react-flow__node {
   transition: opacity 0.3s ease, filter 0.3s ease;
@@ -133,7 +141,12 @@ body {
   border-color: #94a3b8;
 }
 
-/* Parent Node (Subflow) Styling override */
+/* Parent Node (Subflow) Styling override
+   부모 컨테이너는 --z-canvas-bg(0)에 위치시켜 내부 Contains/Subflow 엣지(--z-edge: 10)가
+   부모 배경에 가려지지 않고 클릭 가능하도록 하며, 자식 노드(--z-child-node: 30)는 그 위에 배치 */
+.react-flow__node[style*="width"] {
+  z-index: var(--z-canvas-bg) !important;
+}
 .react-flow__node[style*="width"] .custom-node-wrapper {
   width: 100%;
   height: 100%;
@@ -348,6 +361,11 @@ body {
   /* 드래그 중에는 노드 내용(z 1)·배지(z 50 이하 영역) 위로 올라와야 드롭을 받을 수 있음 */
   z-index: var(--z-active-node) !important;
 }
+/* 부모 서브플로우 컨테이너(Contains)는 상단 헤더 영역(150px)만 드롭 타겟으로 사용하여
+   내부 서브플로우 영역에서 자식 노드 간 엣지 드래그 시 부모가 포인터를 가로채지 않도록 함 */
+.react-flow--connecting .react-flow__node[style*="width"] .react-flow__handle.target-drop-handle {
+  max-height: 150px !important;
+}
 /* 드롭 대상 위에 있을 때 시각 피드백 (React Flow가 .connectingto / .valid 클래스를 부여) */
 .react-flow--connecting .react-flow__handle.target-drop-handle.connectingto.valid {
   background-color: rgba(37, 99, 235, 0.08) !important;
@@ -375,8 +393,14 @@ body {
 }
 
 /* Edges */
-.react-flow__edges {
+.react-flow__edges,
+.react-flow__edgelabel-renderer {
   z-index: var(--z-edge) !important;
+}
+/* 드래그 중인 임시 연결선(.react-flow__connectionline)은 부모 컨테이너(20)/자식 노드(30)/활성 노드(40) 위에 렌더링 */
+.react-flow__connectionline {
+  z-index: var(--z-node-badge) !important;
+  pointer-events: none !important;
 }
 .react-flow__edge {
   transition: opacity 0.3s, stroke 0.3s;
@@ -388,10 +412,29 @@ body {
   fill: rgba(148, 163, 184, 0.8);
 }
 
-.react-flow__edge.status-passed path.react-flow__edge-path { stroke: var(--status-passed-border) !important; }
+/* Contains / Subflow 엣지 스타일 (CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC 5.2) */
+.react-flow__edge[data-type="contains"] path.react-flow__edge-path,
+.react-flow__edge[data-type="has"] path.react-flow__edge-path,
+.react-flow__edge.edge-contains path.react-flow__edge-path {
+  stroke: #94a3b8 !important;
+  stroke-dasharray: 4 4 !important;
+  stroke-width: 1.5px !important;
+}
+
+.react-flow__edge.status-passed path.react-flow__edge-path,
+.react-flow__edge.edge-contains.status-passed path.react-flow__edge-path { stroke: var(--status-passed-border) !important; }
 .react-flow__edge.status-passed .custom-marker-path { fill: var(--status-passed-border) !important; }
-.react-flow__edge.status-failed path.react-flow__edge-path { stroke: var(--status-failed-border) !important; }
+.react-flow__edge.status-failed path.react-flow__edge-path,
+.react-flow__edge.edge-contains.status-failed path.react-flow__edge-path { stroke: var(--status-failed-border) !important; }
 .react-flow__edge.status-failed .custom-marker-path { fill: var(--status-failed-border) !important; }
+
+.react-flow__edge[data-type="contains"]:hover path.react-flow__edge-path,
+.react-flow__edge[data-type="contains"].active path.react-flow__edge-path,
+.react-flow__edge.edge-contains:hover path.react-flow__edge-path,
+.react-flow__edge.edge-contains.active path.react-flow__edge-path {
+  stroke: #3b82f6 !important;
+  stroke-width: 2px !important;
+}
 
 .react-flow__edge.active path.react-flow__edge-path { stroke-width: 3.5 !important; stroke: #2563eb !important; }
 .react-flow__edge.active .custom-marker-path { transform: scale(1.2); fill: #2563eb !important; }
@@ -554,6 +597,21 @@ body {
   color: #1e293b;
   background: #f8fafc;
   border: 1.5px solid #cbd5e1;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+/* 부모 노드 접기(isCollapsed) 시 영향받는 하위 자식 개수 요약 배지 (COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 3.2) */
+.parent-collapse-impact-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #6b21a8;
+  background: #f3e8ff;
+  border: 1.5px solid #c084fc;
   border-radius: 999px;
   white-space: nowrap;
 }
@@ -982,15 +1040,15 @@ select option {
 .halo-handle,
 .react-flow__handle.halo-handle {
   position: absolute;
-  top: -4px !important;
-  left: -4px !important;
-  right: -4px !important;
-  bottom: -4px !important;
+  top: -10px !important;
+  left: -10px !important;
+  right: -10px !important;
+  bottom: -10px !important;
   width: auto !important;
   height: auto !important;
-  border-radius: 14px !important;
+  border-radius: 18px !important;
   background-color: transparent !important;
-  border: 2px solid transparent !important;
+  border: 3px solid transparent !important;
   z-index: var(--z-canvas-bg) !important;
   min-width: unset !important;
   min-height: unset !important;

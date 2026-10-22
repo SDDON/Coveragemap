@@ -2,7 +2,7 @@
 
 **Document Version:** 1.0.0  
 **Target Audience:** Senior AI Coding Agents & QA Engineers  
-**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///d:/workspace/Coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///d:/workspace/Coveragemap/UI_UX_DESIGN_SYSTEM.md), [CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///d:/workspace/Coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)  
+**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [UI_UX_DESIGN_SYSTEM.md](file:///e:/Workspace/coveragemap/UI_UX_DESIGN_SYSTEM.md), [CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///e:/Workspace/coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)  
 **Status:** Implemented (2026-10-11) — 구현 결과 및 원 명세와 달라진 결정 사항은 [8. 구현 결과 및 결정 기록](#8-구현-결과-및-결정-기록-implementation-record-2026-10-11) 참조
 
 ---
@@ -327,10 +327,14 @@ flowchart LR
 6. **체크리스트 저장 형식**: Neo4j 속성은 중첩 객체를 저장할 수 없으므로 `properties.checklist`를 JSON 문자열로 직렬화해 저장하고, API 경계에서 배열로 역직렬화합니다.
 7. **Acknowledge는 상태를 바꾸지 않음 (7.3 정정)**: 7.3의 "정상 상태(Passed🟢)로 복귀"는 테스트 결과를 자동 조작하는 위험이 있어 채택하지 않았습니다. Acknowledge는 `is_modified=false`로 시각 효과만 해제하며, 재검증 결과는 테스터가 직접 마킹합니다. 같은 이유로 변경 표시 시 상태를 `Untested`로 자동 리셋하지도 않습니다.
 8. **영향권 범위**: `.highlight-affected`는 변경 노드에서 나가는 방향으로 `Return`을 제외하고 **최대 2 hop**까지(7.2의 "1~2차 후속 노드") 적용합니다.
-9. **프론트-서버 정합성**: 프론트엔드 `edges` 상태에는 `Contains`/배지 엣지가 빠져 있어 로컬 계산이 서버와 다를 수 있습니다. 따라서 로컬 계산은 낙관적 표시용으로만 쓰고, 저장 직후 `GET /api/node-statuses`로 서버 결과를 받아 덮어씁니다. (`/api/graph` 재조회를 하지 않으므로 레이아웃·줌이 유지됨)
+9. **프론트-서버 정합성**: 프론트엔드 `edges` 상태에는 전역 배지(`isBadgeEdge`) 엣지가 노드 내부 칩으로 흡수되어 빠져 있으므로(`Contains`/`Has` 엣지는 2026-10-22부터 `.edge-contains`로 `edges`에 정상 포함), 로컬 계산은 낙관적 표시용으로만 쓰고 저장 직후 `GET /api/node-statuses`로 서버 결과를 받아 덮어씁니다. (`/api/graph` 재조회를 하지 않으므로 레이아웃·줌이 유지됨)
 
-### 8.3. 추가 완료 반영 (2026-10-14)
-- **Root Cause Tracing 버튼 (AI_IMPLEMENTATION_SPEC 3.3)**: Inspector 패널의 **[🔍 결함 원인 역추적 (Trace Root Cause)]** 버튼이 백엔드(`GET /api/nodes/{id}/status-summary`) 및 `.highlight-root-cause` 붉은 펄스 애니메이션과 연결 완료되었습니다 (`7d53cfb`).
+### 8.3. 추가 완료 반영 (2026-10-14 ~ 2026-10-22)
+- **Root Cause Tracing 버튼 (AI_IMPLEMENTATION_SPEC 3.3, 2026-10-14)**: Inspector 패널의 **[🔍 결함 원인 역추적 (Trace Root Cause)]** 버튼이 프론트엔드 역방향 BFS(`rootCauseScope`) 및 `.highlight-root-cause` 붉은 펄스 애니메이션과 연결 완료되었으며, 백엔드/MCP 질의용으로는 `GET /api/qa/status-summary?q=...`(`ask_test_status`)가 제공됩니다 (`7d53cfb`).
+- **2026-10-22 3대 추가 명세 구현 완료**:
+  1. **`Contains`/`Has` 일급 도메인 엣지 렌더링 복구 ([CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md](file:///e:/Workspace/coveragemap/docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md))**: `Contains`/`Has` 엣지가 드롭되지 않고 `.edge-contains` 은은한 점선 플로팅 엣지로 캔버스에 렌더링되며(부모 상단 헤더 120px 기준 교차점 계산), 선택·상태 마킹·삭제 시 자식 노드의 `parentId` 해제가 즉시 동기화됩니다.
+  2. **접힌 부모 Screen 영향도 상향 롤업 ([COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md](file:///e:/Workspace/coveragemap/docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md))**: 접힌 부모 `Screen`(`isCollapsed: true`)의 하위 자식 컴포넌트가 글로벌 영향도(`impactMode`) 또는 스펙 변경 리플(`affectedScope`)에 포함될 때 부모 카드에 `.impact-highlighted` / `.highlight-affected` 클래스와 `.parent-collapse-impact-summary`(`⚡ 영향 하위 컴포넌트 N개`) 배지가 표시됩니다.
+  3. **MCP 노드 상세 인스펙터 및 고급 검색 ([MCP_NODE_INSPECTION_TOOL_SPEC.md](file:///e:/Workspace/coveragemap/docs/MCP_NODE_INSPECTION_TOOL_SPEC.md))**: 백엔드 `GET /api/nodes/{id}/details` 및 MCP `get_node_details` 도구 추가, `find_node`의 `aliases`/`label`/`is_global`/`include_details` 확장으로 터미널 우회 스크립트 없이 모든 노드 메타데이터와 연결 엣지를 즉시 조회할 수 있습니다.
 
 ---
 
@@ -378,6 +382,15 @@ flowchart LR
   - 노드를 화면별로 복제(`타이틀용 로그인 팝업`, `설정용 로그인 팝업`)하지 않고 **하나의 `[로그인 팝업 #Popup]` 노드로 통합**합니다.
   - 진입 경로별 확인 사항은 `로그인 팝업` 내부 체크리스트에 **진입 사전 조건 항목**(예: `[ ] [사전조건: 타이틀 진입] 비로그인 상태에서 호출 및 인증 후 로비 이동`, `[ ] [사전조건: 설정 진입] 게스트 상태에서 계정 연동 호출 및 연동 후 설정 화면 유지`)으로 구분하여 작성합니다.
 
+#### 패턴 3: 다국어(Localization) 검증은 '글로벌 배지(5대 문자 세트 위험군 가이드) + 특정 화면 고유 스펙 체크리스트' 2계층으로 분리
+- **상황**: 번역 텍스트의 문자 체계(한글/독일어/아랍어/태국어 등)에 따라 텍스트 박스 오버플로우, 줄바꿈, 성조 잘림, RTL 정렬 깨짐 등이 다르게 발생합니다.
+- **권장 모델링**:
+  1. **공통 시각/조판 품질 (`Global_Badge_I18N` 전역 배지 + `[🌐 이 화면 다국어 검증 모드]`)**:
+     - 모든 노드에 동일한 다국어 체크리스트를 복제하지 않고, `Global_Badge_I18N` 전역 배지의 `description`(가이드 툴팁)에 **5대 문자 세트 위험군**(① 라틴/유럽어군 30~50% 팽창·말줄임, ② CJC 줄바꿈 금칙·두부현상(`□`), ③ 태국/베트남 복모음·성조 상하첨자 행간 겹침/상하단 잘림, ④ 아랍/히브리 양방향 RTL 미러링·숫자 혼용 역전, ⑤ `{0}` 가변 인자 치환 오버플로우)을 명시합니다.
+     - 테스터는 화면 단위 `[🌐 이 화면 다국어 검증 모드]`를 켜고 배지의 `✓`/`✕` 원클릭 판정으로 점검하며, 결함 발견 시에만 붉은 동적 결함 칩(`🏷️ [Localization: 결함]`)을 노출합니다.
+  2. **특정 화면 고유 번역 스펙 (해당 노드의 B안 `properties.checklist`)**:
+     - 특정 팝업/화면에만 존재하는 고유 다국어 스펙(예: 가챠 확률 팝업의 `{0}%` 동적 변수 치환 및 테이블 열 너비 줄바꿈)만 해당 노드의 내부 체크리스트에 1줄로 추가합니다.
+
 ---
 
 ### 9.3. 실사용 시 예상되는 불편함 및 피드백 기반 재검토 백로그 (Known UX Friction & Backlog)
@@ -400,23 +413,23 @@ flowchart LR
   - 엣지 단위 상태 마킹이 번거롭다는 피드백이 있을 경우, `Transition` 엣지는 기본 통과(또는 노드 내부 체크리스트 우선)로 간주하는 합성 규칙 단순화를 검토합니다.
 
 #### 3) 부모-자식(`Contains`) 컨테이너 내부 자식 노드의 자동 `Passed` 합성 제약
-- **현재 동작 및 예상 불편**:
-  - 프론트엔드(`App.tsx`)에서 `Contains` 엣지는 부모-자식 컨테이너(`parentId`) 렌더링용으로 소비되고 캔버스 엣지 목록에서는 숨겨지기 때문에, `Contains` 엣지의 `test_status`는 기본값인 `"Untested"`로 남습니다.
-  - 반면 백엔드 상태 합성(`compute_synthesized_status`)은 `Return`만 제외하고 `Contains`는 일반 진입 엣지로 포함하므로, 부모 컨테이너 안에 들어 있는 자식 노드의 체크리스트를 100% 통과시켜도 서버 상태 동기화(`GET /api/node-statuses`) 시 `Contains` 엣지(`Untested`) 때문에 자식 노드가 다시 `Untested`로 되돌아가는 현상이 발생할 수 있습니다 (`Failed`는 정상 반영됨).
+- **현재 동작 및 예상 불편 (2026-10-22 업데이트)**:
+  - `Contains` 엣지 증발 버그가 해결되어([CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md](file:///e:/Workspace/coveragemap/docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md)) 이제 캔버스에서 `.edge-contains` 점선 엣지를 직접 선택하고 상태를 마킹할 수 있습니다.
+  - 다만 상태 합성(`compute_synthesized_status`)에서는 여전히 `Return`만 가중치 0으로 제외하고 `Contains`/`Has`는 일반 진입 엣지로 포함하므로, 자식 노드의 체크리스트를 100% 통과시켜도 `Contains` 엣지 자체를 `Passed`로 바꾸지 않으면 자식 노드가 자동 `Passed`로 승격되지 않고 `Untested`로 남을 수 있습니다 (`Failed`는 정상 반영됨).
 - **향후 재검토 방안**:
-  - 부모-자식 그룹핑(`Contains`/`Has`)과 자식 노드 내부 체크리스트를 함께 사용할 때 불편이 확인되면, `compute_synthesized_status` 및 프론트엔드 `statusPropagation.ts`에서 `Return`뿐만 아니라 `Contains`/`Has` 관계도 상태 합성 입력에서 제외하도록 개선합니다.
+  - 부모-자식 그룹핑(`Contains`/`Has`)을 순수 구조적 포함 관계(가중치 0)로만 취급하길 원하는 피드백이 확인되면, `compute_synthesized_status` 및 프론트엔드 `statusPropagation.ts`에서 `Return`뿐만 아니라 `Contains`/`Has` 관계도 상태 합성 입력에서 제외하도록 개선합니다.
 
 #### 4) MCP 대화형 생성 시 내부 체크리스트(`properties.checklist`) 및 엣지 `action` 직접 입력 미지원
 - **현재 동작 및 예상 불편**:
-  - 현재 MCP 서버(`mcp_server/server.py`)의 `create_node`는 `name`, `label`, `test_status`, `is_global`만 받고 `properties`(체크리스트 등) 인자를 받지 않으며, `create_edge`도 `action` 속성을 받지 않습니다.
-  - 따라서 AI 에이전트(MCP)와의 대화만으로 그래프 골격을 만든 뒤, 세부 체크리스트나 엣지 트리거(`action`)는 웹 UI의 Inspector 패널이나 JSON 프리셋에서 추가 입력해야 합니다.
+  - 현재 MCP 서버(`mcp_server/server.py`)의 `create_node`는 `label`, `name`, `aliases`만 받고 `properties`(체크리스트 등) 인자를 받지 않으며, `create_edge`도 `action` 속성을 받지 않습니다.
+  - 따라서 AI 에이전트(MCP)와의 대화만으로 그래프 골격을 만든 뒤, 세부 체크리스트나 엣지 트리거(`action`)는 웹 UI의 Inspector 패널이나 JSON 프리셋에서 추가 입력해야 합니다 (단, 조회는 2026-10-22 추가된 `get_node_details` 및 확장된 `find_node`로 가능).
 - **향후 재검토 방안**:
   - MCP 대화를 통한 테스트 케이스 일괄 생성 빈도가 높아지면, `create_node` / `update_node` 및 `create_edge` MCP 도구 스키마에 `checklist` 배열과 `action` 문자열 파라미터를 확장합니다.
 
 #### 5) 전역 배지(`is_global`)의 엣지 방향성 및 영향도 리포트(`get_impact_scope`) 라벨 필터
 - **현재 동작 및 예상 불편**:
   - 웹 UI에서 전역 배지를 부착하면 `대상노드 → 전역배지` 방향으로 `Depends_On`이 생성되어 배지가 실패해도 대상 노드가 `Blocked`되지 않고 붉은 결함 칩(`🔴`)만 표시되지만, 외부 JSON 프리셋에서 역방향(`전역배지 → 대상노드`)으로 작성할 경우 배지 실패 시 대상 노드가 `Blocked`로 전환될 수 있습니다.
-  - 또한 `get_impact_scope` API의 텍스트 요약(`recommended_regression_scope`)은 현재 `Screen`, `Feature`, `Popup`, `Logic`, `API` 라벨만 필터링하여 반환하므로 `Component`나 `Data` 라벨 노드는 요약 텍스트에서 누락될 수 있습니다 (단, 캔버스 `.highlight-affected` 시각 하이라이트에는 정상 표시됨).
+  - 또한 `get_impact_scope` API의 텍스트 요약(`recommended_regression_scope`)은 현재 `Screen`, `Feature`, `TestCase` 라벨만 필터링하여 반환하므로 `Component`, `Modal`, `Data` 등 다른 라벨 노드는 요약 텍스트에서 누락될 수 있습니다 (단, 캔버스 `.highlight-affected` 시각 하이라이트 및 접힌 부모 롤업에는 정상 표시됨).
 - **향후 재검토 방안**:
   - 프리셋 작성 및 영향도 텍스트 리포트 활용 과정에서 혼선이 발생할 경우, 전역 배지 엣지 방향 정규화 및 `recommended_regression_scope` 대상 라벨 확장을 검토합니다.
 

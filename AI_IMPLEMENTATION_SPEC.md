@@ -74,6 +74,7 @@ graph LR
    - 계층형 오토레이아웃(`getLayoutedElements`), 부모-자식 서브플로우 렌더링, 순수 CSS 기반 Focus+Context 딤 처리.
 4. **MCP Server & E2E (Agent Layer)**:
    - AI 에이전트가 그래프를 직접 제어하고 회귀 검증을 수행하는 인터페이스.
+   - **Zero-Script Node Inspection 정책**: AI 에이전트는 노드의 전역 여부(`is_global`), 체크리스트(`checklist`), 진입/진출 엣지 및 부모-자식 계층을 파악할 때 별도 터미널 스크립트로 Neo4j를 우회 조회하지 않고, 반드시 MCP `get_node_details` 도구(`GET /api/nodes/{id}/details`) 및 확장된 `find_node`(`label`, `is_global`, `include_details` 필터 지원)를 통해 조회해야 합니다 ([docs/MCP_NODE_INSPECTION_TOOL_SPEC.md](file:///e:/Workspace/coveragemap/docs/MCP_NODE_INSPECTION_TOOL_SPEC.md) 준수).
 
 ---
 
@@ -148,10 +149,12 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 
 ## 4. Visual Layout & Dynamic Complexity Management
 
-### 4.1. 부모 그룹 접기/펼치기 (Parent Collapse/Expand)
+### 4.1. 부모 그룹 접기/펼치기 (Parent Collapse/Expand) 및 `Contains` 일급 엣지 정책
 - 대규모 화면 내의 수많은 서브 기능(버튼, 팝업, 세부 UI 등 10개 이상)은 `Parent Node`로 묶입니다.
 - **평소 (Collapsed)**: `isCollapsed: true` 상태에서는 하위 자식 노드들이 캔버스에서 숨겨지며, 부모 헤더에 `[ 🟢 통과: 12 / 🔴 결함: 2 (85%) ]` 형태의 프로그레스 요약 뱃지만 표시됩니다.
+  - **접힌 부모로의 영향도 상향 롤업 (Parent Impact Rollup)**: 접힌 부모 `Screen`(`isCollapsed: true`)의 하위 자식 컴포넌트가 글로벌 영향도(`impactMode`) 또는 스펙 변경 영향권(`affectedScope`)에 1개 이상 포함될 때, 부모 카드에도 `.impact-highlighted` / `.highlight-affected` 클래스를 상향 롤업하여 딤(Dim) 처리에서 보호하고 `.parent-collapse-impact-summary`(`⚡ 영향 하위 컴포넌트 N개`) 요약 배지를 표시합니다 ([docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md](file:///e:/Workspace/coveragemap/docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md) 준수).
 - **검증 시 (Expanded)**: 우측 상단의 `+` 버튼을 누르면 자식 노드들이 ELK.js 그리드 배치로 부모 컨테이너 내부에 펼쳐집니다.
+- **`Contains`/`Has` 일급 도메인 엣지 렌더링**: `Contains`(또는 `Has`) 관계는 자식 노드의 `parentId` 설정에만 소비하고 드롭해서는 안 되며, 반드시 `.edge-contains` 은은한 점선 플로팅 엣지로 캔버스에 일급 렌더링(부모-자식 중첩 시 부모 상단 헤더 최대 120px 박스 기준 교차점 계산)하여 선택·상태 마킹·삭제가 가능해야 합니다. 해당 엣지가 삭제되거나 다른 타입으로 변경되면 자식 노드의 `parentId`와 `extent`를 즉시 해제합니다 ([docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md](file:///e:/Workspace/coveragemap/docs/CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC.md) 준수).
 
 ### 4.2. 관점별 동적 결함 칩 (Dynamic Issue Chips)
 - 현지화(LangKey), 사운드, 네트워크 지연 등 무한히 확장되는 서브카테고리는 노드 카드에 고정 테이블로 나열하지 않습니다.
@@ -162,22 +165,22 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 ### 4.3. 화면 흐름(Flow)과 리소스(Resource)의 영향도 분리
 - **화면 전환 엣지(Flow Edge)**: 결함 시 다음 화면의 테스트를 완전히 `Blocked` 시킵니다.
 - **리소스 뱃지(LangKey, Sound 등)**: 결함이 발생해도 화면 전환 자체는 동작하므로 다음 노드를 `Blocked`시키지 않고, 해당 노드에만 **주의(⚠️ 앰버 테두리)** 및 동적 결함 칩을 표시합니다.
-- **로컬라이제이션 스코프 감사 및 글로벌 배지 규격**: 상세 모델링 및 배지 인터랙션 지침은 **[docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///d:/workspace/Coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)**를 준수합니다.
+- **로컬라이제이션 스코프 감사 및 글로벌 배지 규격**: 상세 모델링 및 배지 인터랙션 지침은 **[docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md](file:///e:/Workspace/coveragemap/docs/CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC.md)**를 준수합니다.
 
 ### 4.4. 변경 영향도 강조 및 수정 전파 (Change Impact Ripple Highlight)
 - **배경 및 목적**: 개발팀의 기획/UI 변경이 발생했을 때, 테스터가 재검증(Regression) 범위를 즉각 인지할 수 있도록 수정된 노드 및 후속 영향 경로를 시각적으로 강조합니다.
 - **순수 CSS 시각 효과 (Zero-JS Styling)**:
   - 수정된 노드(`properties.is_modified: true`): `.node-modified-pulse` CSS 클래스(바이올렛 테두리 및 펄스 글로우) 및 동적 알약 칩(`✨ [Spec Updated]`).
-  - 다운스트림 영향권 노드/엣지: `.highlight-affected` 스타일을 적용해 영향도 전파를 시각화.
+  - 다운스트림 영향권 노드/엣지: `.highlight-affected` 스타일을 적용해 영향도 전파를 시각화하며, 영향받는 자식 컴포넌트를 품은 접힌 부모 `Screen`(`isCollapsed: true`)에도 `.highlight-affected` 및 `.parent-collapse-impact-summary` 배지를 상향 롤업합니다.
 - **테스터 라이프사이클 (Acknowledge)**:
   - 테스터가 수정 내역을 확인하고 검증을 마치면 Inspector 패널의 `[✓ 변경사항 확인 완료 (Acknowledge)]` 버튼을 통해 펄스 효과를 해제하고 정상 상태로 복귀시킵니다.
-- **상세 규격 및 차기 모델(Argon / Opus 5.5) 구현 가이드**: [docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md Section 7](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md#7-차기-기능-명세-변경-영향도-강조-및-수정-전파-기능-change-impact-ripple-highlight)을 준수합니다.
+- **상세 규격 및 차기 모델(Argon / Opus 5.5) 구현 가이드**: [docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md Section 7](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md#7-차기-기능-명세-변경-영향도-강조-및-수정-전파-기능-change-impact-ripple-highlight) 및 [docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md](file:///e:/Workspace/coveragemap/docs/COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC.md)를 준수합니다.
 
 > [!NOTE]
-> **구현 현황 (2026-10-11 반영 완료)**
+> **구현 현황 (2026-10-11 ~ 2026-10-22 반영 완료)**
 > - API: `POST /api/nodes/{id}/mark-modified` (body `{note}` → `is_modified=true`, `modified_note`, `modified_at`), `POST /api/nodes/{id}/acknowledge` (`is_modified=false`, `acknowledged_at`).
 > - UI: Inspector의 "변경 영향도" 섹션(메모 입력 + `✨ 변경 표시` / `✓ 변경사항 확인 완료 (Acknowledge)`), 노드 카드의 `✨ [Spec Updated]` 칩 + `.node-modified-pulse`.
-> - 영향권(`.highlight-affected`): 변경 노드에서 **나가는 방향, `Return` 제외, 최대 2 hop**까지의 노드/엣지를 프론트엔드에서 BFS로 계산해 CSS 클래스로만 표시합니다.
+> - 영향권(`.highlight-affected`): 변경 노드에서 **나가는 방향, `Return` 제외, 최대 2 hop**까지의 노드/엣지를 프론트엔드에서 BFS로 계산해 CSS 클래스로만 표시하며, 접힌 부모 Screen(`isCollapsed: true`)으로 상향 롤업 및 하위 영향 컴포넌트 개수(`impactedChildCount`) 배지를 노출합니다.
 > - 결정 사항: 변경 표시/확인은 **테스트 상태를 바꾸지 않습니다.** (변경 표시 시 자동 `Untested` 리셋이나 Acknowledge 시 자동 `Passed` 처리를 하지 않음 — 재검증 결과는 테스터가 직접 마킹)
 
 ---

@@ -180,7 +180,10 @@ export default function App() {
     setImpactMode(null);
   }, []);
 
-  const [visibleTypes, setVisibleTypes] = useState<Set<string>>(new Set(['Screen', 'Component', 'TestCase', 'Data', 'Feature', 'System']));
+  const FILTERABLE_NODE_TYPES = useMemo(() => new Set(['Screen', 'Component', 'TestCase', 'Data']), []);
+  const [visibleTypes, setVisibleTypes] = useState<Set<string>>(
+    new Set(['Screen', 'Popup', 'Component', 'TestCase', 'Data', 'API', 'Feature', 'System', 'Content', 'Node', 'Logic', 'Category'])
+  );
   const visibleTypesRef = useRef(visibleTypes);
   useEffect(() => { visibleTypesRef.current = visibleTypes; }, [visibleTypes]);
 
@@ -229,14 +232,19 @@ export default function App() {
     setNodes(nds => {
       let changed = false;
       const hiddenNodes = new Set<string>();
+      const collapsedParentIds = new Set<string>();
       nds.forEach(n => {
         const type = (n.data as any)?.label || 'Data';
-        if (!visibleTypes.has(type)) hiddenNodes.add(n.id);
+        const isGlobal = (n.data as any)?.properties?.is_global === 'true';
+        if (isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypes.has(type))) hiddenNodes.add(n.id);
+        if ((n.data as any)?.isCollapsed) collapsedParentIds.add(n.id);
       });
 
       const next = nds.map(n => {
         const type = (n.data as any)?.label || 'Data';
-        const isHidden = !visibleTypes.has(type);
+        const isGlobal = (n.data as any)?.properties?.is_global === 'true';
+        const isCollapsedChild = Boolean(n.parentId && collapsedParentIds.has(n.parentId));
+        const isHidden = isGlobal || isCollapsedChild || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypes.has(type));
         
         let newExtent = n.extent;
         if (n.parentId) {
@@ -356,8 +364,13 @@ export default function App() {
         }
         triggerRefresh(); // New IDs require full re-fetch
       } else if (action.type === 'CREATE_EDGE') {
+        const targetEdge = edgesRef.current.find(e => e.id === action.id);
+        const eType = String((targetEdge?.data as any)?.type || targetEdge?.label || '').toLowerCase();
         await fetch(`/api/edges/${action.id}`, { method: 'DELETE' });
         setEdges(eds => eds.filter(e => e.id !== action.id));
+        if (eType === 'contains' || eType === 'has') {
+          triggerRefresh();
+        }
       } else if (action.type === 'UPDATE_EDGE') {
         await fetch(`/api/edges/${action.id}`, {
           method: 'PUT',
@@ -372,6 +385,8 @@ export default function App() {
           body: JSON.stringify(action.edgeData)
         });
         const newEdgeId = await res.json();
+        const eType = String(action.edgeData.type || '').toLowerCase();
+        const isContains = eType === 'contains' || eType === 'has';
         // Add edge back to local state with floating type
         setEdges(eds => calculateEdgeBundling([...eds, {
           id: newEdgeId,
@@ -379,9 +394,13 @@ export default function App() {
           target: action.edgeData.target,
           label: action.edgeData.type,
           type: 'floating',
+          className: isContains ? 'edge-contains' : undefined,
           data: action.edgeData,
           style: { strokeWidth: 2 },
         }]));
+        if (isContains) {
+          triggerRefresh();
+        }
       }
       // 되돌린 변경이 연쇄 전파를 일으켰을 수 있으므로 서버 상태로 재동기화
       syncStatusesFromServer();
@@ -496,7 +515,7 @@ export default function App() {
           if (n.id === targetId) {
             const expandedStyle = (n.data as any)?.expandedStyle || n.style;
             const nextStyle = isCollapsed
-              ? { ...n.style, width: 280, height: 110 }
+              ? { ...n.style, width: 280, height: 'auto', minHeight: 110 }
               : expandedStyle;
             return {
               ...n,
@@ -596,7 +615,7 @@ export default function App() {
             id: n.id,
             type: 'custom',
             data: { ...n, badges: [], isCollapsed: false },
-            hidden: !visibleTypesRef.current.has(n.label) || isGlobal,
+            hidden: (FILTERABLE_NODE_TYPES.has(n.label) && !visibleTypesRef.current.has(n.label)) || isGlobal,
             position: { x: 0, y: 0 },
             className: `status-${(n.test_status || 'untested').toLowerCase()}`,
           };
@@ -619,7 +638,6 @@ export default function App() {
             isBadgeEdge = true;
           }
 
-          let isSubflowEdge = false;
           const eType = (e.type || '').toLowerCase();
           if (eType === 'contains' || eType === 'has') {
             const childNode = initialNodes.find(n => n.id === e.target);
@@ -629,10 +647,11 @@ export default function App() {
               childNode.extent = parentId.hidden ? undefined : 'parent';
               (parentId.data as any).hasChildren = true;
             }
-            isSubflowEdge = true;
           }
 
-          if (!isBadgeEdge && !isSubflowEdge) {
+          // CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC 5.1:
+          // 배지(Global Node) 엣지만 노드 내부 칩으로 흡수하고, Contains/Has 엣지는 캔버스에 렌더링되도록 번들에 포함합니다.
+          if (!isBadgeEdge) {
             const key = e.source < e.target ? `${e.source}→${e.target}` : `${e.target}→${e.source}`;
             if (!edgeBundles[key]) edgeBundles[key] = [];
             edgeBundles[key].push(e);
@@ -646,9 +665,24 @@ export default function App() {
           return 0;
         });
 
+        // 부모 노드의 childSummary를 초기 로드 시점에 미리 계산하여 마운트 직후 불필요한 setNodes 재호출(React Flow handleBounds 초기화 경합)을 방지합니다.
+        initialNodes.forEach(n => {
+          if ((n.data as any)?.hasChildren) {
+            const children = initialNodes.filter(c => c.parentId === n.id);
+            const total = children.length;
+            const passed = children.filter(c => (c.data as any)?.test_status === 'Passed').length;
+            const failed = children.filter(c => (c.data as any)?.test_status === 'Failed').length;
+            const blocked = children.filter(c => (c.data as any)?.test_status === 'Blocked').length;
+            (n.data as any).childSummary = { total, passed, failed, blocked };
+          }
+        });
+
         let rawEdges: Edge[] = [];
         Object.values(edgeBundles).forEach((bundle) => {
           bundle.forEach((e) => {
+            const eTypeLower = (e.type || '').toLowerCase();
+            const isContainsEdge = eTypeLower === 'contains' || eTypeLower === 'has';
+            const edgeStatus = (e.test_status || 'untested').toLowerCase();
             rawEdges.push({
               id: e.id,
               source: e.source,
@@ -656,6 +690,7 @@ export default function App() {
               label: e.type,
               data: { ...e },
               type: 'floating',
+              className: `${isContainsEdge ? 'edge-contains ' : ''}status-${edgeStatus}`,
               style: { strokeWidth: 2 },
             });
           });
@@ -834,10 +869,41 @@ export default function App() {
       nodesRef.current, remainingEdges, Array.from(new Set(deleted.map(e => e.target)))
     ));
     if (deleted.length > 0) syncStatusesFromServer();
-  }, [pushUndo, applyLocalStatusChanges, syncStatusesFromServer]);
+
+    const deletedContains = deleted.filter(e => {
+      const eType = String((e.data as any)?.type || e.label || '').toLowerCase();
+      return eType === 'contains' || eType === 'has';
+    });
+    if (deletedContains.length > 0) {
+      const unparentedTargets = new Set(deletedContains.map(e => e.target));
+      const parentsWithRemaining = new Set(
+        remainingEdges
+          .filter(rem => {
+            const rt = String((rem.data as any)?.type || rem.label || '').toLowerCase();
+            return rt === 'contains' || rt === 'has';
+          })
+          .map(rem => rem.source)
+      );
+      const affectedParents = new Set(deletedContains.map(e => e.source));
+      setNodes(nds => nds.map(n => {
+        if (unparentedTargets.has(n.id)) {
+          const type = (n.data as any)?.label || 'Data';
+          const isGlobal = (n.data as any)?.properties?.is_global === 'true';
+          const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypesRef.current.has(type));
+          return { ...n, parentId: undefined, extent: undefined, hidden: isHiddenByFilter };
+        }
+        if (affectedParents.has(n.id) && !parentsWithRemaining.has(n.id)) {
+          const { width, height, minHeight, ...restStyle } = (n.style || {}) as any;
+          return { ...n, style: restStyle, data: { ...n.data, hasChildren: false, isCollapsed: false, expandedStyle: undefined, childSummary: undefined, impactedChildCount: 0 } };
+        }
+        return n;
+      }));
+      triggerRefresh();
+    }
+  }, [pushUndo, applyLocalStatusChanges, syncStatusesFromServer, setNodes, FILTERABLE_NODE_TYPES]);
 
   const onConnect = useCallback(async (connection: Connection) => {
-    if (!connection.source || !connection.target) return;
+    if (!connection.source || !connection.target || connection.source === connection.target) return;
     
     const sourceNode = nodesRef.current.find(n => n.id === connection.source);
     const targetNode = nodesRef.current.find(n => n.id === connection.target);
@@ -883,34 +949,17 @@ export default function App() {
         return;
       }
 
-      if (defaultType.toLowerCase() === 'contains' || defaultType.toLowerCase() === 'has') {
-        setNodes(nds => {
-          const nextNds = nds.map(n => {
-            if (n.id === connection.target) {
-              return { ...n, parentId: connection.source!, extent: 'parent' as 'parent' };
-            }
-            if (n.id === connection.source) {
-              return { ...n, data: { ...n.data, hasChildren: true } };
-            }
-            return n;
-          });
-          // React Flow requires parent nodes to appear before children in the array
-          return nextNds.sort((a, b) => {
-            if (a.parentId && !b.parentId) return 1;
-            if (!a.parentId && b.parentId) return -1;
-            return 0;
-          });
-        });
-        return;
-      }
+      const isContainsEdge = defaultType.toLowerCase() === 'contains' || defaultType.toLowerCase() === 'has';
 
-      // Add edge to local state instead of re-fetching entire graph with floating type
+      // CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC 5.1-2:
+      // Contains/Has 연결 시에도 조기 리턴하지 않고 캔버스에 newEdge(.edge-contains)를 즉시 등록합니다.
       const newEdge: Edge = {
         id: newEdgeId,
         source: connection.source!,
         target: connection.target!,
         label: defaultType,
         type: 'floating',
+        className: isContainsEdge ? 'edge-contains' : undefined,
         data: { type: defaultType, test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
         style: { stroke: 'gray', strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
@@ -920,6 +969,12 @@ export default function App() {
       // 새 입력 엣지가 생긴 타겟을 재계산하고, 바뀌면 하류(Depends_On/Tests)로 연쇄 전파 (낙관적)
       applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, bundledEds, [connection.target!]));
       syncStatusesFromServer();
+
+      if (isContainsEdge) {
+        // 부모 컨테이너 크기(style.width/height)와 자식 상대 좌표를 ELK 레이아웃으로 재계산 (Contains 엣지는 fetchGraph에서도 유지됨)
+        setSelectedEdge(null);
+        triggerRefresh();
+      }
     } catch (err) {
       console.error("Failed to create edge:", err);
     }
@@ -983,10 +1038,31 @@ export default function App() {
         // 입력 엣지가 사라진 타겟을 재계산하고 하류로 연쇄 전파 (낙관적) → 서버 결과로 재동기화
         applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [edge.target]));
         syncStatusesFromServer();
+
+        const edgeTypeLower = String((edge.data as any)?.type || edge.label || '').toLowerCase();
+        if (edgeTypeLower === 'contains' || edgeTypeLower === 'has') {
+          const stillHasChildren = nextEds.some(rem => {
+            const rt = String((rem.data as any)?.type || rem.label || '').toLowerCase();
+            return rem.source === edge.source && (rt === 'contains' || rt === 'has');
+          });
+          setNodes(nds => nds.map(n => {
+            if (n.id === edge.target && n.parentId === edge.source) {
+              const type = (n.data as any)?.label || 'Data';
+              const isGlobal = (n.data as any)?.properties?.is_global === 'true';
+              const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypesRef.current.has(type));
+              return { ...n, parentId: undefined, extent: undefined, hidden: isHiddenByFilter };
+            }
+            if (n.id === edge.source && !stillHasChildren) {
+              const { width, height, minHeight, ...restStyle } = (n.style || {}) as any;
+              return { ...n, style: restStyle, data: { ...n.data, hasChildren: false, isCollapsed: false, expandedStyle: undefined, childSummary: undefined, impactedChildCount: 0 } };
+            }
+            return n;
+          }));
+          triggerRefresh();
+        }
       }
     } 
     setEditFormData({}); 
-    setSelectedNode(null); 
     setSelectedNode(null); 
     setSelectedEdge(null);
   }; 
@@ -1294,8 +1370,24 @@ export default function App() {
       });
       const data = await response.json();
       const newId = data.new_id || editFormData.id;
+      const prevEdgeType = String((edge.data as any)?.type || edge.label || '').toLowerCase();
+      const nextEdgeType = String(payload.type || prevEdgeType).toLowerCase();
+      const wasContains = prevEdgeType === 'contains' || prevEdgeType === 'has';
+      const isNowContains = nextEdgeType === 'contains' || nextEdgeType === 'has';
       // data.type도 함께 갱신해야 전파 엔진(edgeTypeOf)이 바뀐 타입(예: Return 전환)을 인식합니다.
-      const nextEds = edgesRef.current.map(e => e.id === editFormData.id ? { ...e, id: newId, type: e.type, label: payload.type || e.label, data: { ...e.data as any, type: payload.type || (e.data as any)?.type, action: payload.action, test_status: payload.test_status } } : e);
+      const nextEds = edgesRef.current.map(e => {
+        if (e.id !== editFormData.id) return e;
+        const baseCls = (e.className || '').replace(/\bedge-contains\b/g, '').trim();
+        const nextCls = isNowContains ? `${baseCls} edge-contains`.trim() : baseCls;
+        return {
+          ...e,
+          id: newId,
+          type: e.type,
+          label: payload.type || e.label,
+          className: nextCls || undefined,
+          data: { ...e.data as any, type: payload.type || (e.data as any)?.type, action: payload.action, test_status: payload.test_status }
+        };
+      });
       setEdges(nextEds);
       // 타입/상태가 바뀐 엣지의 타겟을 재계산하고 하류로 전파 (낙관적) → 서버 결과로 재동기화
       applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [edge.target]));
@@ -1304,7 +1396,27 @@ export default function App() {
         setEditFormData({...editFormData, id: newId});
         setSelectedEdge(prev => prev ? {...prev, id: newId} : null);
       }
-      if (payload.type?.toLowerCase() === 'contains' || payload.type?.toLowerCase() === 'has') {
+      if (wasContains && !isNowContains) {
+        const stillHasChildren = nextEds.some(rem => {
+          const rt = String((rem.data as any)?.type || rem.label || '').toLowerCase();
+          return rem.source === edge.source && (rt === 'contains' || rt === 'has');
+        });
+        setNodes(nds => nds.map(n => {
+          if (n.id === edge.target && n.parentId === edge.source) {
+            const type = (n.data as any)?.label || 'Data';
+            const isGlobal = (n.data as any)?.properties?.is_global === 'true';
+            const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypesRef.current.has(type));
+            return { ...n, parentId: undefined, extent: undefined, hidden: isHiddenByFilter };
+          }
+          if (n.id === edge.source && !stillHasChildren) {
+            const { width, height, minHeight, ...restStyle } = (n.style || {}) as any;
+            return { ...n, style: restStyle, data: { ...n.data, hasChildren: false, isCollapsed: false, expandedStyle: undefined, childSummary: undefined, impactedChildCount: 0 } };
+          }
+          return n;
+        }));
+      }
+      if (wasContains || isNowContains) {
+        setSelectedEdge(null);
         triggerRefresh();
       }
     }
@@ -1436,11 +1548,33 @@ export default function App() {
       }
       frontier = next;
     }
-    const key = `${Array.from(nodeIds).sort().join(',')}|${Array.from(edgeIds).sort().join(',')}`;
+
+    // D. 변경 영향권(Impact Ripple) 또는 변경 표시(is_modified)에 포함된 자식 노드의 부모 Screen 상향 롤업 (COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 4.1)
+    const parentNodeIds = new Set<string>();
+    for (const nid of [...modifiedIds, ...nodeIds]) {
+      const childNode = nodes.find(n => n.id === nid);
+      if (childNode?.parentId) {
+        const parentNode = nodes.find(n => n.id === childNode.parentId);
+        if (parentNode) {
+          parentNodeIds.add(parentNode.id);
+        }
+      }
+    }
+    for (const pid of parentNodeIds) {
+      nodeIds.add(pid);
+    }
+
+    const key = `${Array.from(nodeIds).sort().join(',')}|${Array.from(edgeIds).sort().join(',')}|${ [...modifiedIds].sort().join(',') }`;
     return { nodeIds, edgeIds, key };
   }, [nodes, edges]);
   const affectedScopeRef = useRef(affectedScope);
   affectedScopeRef.current = affectedScope;
+
+  // 부모 노드의 접힘(isCollapsed) 상태 키 — 접기/펼치기 시 부모 영향도 하이라이트 및 요약 칩 재계산 트리거
+  const collapsedKey = useMemo(
+    () => nodes.filter(n => (n.data as any)?.isCollapsed).map(n => n.id).sort().join(','),
+    [nodes]
+  );
 
   /**
    * 결함 원인 역추적(Root Cause Tracing, AI_IMPLEMENTATION_SPEC 3.3):
@@ -1657,11 +1791,26 @@ export default function App() {
         cls += ' status-' + status;
         const isRootCauseNode = rootCauseScopeRef.current.nodeIds.has(n.id);
 
+        // COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 4.1:
+        // 접힌 부모 Screen(isCollapsed)의 하위 자식 컴포넌트가 글로벌 영향도(impactMode) 또는 스펙 변경 영향권(affectedScope)에 포함된 경우 상향 롤업
+        const childNodes = (n.data as any)?.hasChildren ? nds.filter(child => child.parentId === n.id) : [];
+        const impactedChildrenInOverlay = impactMode
+          ? childNodes.filter(child => impactMode.connectedIds.has(child.id))
+          : [];
+        const impactedChildrenInRipple = childNodes.filter(child => {
+          const isChildMod = (child.data as any)?.properties?.is_modified === true || (child.data as any)?.properties?.is_modified === 'true';
+          return isChildMod || affectedScopeRef.current.nodeIds.has(child.id);
+        });
+        const isParentOfImpactedChild = Boolean((n.data as any)?.isCollapsed && impactedChildrenInOverlay.length > 0);
+        const impactedChildCount = (n.data as any)?.isCollapsed
+          ? (impactMode ? impactedChildrenInOverlay.length : impactedChildrenInRipple.length)
+          : 0;
+
         // Impact mode classes
         if (impactMode) {
           if (n.id === impactMode.globalNodeId) {
             cls += ' impact-highlighted impact-source';
-          } else if (impactMode.connectedIds.has(n.id)) {
+          } else if (impactMode.connectedIds.has(n.id) || isParentOfImpactedChild) {
             cls += ' impact-highlighted';
           }
         } else if (activeNodes.has(n.id) || hoveredNode === n.id || isRootCauseNode) {
@@ -1678,9 +1827,17 @@ export default function App() {
         // D. 변경 영향권(Impact Ripple) — Focus 상태와 독립적으로 유지되는 순수 CSS 클래스
         if (affectedScopeRef.current.nodeIds.has(n.id)) cls += ' highlight-affected';
         
-        if (n.className !== cls.trim()) {
+        const prevImpactedCount = (n.data as any)?.impactedChildCount || 0;
+        const nextCls = cls.trim();
+        if (n.className !== nextCls || prevImpactedCount !== impactedChildCount) {
           changed = true;
-          return { ...n, className: cls.trim() };
+          return {
+            ...n,
+            className: nextCls,
+            data: prevImpactedCount !== impactedChildCount
+              ? { ...n.data, impactedChildCount }
+              : n.data,
+          };
         }
         return n;
       });
@@ -1690,7 +1847,11 @@ export default function App() {
     setEdges(eds => {
       let changed = false;
       const next = eds.map(e => {
-        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
+        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+|edge-contains)\b/g, '').trim();
+        const eTypeLower = String((e.data as any)?.type || e.label || '').toLowerCase();
+        if (eTypeLower === 'contains' || eTypeLower === 'has') {
+          cls += ' edge-contains';
+        }
         const status = ((e.data as any)?.test_status || 'untested').toLowerCase();
         cls += ' status-' + status;
         const isRootCauseEdge = rootCauseScopeRef.current.edgeIds.has(e.id);
@@ -1711,19 +1872,20 @@ export default function App() {
         if (affectedScopeRef.current.edgeIds.has(e.id)) cls += ' highlight-affected';
         
         const currentMarkerColor = (e.data as any)?.markerColor;
+        const nextCls = cls.trim();
         
-        if (e.className !== cls || currentMarkerColor !== undefined) {
+        if (e.className !== nextCls || currentMarkerColor !== undefined) {
           changed = true;
           // Clean up old markerColor prop if present
           const newData = { ...e.data as any };
           delete newData.markerColor;
-          return { ...e, className: cls.trim(), data: newData };
+          return { ...e, className: nextCls, data: newData };
         }
         return e;
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, graphVersion]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, collapsedKey, graphVersion]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
@@ -1848,6 +2010,12 @@ export default function App() {
 
           <ReactFlow nodeTypes={nodeTypes} edgeTypes={edgeTypes} minZoom={0.05}
                      onInit={setRfInstance}
+                     isValidConnection={(conn) => {
+                       if (!conn.source || !conn.target || conn.source === conn.target) return false;
+                       const srcNode = nodesRef.current.find(n => n.id === conn.source);
+                       if (srcNode?.parentId && srcNode.parentId === conn.target) return false;
+                       return true;
+                     }}
         nodes={(() => {
           // CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.1 & 4.1:
           // 배지 Hover 시 글로벌 노드를 화면 중앙에 강제 소환(hidden: false, position: center)하지 않고,
@@ -1893,8 +2061,6 @@ export default function App() {
         // E. 연결 드래그 중에만 컨테이너에 .react-flow--connecting을 붙여 타겟 드롭 히트박스를 노드 전체로 확장
         onConnectStart={() => setIsConnecting(true)}
         onConnectEnd={() => setIsConnecting(false)}
-        // 확장된 히트박스가 출발 노드 자신도 덮으므로 자기 자신으로의 연결(Self-loop)은 차단
-        isValidConnection={(c) => c.source !== c.target}
         onPaneClick={() => {
           setSelectedNode(null);
           setSelectedEdge(null);
@@ -2326,8 +2492,8 @@ export default function App() {
               {editFormData.type === 'edge' && (
                 <>
                   <div className="form-group">
-                    <label className="form-label">Type:</label>
-                    <select value={editFormData.edgeType || 'Transition'} onChange={e => setEditFormData({...editFormData, edgeType: e.target.value})}>
+                    <label htmlFor="edgeType" className="form-label">Type:</label>
+                    <select id="edgeType" value={editFormData.edgeType || 'Transition'} onChange={e => setEditFormData({...editFormData, edgeType: e.target.value})}>
                       <option value="Transition">{t.edgeType.Transition}</option>
                       <option value="Contains">{t.edgeType.Contains}</option>
                       <option value="Displays">{t.edgeType.Displays}</option>

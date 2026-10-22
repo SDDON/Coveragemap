@@ -242,16 +242,43 @@ async def list_tools():
         ),
         Tool(
             name="find_node",
-            description="이름(name)으로 노드를 검색합니다. 부분 일치를 지원합니다.",
+            description="이름(name) 또는 별칭(aliases)으로 노드를 검색합니다. 라벨(label), 전역 여부(is_global) 필터링 및 프로퍼티/체크리스트 요약 포함을 지원합니다.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "검색할 노드 이름 (부분 일치)"
+                        "description": "검색할 노드 이름 또는 별칭 (부분 일치)"
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "노드 라벨 필터 (선택사항, 예: Screen, Component, TestCase)"
+                    },
+                    "is_global": {
+                        "type": "boolean",
+                        "description": "전역 노드(is_global=true)만 검색할지 여부 (선택사항)"
+                    },
+                    "include_details": {
+                        "type": "boolean",
+                        "description": "프로퍼티 및 체크리스트 요약 정보를 결과에 포함할지 여부 (기본값: true)",
+                        "default": True
                     }
                 },
                 "required": ["name"]
+            }
+        ),
+        Tool(
+            name="get_node_details",
+            description="특정 노드의 상세 메타데이터(프로퍼티, 전역 여부 is_global, 체크리스트) 및 연결된 모든 진입/진출 엣지, 부모/자식 노드를 일목요연하게 조회합니다.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "조회할 노드의 ID(elementId) 또는 이름(name, 부분 일치 지원)"
+                    }
+                },
+                "required": ["query"]
             }
         ),
         Tool(
@@ -540,20 +567,133 @@ async def call_tool(name: str, arguments: dict):
         return [TextContent(type="text", text=f"엣지 삭제 완료: {arguments['edge_id']}")]
     
     elif name == "find_node":
-        search = arguments["name"].lower()
+        raw_search = (arguments.get("name") or "").lower().strip()
+        search = "" if raw_search == "*" else raw_search
+        label_filter = (arguments.get("label") or "").strip().lower()
+        is_global_filter = arguments.get("is_global")
+        include_details = arguments.get("include_details", True)
+
         data = _api("GET", "/api/graph")
         if isinstance(data, str):
             return [TextContent(type="text", text=data)]
         
-        matches = [n for n in data.get("nodes", []) if search in n["name"].lower()]
+        matches = []
+        for n in data.get("nodes", []):
+            n_name = str(n.get("name", "")).lower()
+            n_aliases = [str(a).lower() for a in (n.get("aliases") or [])]
+            if search and (search not in n_name and not any(search in a for a in n_aliases)):
+                continue
+            if label_filter and str(n.get("label", "")).lower() != label_filter:
+                continue
+            props = n.get("properties") or {}
+            raw_is_global = props.get("is_global", n.get("is_global", "false"))
+            node_is_global = str(raw_is_global).lower() == "true"
+            if is_global_filter is not None and node_is_global != bool(is_global_filter):
+                continue
+            matches.append(n)
+
         if not matches:
             return [TextContent(type="text", text=f"'{arguments['name']}'와 일치하는 노드가 없습니다.")]
         
         lines = [f"검색 결과: {len(matches)}개\n"]
         for n in matches:
             status_icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(n.get("test_status"), "⬜")
-            lines.append(f"  {status_icon} [{n['label']}] {n['name']}")
+            props = n.get("properties") or {}
+            raw_is_global = props.get("is_global", n.get("is_global", "false"))
+            node_is_global = str(raw_is_global).lower() == "true"
+            global_tag = " [🌐 Global]" if node_is_global else ""
+            lines.append(f"  {status_icon} [{n['label']}] {n['name']}{global_tag}")
             lines.append(f"      id: {n['id']}")
+            if include_details:
+                lines.append(f"      is_global: {str(node_is_global).lower()}")
+                aliases = n.get("aliases") or []
+                if aliases:
+                    lines.append(f"      aliases: {json.dumps(aliases, ensure_ascii=False)}")
+                checklist = props.get("checklist") if isinstance(props.get("checklist"), list) else []
+                if checklist:
+                    passed_cnt = sum(
+                        1 for c in checklist
+                        if isinstance(c, dict) and (c.get("status") == "Passed" or c.get("checked") is True)
+                    )
+                    lines.append(f"      checklist: {len(checklist)}개 ({passed_cnt}/{len(checklist)} 통과)")
+                desc = props.get("description")
+                if desc:
+                    lines.append(f"      description: {desc}")
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    elif name == "get_node_details":
+        query = arguments["query"]
+        data = _api("GET", f"/api/nodes/{urllib.parse.quote(query, safe='')}/details")
+        if isinstance(data, str):
+            return [TextContent(type="text", text=data)]
+
+        status_icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(data.get("test_status"), "⬜")
+        is_global = bool(data.get("is_global"))
+        global_str = "✅ true (전역 노드 - 연결 시 배지로 자동 흡수)" if is_global else "❌ false (일반 캔버스 노드)"
+        aliases = data.get("aliases") or []
+
+        lines = [
+            f"🔍 노드 상세 정보: [{data.get('label')}] {data.get('name')}",
+            f"• 노드 ID: {data.get('id')}",
+            f"• 라벨/유형: {data.get('label')}",
+            f"• 테스트 상태: {status_icon} {data.get('test_status')}",
+            f"• 전역 여부(is_global): {global_str}",
+            f"• 별칭(Aliases): {json.dumps(aliases, ensure_ascii=False)}",
+        ]
+        if data.get("is_manual_override"):
+            lines.append(f"• 📌 수동 고정(Manual Override): true (사유: {data.get('override_reason') or '미작성'})")
+        if data.get("description"):
+            lines.append(f"• 기능 설명: {data.get('description')}")
+        if data.get("issue_link"):
+            lines.append(f"• 이슈/문서 링크: {data.get('issue_link')}")
+        if data.get("is_modified"):
+            lines.append(f"• ✨ 스펙 변경 여부(is_modified): true ({data.get('modified_note') or '메모 없음'})")
+
+        parent = data.get("parent")
+        if parent:
+            lines.append(f"• 상위 부모(Parent Screen): [{parent.get('label')}] {parent.get('name')} (id: {parent.get('id')})")
+        children = data.get("children") or []
+        if children:
+            child_names = ", ".join(f"[{c.get('label')}] {c.get('name')}" for c in children)
+            lines.append(f"• 하위 컴포넌트(Children, 총 {len(children)}개): {child_names}")
+
+        checklist = data.get("checklist") or []
+        if checklist:
+            passed_cnt = sum(
+                1 for c in checklist
+                if isinstance(c, dict) and (c.get("status") == "Passed" or c.get("checked") is True)
+            )
+            lines.append(f"\n📋 내부 체크리스트 ({passed_cnt}/{len(checklist)} 통과):")
+            for item in checklist:
+                if not isinstance(item, dict):
+                    continue
+                st = item.get("status") or ("Passed" if item.get("checked") is True else "Untested")
+                mark = "[x]" if st == "Passed" else ("[!] " if st == "Failed" else ("[B] " if st == "Blocked" else "[ ]"))
+                suffix = "" if st == "Passed" else f" ({st})"
+                lines.append(f"  {mark} {item.get('text', '')}{suffix}")
+        else:
+            lines.append("\n📋 내부 체크리스트: 없음")
+
+        in_edges = data.get("incoming_edges") or []
+        lines.append(f"\n⬇️ 진입 엣지 (Incoming Edges, 총 {len(in_edges)}개):")
+        if in_edges:
+            for e in in_edges:
+                act = e.get("action") or (e.get("properties") or {}).get("action")
+                act_str = f"──(action: {act})──▶" if act else "──▶"
+                lines.append(f"  - [{e.get('type')}] {e.get('source_name')} {act_str} (status: {e.get('test_status')}, id: {e.get('id')})")
+        else:
+            lines.append("  (없음)")
+
+        out_edges = data.get("outgoing_edges") or []
+        lines.append(f"\n⬆️ 진출 엣지 (Outgoing Edges, 총 {len(out_edges)}개):")
+        if out_edges:
+            for e in out_edges:
+                act = e.get("action") or (e.get("properties") or {}).get("action")
+                type_act = f"{e.get('type')}: {act}" if act else f"{e.get('type')}"
+                lines.append(f"  - ──[{type_act}]──▶ {e.get('target_name')} (status: {e.get('test_status')}, id: {e.get('id')})")
+        else:
+            lines.append("  (없음)")
+
         return [TextContent(type="text", text="\n".join(lines))]
     
     elif name == "get_coverage":

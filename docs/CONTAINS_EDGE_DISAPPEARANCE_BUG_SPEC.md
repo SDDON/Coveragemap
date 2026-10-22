@@ -2,8 +2,8 @@
 
 **Document Version:** 1.0.0  
 **Target Audience:** Senior AI Coding Models (Argon, Claude Opus 5.5, Gemini 4) & Core Contributors  
-**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///d:/workspace/Coveragemap/AI_IMPLEMENTATION_SPEC.md), [TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///d:/workspace/Coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md)  
-**Status:** Urgent Bug Fix Request (Drafted: 2026-10-22)
+**Related Documents:** [AI_IMPLEMENTATION_SPEC.md](file:///e:/Workspace/coveragemap/AI_IMPLEMENTATION_SPEC.md), [TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md)  
+**Status:** Implemented (2026-10-22)
 
 ---
 
@@ -180,8 +180,8 @@ if (defaultType.toLowerCase() === 'contains' || defaultType.toLowerCase() === 'h
 1. **정적 정책 검사**: `backend/.venv/Scripts/python.exe scripts/check_policy.py` 통과 (0 Exit Code).
 2. **단위 및 E2E 테스트 통과**: `cd backend; uv run pytest -q` 및 `cd e2e-tests; npm test` (기존 테스트 100% 통과).
 3. **수동 검증 시나리오**:
-   - [ ] 노드 A(Screen)에서 노드 B(Component)로 선을 잇고 타입을 `Contains`로 지정.
-   - [ ] 캔버스에 점선 화살표 엣지가 즉시 렌더링되는지 확인.
-   - [ ] 브라우저를 새로고침(F5)하거나 노드를 수정하여 화면이 갱신된 후에도 **`Contains` 엣지가 사라지지 않고 유지되는지 확인**.
-   - [ ] `Contains` 엣지를 마우스로 클릭했을 때 우측 Inspector가 열리고, `Mark Passed` / `Mark Failed`를 눌러 엣지 상태가 정상 변경되는지 확인.
-   - [ ] 엣지 삭제 버튼을 눌렀을 때 Neo4j와 캔버스에서 정상 삭제되고 부모-자식 관계가 해제되는지 확인.
+   - [x] 노드 A(Screen)에서 노드 B(Component)로 선을 잇고 타입을 `Contains`로 지정.
+   - [x] 캔버스에 점선 화살표 엣지가 즉시 렌더링되는지 확인.
+   - [x] 브라우저를 새로고침(F5)하거나 노드를 수정하여 화면이 갱신된 후에도 **`Contains` 엣지가 사라지지 않고 유지되는지 확인**.
+   - [x] `Contains` 엣지를 마우스로 클릭했을 때 우측 Inspector가 열리고, `Mark Passed` / `Mark Failed`를 눌러 엣지 상태가 정상 변경되는지 확인.
+   - [x] 엣지 삭제 버튼을 눌렀을 때 Neo4j와 캔버스에서 정상 삭제되고 부모-자식 관계가 해제되는지 확인.

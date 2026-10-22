@@ -122,9 +122,10 @@ Neo4j 데이터베이스는 각 PC의 로컬 스토리지에 저장되므로, �
 3. 도착 노드의 **영역 어디든(노드 전체 히트박스)** 드래그하여 **드롭** (평소에는 중앙 1px로 은닉되어 내부 클릭을 방해하지 않으며, 연결 드래그 중에만 노드 전체 크기로 자동 확장됩니다)
 4. 연결 완료!
 
-### 엣지 삭제
+### 엣지 삭제 및 `Contains` 부모-자식 연결
 - **방법 1**: 엣지 클릭 → `Delete` 키
 - **방법 2**: 엣지 클릭 → 오른쪽 패널 `Delete` 버튼
+- **`Contains` / `Has` 부모-자식 엣지**: 부모(`Screen`)와 자식(`Component`)을 `Contains`(또는 `Has`) 타입으로 연결하면 자식 노드가 부모 컨테이너 내부로 들어가며, 캔버스에는 은은한 회색 점선 화살표(`.edge-contains`)가 함께 렌더링되어 직접 클릭·상태 마킹·삭제가 가능합니다. `Contains` 엣지를 삭제하거나 다른 타입으로 변경하면 자식 노드의 부모 귀속(`parentId`)도 즉시 해제됩니다.
 
 ---
 
@@ -155,6 +156,9 @@ Neo4j 데이터베이스는 각 PC의 로컬 스토리지에 저장되므로, �
 5. **변경 영향도 강조 (Change Impact Ripple)**:
    - 기획/스펙이 변경된 노드에서 `✨ 변경 표시`를 누르면 해당 노드에 보라색 맥동(`.node-modified-pulse`)과 `✨ [Spec Updated]` 칩이 표시되고, 하류 1~2홉 노드/엣지가 영향권(`.highlight-affected`)으로 강조됩니다.
    - 재검증 후 `✓ 변경사항 확인 완료 (Acknowledge)`를 누르면 강조가 해제됩니다.
+6. **화면 단위 다국어 스코프 감사 (`[🌐 이 화면 다국어 검증 모드]`) 및 5대 문자 세트 위험군 점검**:
+   - `Screen` 노드나 자식을 가진 부모 컨테이너를 선택하면 우측 패널에 `🌐 이 화면 다국어 검증 모드` 버튼이 표시됩니다. 클릭 시 해당 화면과 하위 자식 중 다국어(`Localization`/`I18N`) 배지가 부착된 노드만 선명하게 포커스됩니다.
+   - `Global_Badge_I18N` 배지 위에 마우스를 올리면 **5대 문자 세트 위험군**(① 라틴/유럽어군 텍스트 팽창·말줄임, ② 한·중·일 줄바꿈·두부현상(`□`), ③ 태국/베트남 성조 상하단 잘림, ④ 아랍/히브리 RTL 레이아웃·숫자 역전, ⑤ `{0}` 동적 변수 치환) 검증 가이드를 확인할 수 있으며, 배지의 `✓`/`✕` 버튼으로 즉시 판정합니다 (결함 발생 시 카드 상단에 붉은 `🏷️ [다국어...: 결함]` 칩 자동 노출).
 
 ### 근본 원인 역추적 (Root Cause Tracing)
 - 결함(Failed)이나 차단(Blocked)된 노드를 선택하고 우측 패널의 `🔍 결함 원인 역추적 (Trace Root Cause)` 버튼을 누르면, **최초 결함 발생 지점까지의 선행 경로(`Return` 제외)가 붉은색 펄스 애니메이션(`.highlight-root-cause`)**으로 시각화됩니다.
@@ -177,10 +181,11 @@ Neo4j 데이터베이스는 각 PC의 로컬 스토리지에 저장되므로, �
 - **연결된 이웃 (Test Group)**: 선택한 대상과 연관된 형제 엣지나 이웃 노드는 원래 밝기 유지 + 색상 강조
   - 🔵 파란 테두리 = 들어오는 방향 (incoming)
   - 🟡 노란 테두리 = 나가는 방향 (outgoing)
-- **관련 없는 엣지/노드**: 흐리게 처리 (opacity 15%)
+- **관련 없는 엣지/노드**: 흐리게 처리 (노드 opacity 35%~40% 및 그레이스케일, 엣지 opacity 20%)
 
-### 부모 노드 접기/펼치기 (Parent Collapse)
+### 부모 노드 접기/펼치기 (Parent Collapse) 및 하위 영향도 롤업
 - 자식 노드를 포함하는 부모 노드(`Contains`/`Has`) 우측 상단의 `−` 버튼을 누르면 하위 자식 노드들이 접히고, 부모 카드에 `[ 🟢 통과: X / 🔴 결함: Y (Z%) ]` 요약 진행률 배지가 표시됩니다.
+- **접힌 부모의 하위 영향도 표시**: 부모 `Screen`이 접힌 상태(`isCollapsed: true`)라도 내부 자식 컴포넌트가 글로벌 배지 영향도(`🔍 Impact`)나 스펙 변경 영향권(`.highlight-affected`)에 포함되어 있으면, 부모 카드가 흐려지지 않고 보라색 테두리(`.impact-highlighted` / `.highlight-affected`)와 함께 **`⚡ 영향 하위 컴포넌트 N개`** 요약 배지(`.parent-collapse-impact-summary`)가 표시됩니다.
 
 ### 여러 개의 평행 엣지 (Parallel Edges)
 - 두 노드 사이에 여러 개의 테스트 케이스가 평행하게 존재할 경우, 각 엣지 라벨이 겹치지 않도록 **곡선을 따라 엇갈리게(Staggering) 자동 배치**됩니다.
@@ -228,9 +233,14 @@ Neo4j 데이터베이스는 각 PC의 로컬 스토리지에 저장되므로, �
 
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| `GET` | `/api/graph?depth=N&filter=ALIAS` | 그래프 데이터 조회 |
+| `GET` | `/api/health` | 백엔드 및 Neo4j 연결 상태 확인 |
+| `GET` | `/api/graph?max_depth=N&filter=ALIAS` | 그래프 데이터 조회 |
 | `GET` | `/api/node-statuses` | 전체 노드 상태 경량 맵 조회 (전파 동기화용) |
-| `GET` | `/api/aliases` | 등록된 별칭 목록 |
+| `GET` | `/api/aliases` | 등록된 별칭 목록 조회 |
+| `PUT` | `/api/aliases/{old_alias}` | 전역 별칭 일괄 이름 변경 |
+| `DELETE` | `/api/aliases/{alias_to_delete}` | 전역 별칭 일괄 삭제 |
+| `GET` | `/api/nodes/{id}` | 단건 노드 기본 조회 |
+| `GET` | `/api/nodes/{id}/details` | 단건 노드 상세 인스펙터 조회 (`properties`, `checklist`, 부모/자식, 진입/진출 엣지) |
 | `POST` | `/api/nodes` | 노드 생성 |
 | `PUT` | `/api/nodes/{id}` | 노드 수정 및 하류 상태 연쇄 전파 |
 | `POST` | `/api/nodes/{id}/mark-modified` | 노드 스펙 변경(Modified) 표시 |
@@ -239,4 +249,14 @@ Neo4j 데이터베이스는 각 PC의 로컬 스토리지에 저장되므로, �
 | `POST` | `/api/edges` | 엣지 생성 |
 | `PUT` | `/api/edges/{id}` | 엣지 수정 |
 | `DELETE` | `/api/edges/{id}` | 엣지 삭제 |
+| `GET` | `/api/globals` | 전역 배지(`is_global=true`) 노드 목록 조회 |
+| `GET` | `/api/impact/{global_node_id}` | 특정 전역 배지 노드의 연결 영향도 조회 |
+| `GET` | `/api/presets` | 저장된 JSON 프리셋 목록 조회 |
+| `GET` | `/api/presets/{preset_id}` | 특정 프리셋 상세 JSON 조회 |
+| `POST` | `/api/presets` | 현재 그래프를 새 JSON 프리셋으로 저장 |
+| `POST` | `/api/presets/{preset_id}/load?clean=BOOL` | 선택한 프리셋을 DB에 로드 (`clean=true` 시 자동 백업 포함) |
+| `GET` | `/api/qa/status-summary?q=QUERY` | 특정 화면/기능 검증 상태 및 차단 근본 원인 요약 |
+| `GET` | `/api/qa/impact-scope?q=QUERY` | 특정 노드 수정 시 하류 재검증 영향 범위 산출 |
+| `GET` | `/api/qa/audit-cross-cutting?aspect=ASPECT&scope_root_id=ID` | 전역 배지(다국어 등) 기준 연결 화면 전수/범위 감사 |
+| `GET` | `/api/qa/next-targets` | 선행 조건 충족 기반 즉시 테스트 가능 타겟 추천 |
 | `POST` | `/api/dev/reset-seed` | 테스트용 시드 데이터 초기화 |

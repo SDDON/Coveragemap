@@ -92,15 +92,14 @@ graph TD
 
 새로운 테스트 방법론의 데이터 모델 및 워크플로우에 맞춰 제거 또는 대폭 단순화를 검토할 수 있는 항목들입니다.
 
-### 4.1. 글로벌 노드 배지 & 호버 고스트 엣지 / Impact Overlay 시스템
-- **위치**: `frontend/src/App.tsx` (`rightPanelTab === 'globals'`, `hoveredGlobalBadgeId`, `impactMode` 등), `frontend/src/CoverageNode.tsx` (`node-badges-section`, `badge-pill` 등)
-- **현황 및 문제점**:
+### 4.1. 글로벌 노드 배지 & Impact Overlay 시스템 (호버 고스트 엣지 제거 완료)
+- **위치**: `frontend/src/App.tsx` (`rightPanelTab === 'globals'`, `impactMode` 등), `frontend/src/CoverageNode.tsx` (`node-badges-section`, `badge-pill` 등)
+- **현황 및 개선 완료 사항**:
   - 우측 패널에서 글로벌 노드를 생성하여 일반 노드 카드 내부에 의존성 알약(Pill Badge)으로 부착합니다.
-  - 배지 마우스 호버 시 캔버스 중앙에 임시 노드를 배치하고 가상 점선 엣지(`hover-edge-...`)를 렌더링하며, 하단에 `Impact Overlay Stats Bar`를 표시합니다.
-  - 이 과정에서 커스텀 윈도우 이벤트(`selectBadgeNode`, `markBadgeStatus`, `hoverGlobalBadge`)와 임시 노드/엣지 오버라이드가 다수 발생하여 `App.tsx`와 `CoverageNode.tsx`의 렌더링 복잡도를 크게 높이고 있습니다.
+  - 과거 배지 마우스 호버 시 캔버스 중앙에 임시 노드를 배치하고 가상 점선 엣지(`hover-edge-...`)를 생성하던 무거운 고스트 엣지 메커니즘은 **제거 완료**되었으며, 현재는 경량 포털 툴팁(`app-tooltip`)과 클릭 기반 `impactMode` 하이라이트(접힌 부모 `Screen`으로의 `.impact-highlighted` 상향 롤업 포함)로 깔끔하게 동작합니다.
+  - 다만 커스텀 윈도우 이벤트(`selectBadgeNode`, `markBadgeStatus`)가 남아 있으므로, 향후 추가 단순화 시 React Context 또는 콜백 prop으로 일원화할 수 있습니다.
 - **단순화 방향 (SSOT 권장)**:
   - SSOT 4.2장 및 5장 Rule 6에 따르면, 횡단 관심사(다국어, 사운드 등)는 무거운 별도 노드 엔티티 대신 **단순 속성 체크리스트 또는 동적 이슈 칩(Dynamic Issue Chips)**으로 평탄화(Flattening)하도록 규정되어 있습니다.
-  - 새로운 방법론에서 복잡한 글로벌 엔티티 연동이 불필요하다면, 고스트 엣지 및 배지 핀 오버레이를 걷어내고 단순 칩/태그 형태로 일원화할 수 있습니다.
 
 ### 4.2. 임의의 키-값 동적 속성 편집기 (`Custom Properties`)
 - **위치**: `frontend/src/App.tsx` 우측 Edit 탭 내 `SYSTEM_RESERVED_KEYS` 제외 프로퍼티 편집 UI

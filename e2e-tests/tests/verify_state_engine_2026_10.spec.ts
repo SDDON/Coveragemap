@@ -273,6 +273,204 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await markFailBtn.click({ force: true });
     await expect(settingsNode.locator('.fault-chip')).toBeVisible();
   });
+
+  test('I. Edge connection line (.react-flow__connectionline) remains draggable from any node outer rim after Contains connection', async ({ page, request }) => {
+    // 1. Create a System container node and connect it with Contains to Game_Settings via onConnect
+    const sysRes = await request.post('/api/nodes', {
+      data: { label: 'System', name: 'Subflow_Container', aliases: [], test_status: 'Untested', properties: {} },
+    });
+    expect(sysRes.ok()).toBeTruthy();
+    const sysId = await sysRes.json();
+
+    const graphRefresh1 = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await graphRefresh1;
+
+    // Drag from Subflow_Container's outer rim to Game_Settings to trigger onConnect (System -> Contains)
+    const sysCustom = nodeLocator(page, sysId).locator('.custom-node');
+    const settingsCustom = nodeLocator(page, ids.settings).locator('.custom-node');
+    const sysBox = await sysCustom.boundingBox();
+    const settingsBox = await settingsCustom.boundingBox();
+    expect(sysBox).not.toBeNull();
+    expect(settingsBox).not.toBeNull();
+
+    const graphRefresh2 = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.mouse.move(sysBox!.x + sysBox!.width / 2, sysBox!.y + sysBox!.height + 4);
+    await page.mouse.down();
+    await page.mouse.move(settingsBox!.x + settingsBox!.width / 2, settingsBox!.y + settingsBox!.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await graphRefresh2;
+    await page.waitForTimeout(800);
+
+    // 2. Select the parent container header (sysId) and verify child node still sits above parent container in z-index
+    await nodeLocator(page, sysId).click({ position: { x: 40, y: 30 }, force: true });
+    await expect(page.locator('.details-panel .node-id')).toContainText(sysId);
+    const parentZ = await nodeLocator(page, sysId).evaluate(el => Number(window.getComputedStyle(el).zIndex) || 0);
+    const childZ = await nodeLocator(page, ids.settings).evaluate(el => Number(window.getComputedStyle(el).zIndex) || 0);
+    expect(childZ).toBeGreaterThan(parentZ);
+
+    // 3. Drag from the child node's outer rim (.halo-handle) and verify .react-flow__connectionline renders with a non-zero path
+    const childRect = await settingsCustom.boundingBox();
+    expect(childRect).not.toBeNull();
+    await page.mouse.move(childRect!.x - 4, childRect!.y + childRect!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(childRect!.x - 90, childRect!.y + childRect!.height / 2 - 40, { steps: 8 });
+
+    const connLine = page.locator('.react-flow__connectionline path');
+    await expect(connLine).toHaveCount(1);
+    const dAttr = await connLine.getAttribute('d');
+    expect(dAttr).toBeTruthy();
+    const [mPart, lPart] = (dAttr || '').split(' ');
+    expect(mPart?.slice(1)).not.toBe(lPart?.slice(1));
+    await page.mouse.move(10, 10);
+    await page.mouse.up();
+  });
+
+  test('J. Contains edge remains visible on canvas with .edge-contains dashed styling and deleting it unparents child', async ({ page, request }) => {
+    const createRes = await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    expect(createRes.ok()).toBeTruthy();
+
+    const graphRefresh = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await graphRefresh;
+    await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible();
+
+    // 1. Contains edge must be rendered on canvas with .edge-contains class and dashed stroke-dasharray
+    const containsEdge = page.locator('.react-flow__edge.edge-contains').first();
+    await expect(containsEdge).toBeVisible();
+    const dashArray = await containsEdge.locator('path.react-flow__edge-path').evaluate(
+      el => window.getComputedStyle(el).strokeDasharray
+    );
+    expect(dashArray).not.toBe('none');
+
+    // 2. Collapsing parent hides child and Contains edge; expanding parent restores Contains edge (Spec 5.3)
+    const collapseBtn = nodeLocator(page, ids.root).locator('.collapse-btn');
+    await collapseBtn.click();
+    await expect(nodeLocator(page, ids.settings)).toBeHidden();
+    await expect(page.locator('.react-flow__edge.edge-contains')).toHaveCount(0);
+
+    await collapseBtn.click();
+    await expect(nodeLocator(page, ids.settings)).toBeVisible();
+    await expect(containsEdge).toBeVisible();
+
+    // 3. Clicking the Contains edge (without force: true) selects it in the Inspector so QA can mark status or delete it
+    await containsEdge.locator('.react-flow__edge-interaction').click();
+    await expect(page.locator('#edgeType')).toHaveValue(/Contains/i);
+
+    // 4. Marking the Contains edge Failed in Inspector updates its status class
+    const statusPutPromise = page.waitForResponse(
+      res => res.url().includes('/api/edges/') && res.request().method() === 'PUT'
+    );
+    await page.locator('.details-panel button.danger', { hasText: 'Mark Failed' }).click();
+    await statusPutPromise;
+    await expect(containsEdge).toHaveClass(/\bstatus-failed\b/);
+
+    // 5. Deleting the Contains edge via Inspector removes the edge and unparents the child (collapse button disappears)
+    const delResponsePromise = page.waitForResponse(
+      res => res.url().includes('/api/edges/') && res.request().method() === 'DELETE'
+    );
+    await page.locator('.details-panel button.danger', { hasText: 'Delete' }).click();
+    await delResponsePromise;
+
+    await expect(page.locator('.react-flow__edge.edge-contains')).toHaveCount(0);
+    await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toHaveCount(0);
+    await expect(nodeLocator(page, ids.settings)).toBeVisible();
+  });
+
+  test('K. Collapsed parent Screen rolls up child Change Impact (.highlight-affected) and Global Impact (.impact-highlighted) with summary badge', async ({ page, request }) => {
+    // 1. Create global node and attach Contains children (ids.settings, ids.child) under ids.root
+    const gRes = await request.post('/api/nodes', {
+      data: {
+        label: 'Component',
+        name: 'Localization',
+        aliases: ['i18n'],
+        test_status: 'Untested',
+        properties: { is_global: 'true', description: '다국어 검증' },
+      },
+    });
+    expect(gRes.ok()).toBeTruthy();
+    const globalId = await gRes.json();
+
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.child, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.settings, target: globalId, type: 'Depends_On', test_status: 'Untested', properties: {} },
+    });
+
+    // Mark child (ids.settings) as modified
+    const modRes = await request.post(`/api/nodes/${encodeURIComponent(ids.settings)}/mark-modified`, {
+      data: { note: '옵션 슬라이더 UI 개편' },
+    });
+    expect(modRes.ok()).toBeTruthy();
+
+    const graphRefresh = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await graphRefresh;
+
+    // 2. Collapse parent Screen (ids.root) -> parent must have .highlight-affected and show "⚡ 영향 하위 컴포넌트 1개"
+    const parentNode = nodeLocator(page, ids.root);
+    const collapseBtn = parentNode.locator('.collapse-btn');
+    await expect(collapseBtn).toBeVisible();
+    await collapseBtn.click({ force: true });
+
+    await expect(nodeLocator(page, ids.settings)).toBeHidden();
+    await expect(parentNode).toHaveClass(/\bhighlight-affected\b/);
+    const impactBadge = parentNode.locator('.parent-collapse-impact-summary');
+    await expect(impactBadge).toBeVisible();
+    await expect(impactBadge).toContainText('1');
+
+    // 3. Activate Global Impact Mode for Localization in Globals tab while parent is collapsed -> parent gets .impact-highlighted
+    await page.getByRole('button', { name: 'Globals' }).click();
+    const impactBtn = page.locator('button[title="Show impact: which nodes are affected by Localization"]');
+    await expect(impactBtn).toBeVisible();
+    await impactBtn.click();
+
+    await expect(parentNode).toHaveClass(/\bimpact-highlighted\b/);
+    await expect(impactBadge).toBeVisible();
+    await expect(impactBadge).toContainText('1');
+  });
+
+  test('L. GET /api/nodes/{id}/details returns full node metadata, checklist, parent/children, and incoming/outgoing edges', async ({ request }) => {
+    await request.put(`/api/nodes/${encodeURIComponent(ids.settings)}`, {
+      data: {
+        test_status: 'Passed',
+        properties: {
+          description: '환경설정 팝업 상세 스펙',
+          checklist: [
+            { id: 'chk_1', text: '배경음 볼륨 슬라이더 동작 확인', status: 'Passed' },
+            { id: 'chk_2', text: '효과음 음소거 토글 확인', status: 'Untested' },
+          ],
+        },
+      },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+
+    // Query by node ID and by node name
+    const resById = await request.get(`/api/nodes/${encodeURIComponent(ids.settings)}/details`);
+    expect(resById.ok()).toBeTruthy();
+    const detailsById = await resById.json();
+    expect(detailsById.id).toBe(ids.settings);
+    expect(detailsById.name).toBe('Game Settings');
+    expect(detailsById.is_global).toBe(false);
+    expect(Array.isArray(detailsById.checklist)).toBe(true);
+    expect(detailsById.checklist.length).toBe(2);
+    expect(detailsById.parent?.id).toBe(ids.root);
+    expect(detailsById.incoming_edges.some((e: any) => e.source_id === ids.root && e.type.toLowerCase() === 'contains')).toBe(true);
+
+    const resByName = await request.get(`/api/nodes/${encodeURIComponent('Game Settings')}/details`);
+    expect(resByName.ok()).toBeTruthy();
+    const detailsByName = await resByName.json();
+    expect(detailsByName.id).toBe(ids.settings);
+  });
 });
+
 
 

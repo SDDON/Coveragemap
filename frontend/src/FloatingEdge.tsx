@@ -116,7 +116,7 @@ export default function FloatingEdge({
               fontSize: '0.7rem',
               color: '#e57373',
               fontWeight: 500,
-              pointerEvents: 'all',
+              pointerEvents: 'none',
               backgroundColor: 'rgba(255, 255, 255, 0.8)',
               padding: '2px 6px',
               borderRadius: '4px',
