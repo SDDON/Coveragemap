@@ -22,8 +22,8 @@ cd backend && uv run uvicorn main:app --port 8190 --reload
 | `list_nodes` | 전체 그래프 조회 (노드 + 엣지) | "현재 그래프 보여줘" |
 | `find_node` | 이름/별칭·라벨(`label`)·전역 여부(`is_global`) 필터로 노드 검색 (상세 요약 포함) | "슬롯 노드 중 일반 노드만 찾아줘" |
 | `get_node_details` | 특정 노드의 전체 프로퍼티(`is_global`, `checklist` 등), 부모-자식 및 진입/진출 엣지 상세 조회 (Zero-Script Inspector) | "공명 노드 상세 정보 보여줘" |
-| `create_node` | 새 노드 생성 (`label`, `name`, `aliases`) | "Feature 노드 하나 만들어, 이름은 PAYMENT" |
-| `create_edge` | 두 노드 연결 (`source`, `target`, `type`) | "LOGIN에서 DASHBOARD로 연결해" |
+| `create_node` | 새 노드 생성 (`label`, `name`, `aliases`, 선택: `test_status`, `is_global`, `description`, `issue_link`, `checklist`) | "결제 팝업 Modal 노드 만들고 체크리스트 2개 넣어줘" |
+| `create_edge` | 두 노드 연결 (`source`, `target`, `type`, 선택: `action`, `test_status`) | "LOGIN에서 DASHBOARD로 '로그인 버튼 터치' 액션으로 연결해" |
 | `create_path` | **경로 한번에 생성** (A→B→C) | "LOGIN → DASHBOARD → SETTINGS 경로 만들어" |
 | `mark_status` | 노드/엣지 테스트 상태 변경 (`Untested`/`Passed`/`Failed`/`Blocked`, 수동 고정 지원) | "LOGIN 노드를 Passed로 마킹해" |
 | `delete_node` | 노드 삭제 (`node_id`) | "PAYMENT 노드 삭제해" |

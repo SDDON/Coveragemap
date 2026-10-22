@@ -318,6 +318,13 @@ def create_node(session, node_data: NodeCreate) -> str:
     if check_result:
         raise ValueError("중복된 이름입니다. 기존 노드를 재사용하시거나, 구분하려면 해시태그를 붙여주세요 (예: 타이틀 화면 #상점)")
 
+    effective_test_status = node_data.test_status
+    raw_checklist = (node_data.properties or {}).get("checklist") if node_data.properties else None
+    if effective_test_status == "Untested" and isinstance(raw_checklist, list) and len(raw_checklist) > 0:
+        derived_status = checklist_status(raw_checklist)
+        if derived_status:
+            effective_test_status = derived_status
+
     query = f"""
     CREATE (n:`{node_data.label}`)
     SET n.name = $name,
@@ -335,7 +342,7 @@ def create_node(session, node_data: NodeCreate) -> str:
         aliases=node_data.aliases,
         description=node_data.description,
         issue_link=node_data.issue_link,
-        test_status=node_data.test_status,
+        test_status=effective_test_status,
         is_manual_override=node_data.is_manual_override,
         override_reason=node_data.override_reason,
         properties=serialize_props_for_neo4j(node_data.properties)

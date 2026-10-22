@@ -41,6 +41,51 @@ def _api(method: str, path: str, body: dict | None = None) -> dict | str:
             return r.text
 
 
+def _normalize_checklist(raw_checklist: list) -> list[dict]:
+    """문자열 또는 객체 배열 형태의 체크리스트 입력을 표준 {id, text, status} 객체 배열로 정규화합니다."""
+    normalized: list[dict] = []
+    used_ids: set[str] = set()
+
+    def _unique_id(preferred: str, fallback_idx: int) -> str:
+        candidate = preferred or f"chk_{fallback_idx}"
+        seq = fallback_idx
+        while candidate in used_ids:
+            seq += 1
+            candidate = f"chk_{seq}"
+        used_ids.add(candidate)
+        return candidate
+
+    for idx, item in enumerate(raw_checklist, start=1):
+        if isinstance(item, str):
+            text_val = item.strip()
+            if text_val:
+                normalized.append({
+                    "id": _unique_id(f"chk_{idx}", idx),
+                    "text": text_val,
+                    "status": "Untested",
+                })
+        elif isinstance(item, dict):
+            text_val = str(item.get("text", "")).strip()
+            if not text_val:
+                continue
+            raw_id = str(item.get("id") or "").strip()
+            item_id = _unique_id(raw_id, idx)
+            raw_status = item.get("status")
+            if raw_status in ("Untested", "Passed", "Failed", "Blocked"):
+                status_val = raw_status
+            elif item.get("checked") is True:
+                status_val = "Passed"
+            else:
+                status_val = "Untested"
+            normalized.append({
+                **item,
+                "id": item_id,
+                "text": text_val,
+                "status": status_val,
+            })
+    return normalized
+
+
 # ─── Tool Definitions ──────────────────────────────────────────────
 
 @server.list_tools()
@@ -61,13 +106,13 @@ async def list_tools():
         ),
         Tool(
             name="create_node",
-            description="새 노드를 생성합니다. label은 노드 유형(Feature, TestCase 등), name은 구체적 이름입니다.",
+            description="새 노드를 생성합니다. label은 노드 유형(Feature, TestCase, Screen 등), name은 구체적 이름입니다. 선택적으로 test_status, 전역 여부(is_global), 설명(description), 이슈/문서 링크(issue_link), 내부 체크리스트(checklist)를 생성 시점에 함께 지정할 수 있습니다.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "label": {
                         "type": "string",
-                        "description": "노드 유형 (예: Feature, TestCase, Screen)"
+                        "description": "노드 유형 (예: Feature, TestCase, Screen, Component, Modal)"
                     },
                     "name": {
                         "type": "string",
@@ -77,6 +122,45 @@ async def list_tools():
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "별칭/태그 목록 (선택사항)"
+                    },
+                    "test_status": {
+                        "type": "string",
+                        "enum": ["Untested", "Passed", "Failed", "Blocked"],
+                        "description": "초기 테스트 상태 (선택사항, 기본값: Untested)",
+                        "default": "Untested"
+                    },
+                    "is_global": {
+                        "type": "boolean",
+                        "description": "전역 공통 노드(배지) 여부 (선택사항, 기본값: false)"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "노드/기능 설명 또는 전역 배지 검증 가이드 (선택사항)"
+                    },
+                    "issue_link": {
+                        "type": "string",
+                        "description": "연결된 Jira/이슈 또는 외부 테이블형 테스트 문서 링크 (선택사항)"
+                    },
+                    "checklist": {
+                        "type": "array",
+                        "description": "B안 노드 내부 체크리스트 항목 목록 (문자열 배열 또는 {id, text, status} 객체 배열)",
+                        "items": {
+                            "anyOf": [
+                                {"type": "string"},
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "text": {"type": "string"},
+                                        "status": {
+                                            "type": "string",
+                                            "enum": ["Untested", "Passed", "Failed", "Blocked"]
+                                        }
+                                    },
+                                    "required": ["text"]
+                                }
+                            ]
+                        }
                     }
                 },
                 "required": ["label", "name"]
@@ -84,7 +168,7 @@ async def list_tools():
         ),
         Tool(
             name="create_edge",
-            description="두 노드 사이에 엣지(연결)를 생성합니다. source와 target은 노드 ID입니다.",
+            description="두 노드 사이에 엣지(연결)를 생성합니다. source와 target은 노드 ID이며, 선택적으로 엣지 유형(type), 트리거 조건/액션명(action), 초기 테스트 상태(test_status)를 지정할 수 있습니다.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -98,8 +182,18 @@ async def list_tools():
                     },
                     "type": {
                         "type": "string",
-                        "description": "엣지 유형 (예: Tests, Depends_On, Transition)",
+                        "description": "엣지 유형 (예: Tests, Depends_On, Transition, Return, Contains)",
                         "default": "Transition"
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "엣지 트리거 조건/액션명 (예: '결제하기 버튼 터치', '닫기 버튼 클릭')"
+                    },
+                    "test_status": {
+                        "type": "string",
+                        "enum": ["Untested", "Passed", "Failed", "Blocked"],
+                        "description": "초기 테스트 상태 (선택사항, 기본값: Untested)",
+                        "default": "Untested"
                     }
                 },
                 "required": ["source", "target"]
@@ -358,24 +452,48 @@ async def call_tool(name: str, arguments: dict):
         return [TextContent(type="text", text="\n".join(lines))]
     
     elif name == "create_node":
-        body = {
+        props: dict = {}
+        if "is_global" in arguments and arguments["is_global"] is not None:
+            props["is_global"] = "true" if bool(arguments["is_global"]) else "false"
+        if "checklist" in arguments and isinstance(arguments["checklist"], list):
+            props["checklist"] = _normalize_checklist(arguments["checklist"])
+
+        explicit_status = arguments.get("test_status")
+        if not explicit_status and props.get("checklist"):
+            statuses = [c.get("status", "Untested") for c in props["checklist"]]
+            if "Failed" in statuses:
+                explicit_status = "Failed"
+            elif "Blocked" in statuses:
+                explicit_status = "Blocked"
+            elif all(s == "Passed" for s in statuses):
+                explicit_status = "Passed"
+
+        body: dict = {
             "label": arguments["label"],
             "name": arguments["name"],
             "aliases": arguments.get("aliases", []),
-            "test_status": "Untested",
-            "properties": {}
+            "test_status": explicit_status or "Untested",
+            "properties": props,
         }
+        if arguments.get("description") is not None:
+            body["description"] = arguments["description"]
+        if arguments.get("issue_link") is not None:
+            body["issue_link"] = arguments["issue_link"]
+
         result = _api("POST", "/api/nodes", body)
         return [TextContent(type="text", text=f"노드 생성 완료. ID: {result}")]
     
     elif name == "create_edge":
-        body = {
+        body: dict = {
             "source": arguments["source"],
             "target": arguments["target"],
-            "type": arguments.get("type", "Transition"),
-            "test_status": "Untested",
-            "properties": {}
+            "type": arguments.get("type") or "Transition",
+            "test_status": arguments.get("test_status") or "Untested",
+            "properties": {},
         }
+        if arguments.get("action") is not None:
+            body["action"] = arguments["action"]
+
         result = _api("POST", "/api/edges", body)
         return [TextContent(type="text", text=f"엣지 생성 완료. ID: {result}")]
     

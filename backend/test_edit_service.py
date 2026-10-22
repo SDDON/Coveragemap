@@ -418,4 +418,193 @@ def test_mcp_server_get_node_details_and_find_node():
         assert "공명" in res_wildcard[0].text
 
 
+def test_mcp_server_create_node_and_create_edge_extended():
+    import asyncio
+    import json
+    import sys
+    from pathlib import Path
+
+    mcp_dir = str(Path(__file__).resolve().parent.parent / "mcp_server")
+    if mcp_dir not in sys.path:
+        sys.path.insert(0, mcp_dir)
+    import server as mcp_srv
+
+    tools = {t.name: t for t in asyncio.run(mcp_srv.list_tools())}
+    node_schema_props = tools["create_node"].inputSchema["properties"]
+    for key in ("label", "name", "aliases", "test_status", "is_global", "description", "issue_link", "checklist"):
+        assert key in node_schema_props
+
+    edge_schema_props = tools["create_edge"].inputSchema["properties"]
+    for key in ("source", "target", "type", "action", "test_status"):
+        assert key in edge_schema_props
+
+    # 1) create_node: 문자열/객체 혼합 체크리스트 정규화 + is_global + description + issue_link + test_status 전달 검증
+    with patch.object(mcp_srv, "_api", return_value="4:abc:999") as mock_api:
+        res_node = asyncio.run(
+            mcp_srv.call_tool(
+                "create_node",
+                {
+                    "label": "Modal",
+                    "name": "결제 확인 팝업 #Popup",
+                    "aliases": ["#Popup", "PaymentConfirm"],
+                    "test_status": "Passed",
+                    "is_global": False,
+                    "description": "인앱 결제 최종 확인 모달",
+                    "issue_link": "https://docs.google.com/spreadsheets/d/payment-tc",
+                    "checklist": [
+                        "  상품명 및 결제 금액 텍스트 정상 노출  ",
+                        "",
+                        {"id": "chk_custom_2", "text": "취소 버튼 터치 시 팝업 닫힘", "status": "Passed"},
+                        {"text": "배경 Dimmed 영역 터치 차단 확인", "checked": True},
+                    ],
+                },
+            )
+        )
+        assert "노드 생성 완료. ID: 4:abc:999" in res_node[0].text
+        mock_api.assert_called_once_with(
+            "POST",
+            "/api/nodes",
+            {
+                "label": "Modal",
+                "name": "결제 확인 팝업 #Popup",
+                "aliases": ["#Popup", "PaymentConfirm"],
+                "test_status": "Passed",
+                "description": "인앱 결제 최종 확인 모달",
+                "issue_link": "https://docs.google.com/spreadsheets/d/payment-tc",
+                "properties": {
+                    "is_global": "false",
+                    "checklist": [
+                        {"id": "chk_1", "text": "상품명 및 결제 금액 텍스트 정상 노출", "status": "Untested"},
+                        {"id": "chk_custom_2", "text": "취소 버튼 터치 시 팝업 닫힘", "status": "Passed"},
+                        {"id": "chk_4", "text": "배경 Dimmed 영역 터치 차단 확인", "checked": True, "status": "Passed"},
+                    ],
+                },
+            },
+        )
+
+    # 2) create_node: 최소 인자 호출 시 기존 기본값 호환성 검증
+    with patch.object(mcp_srv, "_api", return_value="4:abc:1000") as mock_api_min:
+        asyncio.run(mcp_srv.call_tool("create_node", {"label": "Screen", "name": "타이틀 화면"}))
+        mock_api_min.assert_called_once_with(
+            "POST",
+            "/api/nodes",
+            {
+                "label": "Screen",
+                "name": "타이틀 화면",
+                "aliases": [],
+                "test_status": "Untested",
+                "properties": {},
+            },
+        )
+
+    # 3) create_edge: action 및 test_status 전달 검증
+    with patch.object(mcp_srv, "_api", return_value="5:abc:555") as mock_edge_api:
+        res_edge = asyncio.run(
+            mcp_srv.call_tool(
+                "create_edge",
+                {
+                    "source": "4:abc:10",
+                    "target": "4:abc:999",
+                    "type": "Transition",
+                    "action": "결제하기 버튼 터치",
+                    "test_status": "Passed",
+                },
+            )
+        )
+        assert "엣지 생성 완료. ID: 5:abc:555" in res_edge[0].text
+        mock_edge_api.assert_called_once_with(
+            "POST",
+            "/api/edges",
+            {
+                "source": "4:abc:10",
+                "target": "4:abc:999",
+                "type": "Transition",
+                "action": "결제하기 버튼 터치",
+                "test_status": "Passed",
+                "properties": {},
+            },
+        )
+
+    # 4) graph_service.create_node / create_edge 레벨에서 체크리스트 직렬화 및 action 저장 검증
+    mock_session = Mock()
+    mock_check = Mock()
+    mock_check.single.return_value = None
+    mock_created = Mock()
+    mock_created.single.return_value = {"id": "4:abc:999"}
+    mock_session.run.side_effect = [mock_check, mock_created]
+
+    checklist_payload = [{"id": "chk_1", "text": "항목 1", "status": "Untested"}]
+    created_id = create_node(
+        mock_session,
+        NodeCreate(
+            label="Modal",
+            name="결제 확인 팝업",
+            description="설명",
+            issue_link="https://jira.example.com/1",
+            test_status="Passed",
+            properties={"is_global": "true", "checklist": checklist_payload},
+        ),
+    )
+    assert created_id == "4:abc:999"
+    create_kwargs = mock_session.run.call_args_list[1][1]
+    assert create_kwargs["description"] == "설명"
+    assert create_kwargs["issue_link"] == "https://jira.example.com/1"
+    assert create_kwargs["test_status"] == "Passed"
+    assert create_kwargs["properties"]["is_global"] == "true"
+    assert json.loads(create_kwargs["properties"]["checklist"]) == checklist_payload
+
+    edge_session = make_recalc_aware_session({"id": "5:abc:555"})
+    edge_id = create_edge(
+        edge_session,
+        EdgeCreate(
+            source="4:abc:10",
+            target="4:abc:999",
+            type="Transition",
+            action="결제하기 버튼 터치",
+            test_status="Passed",
+        ),
+    )
+    assert edge_id == "5:abc:555"
+    edge_kwargs = edge_session.run.call_args_list[0][1]
+    assert edge_kwargs["action"] == "결제하기 버튼 터치"
+    assert edge_kwargs["test_status"] == "Passed"
+
+    # 5) 체크리스트 ID 충돌 방지 및 test_status 미지정 시 체크리스트 상태 기반 자동 판정 검증
+    with patch.object(mcp_srv, "_api", return_value="4:abc:2000") as mock_api_auto:
+        asyncio.run(
+            mcp_srv.call_tool(
+                "create_node",
+                {
+                    "label": "Modal",
+                    "name": "오류 안내 팝업",
+                    "checklist": [
+                        {"id": "chk_2", "text": "첫 번째 항목", "status": "Passed"},
+                        "두 번째 항목 (chk_2와 ID 충돌 없이 chk_3 부여)",
+                        {"text": "세 번째 결함 항목", "status": "Failed"},
+                    ],
+                },
+            )
+        )
+        posted_body = mock_api_auto.call_args[0][2]
+        assert posted_body["test_status"] == "Failed"
+        ids_assigned = [c["id"] for c in posted_body["properties"]["checklist"]]
+        assert len(ids_assigned) == len(set(ids_assigned))
+        assert ids_assigned == ["chk_2", "chk_3", "chk_4"]
+
+    mock_session_auto = Mock()
+    mock_check_auto = Mock()
+    mock_check_auto.single.return_value = None
+    mock_created_auto = Mock()
+    mock_created_auto.single.return_value = {"id": "4:abc:2001"}
+    mock_session_auto.run.side_effect = [mock_check_auto, mock_created_auto]
+    create_node(
+        mock_session_auto,
+        NodeCreate(
+            label="Modal",
+            name="오류 안내 팝업 DB",
+            properties={"checklist": [{"id": "chk_1", "text": "결함", "status": "Failed"}]},
+        ),
+    )
+    auto_kwargs = mock_session_auto.run.call_args_list[1][1]
+    assert auto_kwargs["test_status"] == "Failed"
 

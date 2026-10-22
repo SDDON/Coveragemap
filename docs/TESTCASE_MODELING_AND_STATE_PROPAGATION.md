@@ -76,6 +76,9 @@ flowchart LR
 
 B안은 테스터의 정보 과부하를 방지하고 일상적인 QA 생산성을 극대화하기 위한 핵심 구현 규격입니다.
 
+> 💡 **체크리스트 비대화 방지 및 외부 테이블형 테스트 문서 조합 권장 원칙**:  
+> B안(노드 내부 체크리스트)은 화면/컴포넌트 단위의 핵심 UI·기능 스펙을 빠르게 점검하기 위한 수단입니다. **단, 확인할 검증 항목이 길어지거나 복잡한 경우에는 노드 내부 체크리스트에 무리하게 우겨넣지 않고, `issue_link`(이슈/문서 링크) 등을 통해 전통적인 테이블(스프레드시트) 형태의 테스트 문서와 조합하여 사용하는 것이 권장됩니다.**
+
 #### 1. 데이터 모델 (Data Schema)
 노드의 `properties.checklist` 필드에 JSON 배열로 저장합니다:
 ```json
@@ -316,17 +319,9 @@ flowchart LR
 - **향후 재검토 방안**:
   - 부모-자식 그룹핑(`Contains`/`Has`)을 순수 구조적 포함 관계(가중치 `0`)로만 취급하길 원하는 피드백이 확인되면, `compute_synthesized_status` 및 프론트엔드 `statusPropagation.ts`에서 `Return`뿐만 아니라 `Contains`/`Has` 관계도 상태 합성 입력에서 제외하도록 개선합니다.
 
-### 8.4. MCP 대화형 생성 시 내부 체크리스트(`properties.checklist`) 및 엣지 `action` 직접 입력 미지원
-- **현재 동작 및 예상 불편**:
-  - 현재 MCP 서버(`mcp_server/server.py`)의 `create_node`는 `label`, `name`, `aliases`만 받고 `properties`(체크리스트 등) 인자를 받지 않으며, `create_edge`도 `action` 속성을 받지 않습니다.
-  - 따라서 AI 에이전트(MCP)와의 대화만으로 그래프 골격을 만든 뒤, 세부 체크리스트나 엣지 트리거(`action`)는 웹 UI의 Inspector 패널이나 JSON 프리셋에서 추가 입력해야 합니다 (단, 조회는 `get_node_details` 및 확장된 `find_node`로 가능).
-- **향후 재검토 방안**:
-  - MCP 대화를 통한 테스트 케이스 일괄 생성 빈도가 높아지면, `create_node` / `update_node` 및 `create_edge` MCP 도구 스키마에 `checklist` 배열과 `action` 문자열 파라미터를 확장합니다.
-
-### 8.5. 전역 배지(`is_global`)의 엣지 방향성 및 영향도 리포트(`get_impact_scope`) 라벨 필터
+### 8.4. 전역 배지(`is_global`)의 엣지 방향성 및 영향도 리포트(`get_impact_scope`) 라벨 필터
 - **현재 동작 및 예상 불편**:
   - 웹 UI에서 전역 배지를 부착하면 `대상노드 → 전역배지` 방향으로 `Depends_On`이 생성되어 배지가 실패해도 대상 노드가 `Blocked`되지 않고 붉은 결함 칩(`🔴`)만 표시되지만, 외부 JSON 프리셋에서 역방향(`전역배지 → 대상노드`)으로 작성할 경우 배지 실패 시 대상 노드가 `Blocked`로 전환될 수 있습니다.
   - 또한 `get_impact_scope` API의 텍스트 요약(`recommended_regression_scope`)은 현재 `Screen`, `Feature`, `TestCase` 라벨만 필터링하여 반환하므로 `Component`, `Modal`, `Data` 등 다른 라벨 노드는 요약 텍스트에서 누락될 수 있습니다 (단, 캔버스 `.highlight-affected` 시각 하이라이트 및 접힌 부모 롤업에는 정상 표시됨).
 - **향후 재검토 방안**:
   - 프리셋 작성 및 영향도 텍스트 리포트 활용 과정에서 혼선이 발생할 경우, 전역 배지 엣지 방향 정규화 및 `recommended_regression_scope` 대상 라벨 확장을 검토합니다.
-
