@@ -129,6 +129,11 @@ export default function App() {
   const [scopedAuditRootId, setScopedAuditRootId] = useState<string | null>(null);
   // 특정 콘텐츠 중심 확인을 위한 포커스 고정 노드 ID (Content Focus Pinning)
   const [pinnedFocusNodeId, setPinnedFocusNodeId] = useState<string | null>(null);
+  // 노드(및 Contains 하위 구조) 인라인 복제 박스 표시 여부, 태그 입력값, 진행 중 잠금
+  const [showCloneBox, setShowCloneBox] = useState(false);
+  const [cloneTagDraft, setCloneTagDraft] = useState('');
+  const [isCloningNode, setIsCloningNode] = useState(false);
+  const isCloningRef = useRef(false);
 
   const [loading, setLoading] = useState(true);const [error, setError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<'checking' | 'ok' | 'error'>('checking');
@@ -271,7 +276,9 @@ export default function App() {
   const selectedNodeRef = useRef<Node | null>(selectedNode);
   nodesRef.current = nodes;
   edgesRef.current = edges;
-  selectedNodeRef.current = selectedNode;
+  useEffect(() => {
+    selectedNodeRef.current = selectedNode;
+  }, [selectedNode]);
 
   // 서버 재동기화 순번: 늦게 도착한 이전 응답이 최신 낙관적 상태를 덮어쓰지 않도록 마지막 요청만 반영
   const statusSyncSeq = useRef(0);
@@ -485,6 +492,21 @@ export default function App() {
           setSelectedNode(prev => prev && prev.id === action.edgeData.target ? { ...prev, parentId: action.edgeData.source, extent: 'parent' as const } : prev);
           triggerRefresh();
         }
+      } else if (action.type === 'CLONE_SUBGRAPH') {
+        const nodeIds: string[] = Array.isArray(action.nodeIds) ? action.nodeIds : [];
+        for (const nid of nodeIds) {
+          await fetch(`/api/nodes/${encodeURIComponent(nid)}`, { method: 'DELETE' });
+        }
+        const deletedSet = new Set(nodeIds);
+        setNodes(nds => nds.filter(n => !deletedSet.has(n.id)));
+        setEdges(eds => eds.filter(e => !deletedSet.has(e.source) && !deletedSet.has(e.target)));
+        if (selectedNodeRef.current && deletedSet.has(selectedNodeRef.current.id)) {
+          selectedNodeRef.current = null;
+          setSelectedNode(null);
+        }
+        setSelectedEdge(prev => (prev && (deletedSet.has(prev.source) || deletedSet.has(prev.target)) ? null : prev));
+        setPinnedFocusNodeId(prev => (prev && deletedSet.has(prev) ? null : prev));
+        triggerRefresh();
       }
       // 되돌린 변경이 연쇄 전파를 일으켰을 수 있으므로 서버 상태로 재동기화
       syncStatusesFromServer();
@@ -706,19 +728,35 @@ export default function App() {
           };
         });
 
+        const globalNodesWithPerEdgeStatus = new Set<string>();
+        for (const e of data.edges) {
+          if (e.test_status && e.test_status !== 'Untested') {
+            if (globalNodes.has(e.target)) globalNodesWithPerEdgeStatus.add(e.target);
+            if (globalNodes.has(e.source)) globalNodesWithPerEdgeStatus.add(e.source);
+          }
+        }
+
+        const resolveBadgeStatus = (e: ApiEdge, gNode?: ApiNode) => {
+          if (e.test_status && e.test_status !== 'Untested') return e.test_status;
+          if (gNode && !globalNodesWithPerEdgeStatus.has(gNode.id) && gNode.test_status && gNode.test_status !== 'Blocked') {
+            return gNode.test_status;
+          }
+          return 'Untested';
+        };
+
         const edgeBundles: Record<string, ApiEdge[]> = {};
         for (const e of data.edges) {
           let isBadgeEdge = false;
           if (globalNodes.has(e.target)) {
             const sourceNode = initialNodes.find(n => n.id === e.source);
             const gNode = globalNodes.get(e.target);
-            const badgeStatus = (e.test_status && e.test_status !== 'Untested') ? e.test_status : (gNode?.test_status || 'Untested');
+            const badgeStatus = resolveBadgeStatus(e, gNode);
             if (sourceNode) ((sourceNode.data as any).badges as any[]).push({ ...gNode, edgeId: e.id, edgeType: e.type, test_status: badgeStatus });
             isBadgeEdge = true;
           } else if (globalNodes.has(e.source)) {
             const targetNode = initialNodes.find(n => n.id === e.target);
             const gNode = globalNodes.get(e.source);
-            const badgeStatus = (e.test_status && e.test_status !== 'Untested') ? e.test_status : (gNode?.test_status || 'Untested');
+            const badgeStatus = resolveBadgeStatus(e, gNode);
             if (targetNode) ((targetNode.data as any).badges as any[]).push({ ...gNode, edgeId: e.id, edgeType: e.type, test_status: badgeStatus });
             isBadgeEdge = true;
           }
@@ -790,6 +828,13 @@ export default function App() {
 
         setNodes(layoutedNodes);
         setEdges(layoutedEdges);
+        if (selectedNodeRef.current?.id) {
+          const matchedNode = layoutedNodes.find(n => n.id === selectedNodeRef.current?.id);
+          if (matchedNode) {
+            selectedNodeRef.current = matchedNode;
+            setSelectedNode(matchedNode);
+          }
+        }
         setGraphVersion(v => v + 1);
         setError(null);
         
@@ -840,13 +885,15 @@ export default function App() {
     });
   }, [nodes, setNodes]);
 
-  // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모/원인 역추적/화면 다국어 감사)은 닫고 비웁니다.
+  // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모/원인 역추적/화면 다국어 감사/노드 복제 박스)은 닫고 비웁니다.
   // (React Flow는 노드 data가 바뀌어도 selection을 새 객체로 다시 알려주므로 id 기준으로만 초기화)
   useEffect(() => {
     setBlockReasonDraft(null);
     setModifiedNoteDraft('');
     setTracedRootNodeId(null);
     setScopedAuditRootId(null);
+    setShowCloneBox(false);
+    setCloneTagDraft('');
   }, [selectedNode?.id, selectedEdge?.id, isCreatingNode]);
 
   useEffect(() => {
@@ -1141,6 +1188,46 @@ export default function App() {
     setSelectedNode(null); 
     setSelectedEdge(null);
   }; 
+
+  /**
+   * 노드(및 직속 Contains/Has 자식 구조, 체크리스트, 글로벌 배지 연결)를 새 태그로 복제하고
+   * 모든 상태를 Untested로 초기화한 뒤 Undo 스택(CLONE_SUBGRAPH)에 등록합니다.
+   */
+  const handleCloneNode = async () => {
+    if (isCloningRef.current || editFormData.type !== 'node' || !editFormData.id) return;
+    const sourceNodeId = editFormData.id;
+    isCloningRef.current = true;
+    setIsCloningNode(true);
+    try {
+      const res = await fetch(`/api/nodes/${encodeURIComponent(sourceNodeId)}/clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag: cloneTagDraft.trim() })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.detail || t.nodeClone.failed);
+        return;
+      }
+      const resData = await res.json();
+      setError(null);
+      setShowCloneBox(false);
+      setCloneTagDraft('');
+      if (Array.isArray(resData.cloned_node_ids) && resData.cloned_node_ids.length > 0) {
+        pushUndo({ type: 'CLONE_SUBGRAPH', nodeIds: resData.cloned_node_ids });
+      }
+      if (resData.cloned_root_id) {
+        selectedNodeRef.current = { id: resData.cloned_root_id } as any;
+        setPinnedFocusNodeId(prev => (prev === sourceNodeId ? resData.cloned_root_id : prev));
+      }
+      triggerRefresh();
+    } catch (err: any) {
+      setError(err?.message || t.nodeClone.failed);
+    } finally {
+      isCloningRef.current = false;
+      setIsCloningNode(false);
+    }
+  };
   
   /**
    * 노드 1개의 상태를 "현재 입력(들어오는 엣지/출발 노드/체크리스트)" 기준으로 합성합니다.
@@ -3007,6 +3094,60 @@ export default function App() {
                   </div>
                 );
               })()}
+
+              {editFormData.type === 'node' && !isCreatingNode && (
+                <div className="node-clone-section">
+                  <button
+                    type="button"
+                    className={`node-clone-open-btn${showCloneBox ? ' active' : ''}`}
+                    onClick={() => setShowCloneBox(prev => !prev)}
+                  >
+                    {t.nodeClone.openButton}
+                  </button>
+                  {showCloneBox && (
+                    <div className="node-clone-box">
+                      <p className="inspector-hint" style={{ marginTop: 0, marginBottom: '8px' }}>
+                        {t.nodeClone.guide}
+                      </p>
+                      <input
+                        type="text"
+                        autoFocus
+                        disabled={isCloningNode}
+                        className="node-clone-tag-input"
+                        aria-label={t.nodeClone.tagLabel}
+                        placeholder={t.nodeClone.tagPlaceholder}
+                        value={cloneTagDraft}
+                        onChange={e => setCloneTagDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            handleCloneNode();
+                          }
+                        }}
+                      />
+                      <div className="node-clone-actions">
+                        <button
+                          type="button"
+                          disabled={isCloningNode}
+                          className="primary node-clone-confirm-btn"
+                          onClick={handleCloneNode}
+                        >
+                          {t.nodeClone.confirmButton}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowCloneBox(false);
+                            setCloneTagDraft('');
+                          }}
+                        >
+                          {t.common.cancel}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
                 <button className="danger" style={{flex: 1}} onClick={handleDelete}>Delete</button>

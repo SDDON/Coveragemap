@@ -906,6 +906,44 @@ button.warning:disabled { background: #fcd34d; cursor: not-allowed; }
 .modified-mark-row input { flex: 1; min-width: 0; }
 .modified-mark-row button { padding: 6px 10px; font-size: 0.8rem; white-space: nowrap; flex-shrink: 0; }
 
+/* 노드(및 Contains 하위 구조) 복제 인라인 박스 */
+.node-clone-section {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.node-clone-open-btn {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #f0f9ff;
+  color: #0369a1;
+  border: 1.5px solid #7dd3fc;
+}
+.node-clone-open-btn:hover,
+.node-clone-open-btn.active {
+  background: #e0f2fe;
+  border-color: #38bdf8;
+}
+.node-clone-box {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid #bae6fd;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+.node-clone-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.node-clone-actions button {
+  flex: 1;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
 /* Collapse Button */
 .collapse-btn {
   position: absolute;

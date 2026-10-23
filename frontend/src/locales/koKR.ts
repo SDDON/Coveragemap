@@ -16,6 +16,7 @@ export const koKR = {
     delete: '삭제',
     ok: '확인',
     close: '닫기',
+    cancel: '취소',
   },
 
   // 워크스페이스 선택 화면 / 상단 표시 (Workspace 관리자 모달은 FEATURE_PRUNING_GUIDE 3.2에 따라 제거됨)
@@ -81,6 +82,16 @@ export const koKR = {
     changeRelationTitle: '부모-자식 Contains 연결선을 선택하여 관계 타입(Transition 등)이나 상태를 변경합니다.',
     detachParent: '⏏ 분리',
     detachParentTitle: '부모 컨테이너에서 이 노드를 즉시 분리(Contains 엣지 삭제)합니다.',
+  },
+
+  // 노드 및 하위 구조(Contains) 복제
+  nodeClone: {
+    openButton: '📋 노드 복제',
+    guide: '선택한 노드와 내부 Contains 자식·체크리스트·글로벌 배지 연결을 새 태그로 복제하고 모든 상태를 미검증(Untested)으로 초기화합니다. (외부 화면 연결선은 제외)',
+    tagLabel: '복제 환경/컨텐츠 태그',
+    tagPlaceholder: '예: #아레나 (미입력 시 #복사본)',
+    confirmButton: '복제 생성',
+    failed: '노드 복제에 실패했습니다.',
   },
 
   // 📌 수동 차단 (Manual Override, TESTCASE 스펙 4.3)

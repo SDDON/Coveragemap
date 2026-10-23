@@ -76,6 +76,16 @@ class PresetCreate(BaseModel):
 class ModifiedMark(BaseModel):
     note: Optional[str] = ""
 
+# 노드(및 Contains 하위 구조) 복제 요청 및 응답 모델
+class NodeCloneRequest(BaseModel):
+    tag: Optional[str] = None
+
+class NodeCloneResponse(BaseModel):
+    cloned_root_id: str
+    cloned_node_ids: List[str] = Field(default_factory=list)
+    cloned_edge_ids: List[str] = Field(default_factory=list)
+    name: str
+
 # ─── QA Copilot Response Models ────────────────────────────────────
 
 class RootCauseInfo(BaseModel):

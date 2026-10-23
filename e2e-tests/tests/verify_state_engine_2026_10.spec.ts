@@ -518,6 +518,125 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     const detailsByName = await resByName.json();
     expect(detailsByName.id).toBe(ids.settings);
   });
+
+  test('M. Cloning a parent node duplicates Contains children, checklist, and global badges as Untested while excluding external edges', async ({ page, request }) => {
+    // 1. Setup parent ('파티 편성 #일반던전') + Contains child ('영웅 슬롯 #일반던전') + Checklist + Global badge
+    const gRes = await request.post('/api/nodes', {
+      data: {
+        label: 'Component',
+        name: 'Global_I18N',
+        aliases: ['i18n'],
+        test_status: 'Passed',
+        properties: { is_global: 'true', description: '다국어 검증 배지' },
+      },
+    });
+    expect(gRes.ok()).toBeTruthy();
+    const globalId = await gRes.json();
+
+    await request.put(`/api/nodes/${encodeURIComponent(ids.root)}`, {
+      data: {
+        name: '파티 편성 #일반던전',
+        aliases: ['일반던전'],
+        test_status: 'Passed',
+      },
+    });
+    await request.put(`/api/nodes/${encodeURIComponent(ids.settings)}`, {
+      data: {
+        name: '영웅 슬롯 #일반던전',
+        aliases: ['일반던전'],
+        test_status: 'Passed',
+        properties: {
+          checklist: [
+            { id: 'chk_slot_1', text: '영웅 드래그 배치 정상 동작 확인', status: 'Passed' },
+          ],
+        },
+      },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.settings, target: globalId, type: 'Depends_On', test_status: 'Passed', properties: {} },
+    });
+
+    const reloadGraph = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadGraph;
+
+    // 2. Select parent node header and open inline clone box
+    await nodeLocator(page, ids.root).click({ position: { x: 40, y: 30 }, force: true });
+    await expect(page.locator('.details-panel .node-id')).toContainText(ids.root);
+    const openCloneBtn = page.locator('.details-panel .node-clone-open-btn');
+    await expect(openCloneBtn).toBeVisible();
+    await openCloneBtn.click();
+
+    const cloneBox = page.locator('.details-panel .node-clone-box');
+    await expect(cloneBox).toBeVisible();
+    await cloneBox.locator('.node-clone-tag-input').fill('#아레나');
+
+    const clonePostPromise = page.waitForResponse(
+      res => res.url().includes(`/api/nodes/${encodeURIComponent(ids.root)}/clone`) && res.request().method() === 'POST'
+    );
+    const graphRefreshAfterClone = page.waitForResponse(
+      res => res.url().includes('/api/graph') && res.status() === 200
+    );
+    await cloneBox.locator('.node-clone-confirm-btn').click();
+
+    const cloneRes = await clonePostPromise;
+    expect(cloneRes.ok()).toBeTruthy();
+    const cloneData = await cloneRes.json();
+    expect(cloneData.name).toBe('파티 편성 #아레나');
+    expect(cloneData.cloned_node_ids.length).toBe(2);
+    await graphRefreshAfterClone;
+
+    // 3. Verify cloned parent and child nodes in graph and on canvas
+    const graphAfter = await (await request.get('/api/graph')).json();
+    const clonedParent = graphAfter.nodes.find((n: any) => n.name === '파티 편성 #아레나');
+    const clonedChild = graphAfter.nodes.find((n: any) => n.name === '영웅 슬롯 #아레나');
+    expect(clonedParent).toBeTruthy();
+    expect(clonedChild).toBeTruthy();
+    expect(clonedParent.test_status).toBe('Untested');
+    expect(clonedChild.test_status).toBe('Untested');
+    expect(clonedChild.properties.checklist).toEqual([
+      { id: 'chk_slot_1', text: '영웅 드래그 배치 정상 동작 확인', status: 'Untested' },
+    ]);
+
+    // Contains edge and Global_I18N edge exist for cloned nodes with Untested status, while external TC1/Game_Child edges are NOT cloned
+    const clonedContains = graphAfter.edges.find(
+      (e: any) => e.source === clonedParent.id && e.target === clonedChild.id && e.type.toLowerCase() === 'contains'
+    );
+    expect(clonedContains).toBeTruthy();
+    expect(clonedContains.test_status).toBe('Untested');
+
+    const clonedGlobalEdge = graphAfter.edges.find(
+      (e: any) => e.source === clonedChild.id && e.target === globalId
+    );
+    expect(clonedGlobalEdge).toBeTruthy();
+    expect(clonedGlobalEdge.test_status).toBe('Untested');
+
+    const externalClonedEdges = graphAfter.edges.filter(
+      (e: any) =>
+        (e.source === ids.tc1 && e.target === clonedParent.id) ||
+        (e.source === clonedParent.id && e.target === ids.child)
+    );
+    expect(externalClonedEdges.length).toBe(0);
+
+    await expect(page.locator('.details-panel .node-id')).toContainText(clonedParent.id);
+    await expect(nodeLocator(page, clonedParent.id)).toHaveClass(/\bstatus-untested\b/);
+    await expect(nodeLocator(page, clonedChild.id)).toHaveClass(/\bstatus-untested\b/);
+    await expect(nodeLocator(page, ids.settings).locator('.badge-pill')).toContainText('✔');
+    const clonedBadge = nodeLocator(page, clonedChild.id).locator('.badge-pill');
+    await expect(clonedBadge).toContainText('Global_I18N');
+    await expect(clonedBadge).not.toContainText('✔');
+    await expect(clonedBadge).not.toContainText('✖');
+
+    // 4. Undo (Ctrl+Z) removes the cloned subgraph
+    const refreshAfterUndo = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.keyboard.press('Control+z');
+    await refreshAfterUndo;
+    await expect(nodeLocator(page, clonedParent.id)).toHaveCount(0);
+    await expect(nodeLocator(page, clonedChild.id)).toHaveCount(0);
+  });
 });
 
 

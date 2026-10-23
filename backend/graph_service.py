@@ -1,14 +1,15 @@
 import networkx as nx
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Set
 from models import (
     NodeModel, EdgeModel, GraphResponse,
     NodeStatusSummary, RootCauseInfo, ImpactScopeResponse,
-    CrossCuttingAuditResponse, NextTestTarget
+    CrossCuttingAuditResponse, NextTestTarget, IDENTIFIER_PATTERN
 )
 
 import collections
 import datetime
 import json
+import re
 
 ALIAS_MAP = {
     "front-end": "frontend",
@@ -680,6 +681,234 @@ def acknowledge_node_modification(session, node_id: str) -> Optional[Dict[str, A
     if not rec:
         return None
     return {"id": rec["id"], "is_modified": False, "acknowledged_at": rec["acknowledged_at"]}
+
+
+# ─── 노드(및 Contains 하위 구조) 복제 기능 ─────────────────────────────
+CLONE_STRIP_PROP_KEYS = {
+    "id", "name", "label", "aliases", "test_status",
+    "description", "issue_link",
+    "is_manual_override", "override_reason",
+    "is_modified", "modified_note", "modified_at", "acknowledged_at",
+    "x", "y",
+}
+
+
+def _normalize_clone_tag(tag: Optional[str]) -> str:
+    """복제 태그 문자열을 정규화합니다. 빈 문자열, 공백, '#'만 입력된 경우 기본값 '#복사본'을 반환합니다."""
+    clean = (tag or "").strip().lstrip("#").strip()
+    return f"#{clean}" if clean else "#복사본"
+
+
+def _apply_clone_tag(original_name: str, tag: Optional[str], existing_names: Set[str]) -> str:
+    """
+    원본 노드 이름에 복제 태그(기본값 '#복사본')를 적용하고 DB 내 중복 시 숫자 접미사(2, 3...)를 부여합니다.
+    - 원본 이름의 마지막 '#...' 해시태그 토큰이 있으면 새 태그로 치환하고, 없으면 끝에 ' {tag}'를 부착합니다.
+    """
+    norm_tag = _normalize_clone_tag(tag)
+    orig = (original_name or "").strip()
+
+    matches = list(re.finditer(r"(?:^|(?<=\s))#\S+", orig))
+    if matches:
+        last = matches[-1]
+        base_name = f"{orig[:last.start()]}{norm_tag}{orig[last.end():]}"
+    else:
+        base_name = f"{orig} {norm_tag}" if orig else norm_tag
+
+    if base_name not in existing_names:
+        existing_names.add(base_name)
+        return base_name
+
+    suffix = 2
+    while f"{base_name}{suffix}" in existing_names:
+        suffix += 1
+    final_name = f"{base_name}{suffix}"
+    existing_names.add(final_name)
+    return final_name
+
+
+def clone_node_with_children(session, node_id: str, tag: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    지정한 노드(root)와 직속 Contains/Has 자식 노드(비-전역), 그룹 내부 엣지, 글로벌 배지 연결 엣지를
+    새 태그 이름으로 일괄 복제하고, 모든 테스트 상태(노드·체크리스트·엣지)를 'Untested'로 초기화합니다.
+    외부 일반 화면/노드와의 Transition 등 외부 엣지는 복제하지 않습니다.
+    """
+    norm_tag = _normalize_clone_tag(tag)
+    tag_alias = norm_tag.lstrip("#").strip()
+
+    root_query = """
+    MATCH (root)
+    WHERE elementId(root) = $node_id OR root.id = $node_id OR root.name = $node_id
+    WITH root,
+         CASE
+           WHEN elementId(root) = $node_id OR root.id = $node_id THEN 0
+           ELSE 1
+         END AS match_rank
+    ORDER BY match_rank ASC
+    RETURN elementId(root) AS id,
+           labels(root)[0] AS label,
+           root.name AS name,
+           coalesce(root.aliases, []) AS aliases,
+           root.description AS description,
+           root.issue_link AS issue_link,
+           properties(root) AS properties
+    LIMIT 1
+    """
+    root_rec = session.run(root_query, node_id=node_id).single()
+    if not root_rec:
+        return None
+
+    root_id = root_rec["id"]
+
+    children_query = """
+    MATCH (root)-[r]->(child)
+    WHERE elementId(root) = $root_id
+      AND toUpper(type(r)) IN ['CONTAINS', 'HAS']
+      AND coalesce(toLower(toString(child.is_global)), 'false') <> 'true'
+    RETURN DISTINCT elementId(child) AS id,
+           labels(child)[0] AS label,
+           child.name AS name,
+           coalesce(child.aliases, []) AS aliases,
+           child.description AS description,
+           child.issue_link AS issue_link,
+           properties(child) AS properties
+    """
+    children_recs = list(session.run(children_query, root_id=root_id))
+
+    names_query = "MATCH (n) WHERE n.name IS NOT NULL RETURN n.name AS name"
+    existing_names: Set[str] = {r["name"] for r in session.run(names_query) if r and r.get("name")}
+    if root_rec.get("name"):
+        existing_names.add(root_rec["name"])
+    for c in children_recs:
+        if c.get("name"):
+            existing_names.add(c["name"])
+
+    group_ids = [root_id] + [c["id"] for c in children_recs]
+    edges_query = """
+    MATCH (src)-[r]->(tgt)
+    WHERE elementId(src) IN $group_ids OR elementId(tgt) IN $group_ids
+    RETURN DISTINCT elementId(r) AS id,
+           elementId(src) AS source_id,
+           elementId(tgt) AS target_id,
+           type(r) AS type,
+           r.action AS action,
+           properties(r) AS properties,
+           coalesce(toLower(toString(src.is_global)), 'false') = 'true' AS source_is_global,
+           coalesce(toLower(toString(tgt.is_global)), 'false') = 'true' AS target_is_global
+    """
+    edge_recs = list(session.run(edges_query, group_ids=group_ids))
+
+    id_map: Dict[str, str] = {}
+    cloned_node_ids: List[str] = []
+    new_root_name = ""
+
+    for idx_node, n_rec in enumerate([root_rec] + children_recs):
+        orig_id = n_rec["id"]
+        orig_label = n_rec.get("label") or "Node"
+        if not re.match(IDENTIFIER_PATTERN, orig_label):
+            orig_label = "Node"
+
+        new_name = _apply_clone_tag(n_rec.get("name") or orig_id, norm_tag, existing_names)
+        if idx_node == 0:
+            new_root_name = new_name
+
+        orig_aliases = [str(a) for a in (n_rec.get("aliases") or []) if a is not None]
+        if tag_alias and not any(str(a).lstrip("#").strip().lower() == tag_alias.lower() for a in orig_aliases):
+            orig_aliases.append(tag_alias)
+
+        raw_props = deserialize_props_from_neo4j(dict(n_rec.get("properties") or {}))
+        description = n_rec.get("description") if n_rec.get("description") is not None else raw_props.get("description")
+        issue_link = n_rec.get("issue_link") if n_rec.get("issue_link") is not None else raw_props.get("issue_link")
+
+        clean_props = {k: v for k, v in raw_props.items() if k not in CLONE_STRIP_PROP_KEYS}
+        if "checklist" in clean_props and isinstance(clean_props["checklist"], list):
+            reset_checklist = []
+            for idx_chk, item in enumerate(clean_props["checklist"]):
+                if isinstance(item, dict):
+                    new_item = {
+                        "id": item.get("id") or f"chk_{idx_chk + 1}",
+                        "text": str(item.get("text") or ""),
+                        "status": "Untested",
+                    }
+                    if "category" in item:
+                        new_item["category"] = item["category"]
+                    reset_checklist.append(new_item)
+            clean_props["checklist"] = reset_checklist
+
+        create_node_query = f"""
+        CREATE (n:`{orig_label}`)
+        SET n += $properties,
+            n.name = $name,
+            n.aliases = $aliases,
+            n.description = $description,
+            n.issue_link = $issue_link,
+            n.test_status = 'Untested',
+            n.is_manual_override = false,
+            n.override_reason = null
+        RETURN elementId(n) AS id
+        """
+        created_rec = session.run(
+            create_node_query,
+            name=new_name,
+            aliases=orig_aliases,
+            description=description,
+            issue_link=issue_link,
+            properties=serialize_props_for_neo4j(clean_props),
+        ).single()
+        new_id = created_rec["id"]
+        id_map[orig_id] = new_id
+        cloned_node_ids.append(new_id)
+
+    cloned_edge_ids: List[str] = []
+    for e_rec in edge_recs:
+        src_id = e_rec["source_id"]
+        tgt_id = e_rec["target_id"]
+        src_in_group = src_id in id_map
+        tgt_in_group = tgt_id in id_map
+        src_is_global = str(e_rec.get("source_is_global")).lower() == "true"
+        tgt_is_global = str(e_rec.get("target_is_global")).lower() == "true"
+
+        if src_in_group and tgt_in_group:
+            new_src, new_tgt = id_map[src_id], id_map[tgt_id]
+        elif src_in_group and not tgt_in_group and tgt_is_global:
+            new_src, new_tgt = id_map[src_id], tgt_id
+        elif tgt_in_group and not src_in_group and src_is_global:
+            new_src, new_tgt = src_id, id_map[tgt_id]
+        else:
+            # 외부 일반 화면/노드와의 Transition 등 외부 엣지는 복제 제외
+            continue
+
+        edge_type = e_rec.get("type") or "Transition"
+        if not re.match(IDENTIFIER_PATTERN, edge_type):
+            edge_type = "Transition"
+
+        raw_edge_props = dict(e_rec.get("properties") or {})
+        clean_edge_props = {k: v for k, v in raw_edge_props.items() if k not in ("id", "test_status", "action")}
+
+        create_edge_query = f"""
+        MATCH (source), (target)
+        WHERE elementId(source) = $source_id AND elementId(target) = $target_id
+        CREATE (source)-[r:`{edge_type}`]->(target)
+        SET r += $properties,
+            r.action = $action,
+            r.test_status = 'Untested'
+        RETURN elementId(r) AS id
+        """
+        created_edge = session.run(
+            create_edge_query,
+            source_id=new_src,
+            target_id=new_tgt,
+            action=e_rec.get("action"),
+            properties=clean_edge_props,
+        ).single()
+        if created_edge and created_edge.get("id"):
+            cloned_edge_ids.append(created_edge["id"])
+
+    return {
+        "cloned_root_id": id_map[root_id],
+        "cloned_node_ids": cloned_node_ids,
+        "cloned_edge_ids": cloned_edge_ids,
+        "name": new_root_name,
+    }
 
 
 def get_impact_nodes(session, global_node_id: str) -> dict:

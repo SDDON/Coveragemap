@@ -608,3 +608,262 @@ def test_mcp_server_create_node_and_create_edge_extended():
     auto_kwargs = mock_session_auto.run.call_args_list[1][1]
     assert auto_kwargs["test_status"] == "Failed"
 
+
+def test_apply_clone_tag_rules():
+    from graph_service import _apply_clone_tag
+
+    existing = {"파티 편성 #일반던전", "영웅 슬롯 #일반던전", "단독 팝업", "로그인 팝업 #모바일 #게스트"}
+
+    # 1) 기존 해시태그(#일반던전)를 새 해시태그(#아레나)로 치환
+    assert _apply_clone_tag("파티 편성 #일반던전", "#아레나", existing) == "파티 편성 #아레나"
+    # 2) '#' 기호 없이 태그 입력 시 자동으로 '#' 정규화 + 이미 '파티 편성 #아레나'가 존재하므로 2 부여
+    assert _apply_clone_tag("파티 편성 #일반던전", "아레나", existing) == "파티 편성 #아레나2"
+    assert _apply_clone_tag("파티 편성 #일반던전", "#아레나", existing) == "파티 편성 #아레나3"
+    # 3) 태그 미입력(빈 문자열, None, 공백, 또는 '#' 기호만 입력) 시 기본값 '#복사본' 부착
+    assert _apply_clone_tag("단독 팝업", "", existing) == "단독 팝업 #복사본"
+    assert _apply_clone_tag("단독 팝업", None, existing) == "단독 팝업 #복사본2"
+    assert _apply_clone_tag("단독 팝업", "#", existing) == "단독 팝업 #복사본3"
+    assert _apply_clone_tag("단독 팝업", "###   ", existing) == "단독 팝업 #복사본4"
+    # 4) '#' 뒤 공백이나 중복 '#' 입력 시 단일 '#태그' 토큰으로 정규화
+    assert _apply_clone_tag("영웅 슬롯 #일반던전", "# 아레나", existing) == "영웅 슬롯 #아레나"
+    assert _apply_clone_tag("영웅 슬롯 #일반던전", "##아레나", existing) == "영웅 슬롯 #아레나2"
+    # 5) 다중 해시태그('로그인 팝업 #모바일 #게스트') 복제 시 앞선 '#모바일'은 보존하고 마지막 '#게스트'만 치환
+    assert _apply_clone_tag("로그인 팝업 #모바일 #게스트", "#구글", existing) == "로그인 팝업 #모바일 #구글"
+
+
+def test_clone_node_with_children_replaces_tags_resets_statuses_and_excludes_external_edges():
+    import json
+    from graph_service import clone_node_with_children
+
+    mock_session = Mock()
+
+    # 1) Root node query result
+    mock_root_res = Mock()
+    mock_root_res.single.return_value = {
+        "id": "4:abc:10",
+        "label": "Screen",
+        "name": "파티 편성 #일반던전",
+        "aliases": ["PartySetup", "일반던전"],
+        "description": "파티 편성 메인 컨테이너",
+        "issue_link": "https://jira.example.com/browse/QA-77",
+        "properties": {
+            "name": "파티 편성 #일반던전",
+            "test_status": "Passed",
+            "is_manual_override": True,
+            "override_reason": "기존 수동 고정 사유",
+            "is_modified": True,
+            "modified_note": "기존 스펙 변경 메모",
+            "x": 120,
+            "y": 340,
+        },
+    }
+
+    # 2) Direct Contains children query result
+    children_rows = [
+        {
+            "id": "4:abc:11",
+            "label": "Component",
+            "name": "영웅 슬롯 #일반던전",
+            "aliases": ["HeroSlot"],
+            "description": "영웅 배치 슬롯",
+            "issue_link": None,
+            "properties": {
+                "name": "영웅 슬롯 #일반던전",
+                "test_status": "Failed",
+                "checklist": json.dumps([
+                    {"id": "chk_1", "text": "영웅 드래그 배치 정상 동작", "status": "Passed"},
+                    {"id": "chk_2", "text": "중복 영웅 편성 차단 확인", "status": "Failed"},
+                ], ensure_ascii=False),
+            },
+        }
+    ]
+
+    # 3) Existing names in DB
+    existing_name_rows = [
+        {"name": "로비"},
+        {"name": "파티 편성 #일반던전"},
+        {"name": "영웅 슬롯 #일반던전"},
+        {"name": "Global_I18N"},
+    ]
+
+    # 4) Incident edges (Contains + Global badge edge + External Transition edges)
+    edge_rows = [
+        {
+            "id": "5:abc:100",
+            "source_id": "4:abc:10",
+            "target_id": "4:abc:11",
+            "type": "Contains",
+            "action": None,
+            "properties": {"test_status": "Passed"},
+            "source_is_global": False,
+            "target_is_global": False,
+        },
+        {
+            "id": "5:abc:101",
+            "source_id": "4:abc:11",
+            "target_id": "4:abc:99",
+            "type": "Depends_On",
+            "action": None,
+            "properties": {"test_status": "Failed"},
+            "source_is_global": False,
+            "target_is_global": True,  # Global_I18N
+        },
+        {
+            "id": "5:abc:102",
+            "source_id": "4:abc:1",  # 외부 화면: 로비
+            "target_id": "4:abc:10",
+            "type": "Transition",
+            "action": "파티 편성 버튼 터치",
+            "properties": {"test_status": "Passed", "action": "파티 편성 버튼 터치"},
+            "source_is_global": False,
+            "target_is_global": False,
+        },
+        {
+            "id": "5:abc:103",
+            "source_id": "4:abc:10",
+            "target_id": "4:abc:2",  # 외부 화면: 전투 시작
+            "type": "Transition",
+            "action": "출전 버튼 터치",
+            "properties": {"test_status": "Passed", "action": "출전 버튼 터치"},
+            "source_is_global": False,
+            "target_is_global": False,
+        },
+    ]
+
+    mock_new_root = Mock()
+    mock_new_root.single.return_value = {"id": "4:abc:20"}
+    mock_new_child = Mock()
+    mock_new_child.single.return_value = {"id": "4:abc:21"}
+    mock_new_contains_edge = Mock()
+    mock_new_contains_edge.single.return_value = {"id": "5:abc:200"}
+    mock_new_global_edge = Mock()
+    mock_new_global_edge.single.return_value = {"id": "5:abc:201"}
+
+    mock_session.run.side_effect = [
+        mock_root_res,
+        children_rows,
+        existing_name_rows,
+        edge_rows,
+        mock_new_root,
+        mock_new_child,
+        mock_new_contains_edge,
+        mock_new_global_edge,
+    ]
+
+    result = clone_node_with_children(mock_session, "4:abc:10", tag="#아레나")
+    assert result is not None
+    assert result["cloned_root_id"] == "4:abc:20"
+    assert result["name"] == "파티 편성 #아레나"
+    assert result["cloned_node_ids"] == ["4:abc:20", "4:abc:21"]
+    # 외부 로비/전투 화면과의 Transition 엣지 2개는 제외되고 Contains 1개 + Global_I18N 1개만 복제됨
+    assert result["cloned_edge_ids"] == ["5:abc:200", "5:abc:201"]
+    assert mock_session.run.call_count == 8
+
+    # 복제된 부모 노드 검증
+    root_create_query, root_create_kwargs = mock_session.run.call_args_list[4][0][0], mock_session.run.call_args_list[4][1]
+    assert "CREATE (n:`Screen`)" in root_create_query
+    assert "n.test_status = 'Untested'" in root_create_query
+    assert "n.is_manual_override = false" in root_create_query
+    assert root_create_kwargs["name"] == "파티 편성 #아레나"
+    assert "아레나" in root_create_kwargs["aliases"]
+    assert root_create_kwargs["description"] == "파티 편성 메인 컨테이너"
+    assert root_create_kwargs["issue_link"] == "https://jira.example.com/browse/QA-77"
+    assert "is_modified" not in root_create_kwargs["properties"]
+    assert "is_manual_override" not in root_create_kwargs["properties"]
+    assert "x" not in root_create_kwargs["properties"]
+
+    # 복제된 자식 노드 및 체크리스트 Untested 초기화 검증
+    child_create_kwargs = mock_session.run.call_args_list[5][1]
+    assert child_create_kwargs["name"] == "영웅 슬롯 #아레나"
+    assert "아레나" in child_create_kwargs["aliases"]
+    cloned_checklist = json.loads(child_create_kwargs["properties"]["checklist"])
+    assert cloned_checklist == [
+        {"id": "chk_1", "text": "영웅 드래그 배치 정상 동작", "status": "Untested"},
+        {"id": "chk_2", "text": "중복 영웅 편성 차단 확인", "status": "Untested"},
+    ]
+
+    # 복제된 Contains 엣지 및 글로벌 배지 엣지 검증
+    contains_edge_query, contains_edge_kwargs = mock_session.run.call_args_list[6][0][0], mock_session.run.call_args_list[6][1]
+    assert "CREATE (source)-[r:`Contains`]->(target)" in contains_edge_query
+    assert "r.test_status = 'Untested'" in contains_edge_query
+    assert contains_edge_kwargs["source_id"] == "4:abc:20"
+    assert contains_edge_kwargs["target_id"] == "4:abc:21"
+    assert "test_status" not in contains_edge_kwargs["properties"]
+
+    global_edge_query, global_edge_kwargs = mock_session.run.call_args_list[7][0][0], mock_session.run.call_args_list[7][1]
+    assert "CREATE (source)-[r:`Depends_On`]->(target)" in global_edge_query
+    assert "r.test_status = 'Untested'" in global_edge_query
+    assert global_edge_kwargs["source_id"] == "4:abc:21"
+    assert global_edge_kwargs["target_id"] == "4:abc:99"
+
+    # 존재하지 않는 노드 복제 요청 시 None 반환
+    mock_empty_session = Mock()
+    mock_not_found = Mock()
+    mock_not_found.single.return_value = None
+    mock_empty_session.run.return_value = mock_not_found
+    assert clone_node_with_children(mock_empty_session, "non-existent") is None
+
+
+def test_clone_child_node_directly_and_child_to_child_internal_edges():
+    from graph_service import clone_node_with_children
+
+    # A) 자식 노드를 직접 단독 복제할 때: 원본 부모로부터 들어오는 Contains 엣지는 외부 노드로 간주되어 복제되지 않아야 함
+    mock_child_session = Mock()
+    mock_child_root = Mock()
+    mock_child_root.single.return_value = {
+        "id": "4:abc:11",
+        "label": "Component",
+        "name": "영웅 슬롯 #일반던전",
+        "aliases": ["HeroSlot"],
+        "description": "단독 복제 대상 자식",
+        "issue_link": None,
+        "properties": {"name": "영웅 슬롯 #일반던전", "test_status": "Passed"},
+    }
+    child_edges = [
+        {
+            "id": "5:abc:100",
+            "source_id": "4:abc:10",  # 원본 부모 (그룹 외부)
+            "target_id": "4:abc:11",
+            "type": "Contains",
+            "action": None,
+            "properties": {"test_status": "Passed"},
+            "source_is_global": False,
+            "target_is_global": False,
+        },
+        {
+            "id": "5:abc:105",
+            "source_id": "4:abc:88",  # 역방향 글로벌 배지 (Global -> Child)
+            "target_id": "4:abc:11",
+            "type": "Displays",
+            "action": None,
+            "properties": {"test_status": "Passed"},
+            "source_is_global": True,
+            "target_is_global": False,
+        },
+    ]
+    mock_created_standalone = Mock()
+    mock_created_standalone.single.return_value = {"id": "4:abc:31"}
+    mock_created_in_global_edge = Mock()
+    mock_created_in_global_edge.single.return_value = {"id": "5:abc:301"}
+
+    mock_child_session.run.side_effect = [
+        mock_child_root,
+        [],  # 직속 자식 없음
+        [{"name": "영웅 슬롯 #일반던전"}],
+        child_edges,
+        mock_created_standalone,
+        mock_created_in_global_edge,
+    ]
+
+    res_child = clone_node_with_children(mock_child_session, "4:abc:11", tag="#길드전")
+    assert res_child is not None
+    assert res_child["cloned_root_id"] == "4:abc:31"
+    assert res_child["name"] == "영웅 슬롯 #길드전"
+    assert res_child["cloned_node_ids"] == ["4:abc:31"]
+    # 원본 부모로부터의 Contains 엣지(5:abc:100)는 제외되고 역방향 글로벌 배지 엣지(5:abc:301)만 복제됨
+    assert res_child["cloned_edge_ids"] == ["5:abc:301"]
+    in_global_kwargs = mock_child_session.run.call_args_list[5][1]
+    assert in_global_kwargs["source_id"] == "4:abc:88"
+    assert in_global_kwargs["target_id"] == "4:abc:31"
+
+

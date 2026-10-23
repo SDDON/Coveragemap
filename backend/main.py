@@ -2,13 +2,17 @@ from fastapi import FastAPI, Depends, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from database import get_db, close_driver
-from models import GraphResponse, NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate, PresetCreate, ModifiedMark
+from models import (
+    GraphResponse, NodeCreate, NodeUpdate, EdgeCreate, EdgeUpdate,
+    PresetCreate, ModifiedMark, NodeCloneRequest, NodeCloneResponse
+)
 from graph_service import (
     fetch_graph_from_neo4j, process_graph, convert_to_response,
     create_node, update_node, delete_node,
     create_edge, update_edge, delete_edge,
     get_impact_nodes, deserialize_props_from_neo4j,
-    mark_node_modified, acknowledge_node_modification, get_node_statuses
+    mark_node_modified, acknowledge_node_modification, get_node_statuses,
+    clone_node_with_children
 )
 from preset_service import (
     list_presets, get_preset, load_preset_to_neo4j, save_current_graph_as_preset, create_auto_backup
@@ -157,6 +161,19 @@ def api_acknowledge_node(node_id: str, session = Depends(get_db)):
     if not res:
         raise HTTPException(status_code=404, detail="Node not found")
     return res
+
+@app.post("/api/nodes/{node_id}/clone", response_model=NodeCloneResponse)
+def api_clone_node(node_id: str, body: Optional[NodeCloneRequest] = None, session = Depends(get_db)):
+    """노드(및 직속 Contains/Has 자식 노드, 내부 엣지, 글로벌 배지 엣지)를 새 태그로 복제하고 상태를 Untested로 초기화합니다."""
+    try:
+        res = clone_node_with_children(session, node_id, tag=(body.tag if body else None))
+        if not res:
+            raise HTTPException(status_code=404, detail="Node not found")
+        return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/node-statuses")
 def api_node_statuses(session = Depends(get_db)):
