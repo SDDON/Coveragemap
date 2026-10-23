@@ -174,7 +174,23 @@ export const koKR = {
     hintAfter: ' 형태로 표시됩니다.',
     hintUsage: '다국어(I18N), 공통 데이터 등 여러 노드에서 반복 연결되는 글로벌 의존성에 사용하세요.',
     hintClick: '뱃지를 클릭하면 테스트 상태를 변경할 수 있습니다.',
+    uncheckHint: '체크를 해제하고 저장하면 일반 캔버스 노드 및 연결선으로 복원됩니다.',
     unlinkConfirm: '정말 이 뱃지와의 연결(Edge)을 해제하시겠습니까?\n(글로벌 뱃지 원본 데이터는 삭제되지 않습니다.)',
+    editButton: '✎ 편집',
+    editButtonTitle: (name: string) => `${name} 전역 노드 편집 / 전역 해제`,
+  },
+
+  // 원거리 노드 간 빠른 연결 (Quick Connect 팝오버 & 2-Step 타겟 클릭 모드)
+  quickConnect: {
+    title: (sourceName: string) => `🔗 ${sourceName} → 대상 노드 연결`,
+    edgeTypeLabel: '연결 타입',
+    searchPlaceholder: '대상 노드 이름 또는 #별칭 검색 (Enter로 즉시 연결)',
+    emptyResult: '조건에 맞는 대상 노드가 없습니다.',
+    pickOnCanvasButton: '🎯 캔버스에서 직접 클릭해 선택',
+    startButton: '🔗 다른 노드에 연결 시작',
+    pendingBanner: (sourceName: string, edgeType: string) =>
+      `🔗 [${sourceName}]에서 (${edgeType}) 연결 중 — 연결할 대상 노드를 클릭하세요`,
+    cancelPending: '취소 ✕',
   },
 
   // 캔버스 우클릭 메뉴
@@ -192,9 +208,14 @@ export const koKR = {
     unpinBannerButton: '고정 해제 ✕',
   },
 
-  // 전역 노드 영향도(Impact) 표시
+  // 전역 노드 영향도(Impact) 표시 (다중 Global Node 5색 슬롯 & OR/AND 교집합 필터)
   impact: {
     affected: (count: number) => `영향 받는 노드 ${count}개`,
+    modeOr: '합집합 (OR)',
+    modeAnd: '교집합 (AND)',
+    modeOrTitle: '선택한 전역 노드 중 하나라도 연결된 노드를 모두 표시합니다',
+    modeAndTitle: '선택한 전역 노드들이 모두 동시에 연결된 교집합 노드만 표시합니다',
+    removeChipTitle: (name: string) => `${name} 영향도 강조 해제`,
   },
 
   // 도움말 모달

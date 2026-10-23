@@ -791,4 +791,209 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     expect(d5).toBeTruthy();
     expect(d5).toContain('Q');
   });
+
+  test('O. Viewport preservation on edge edit & Long-Distance Quick Connect (Pattern A Popover & Pattern B 2-Step Click)', async ({ page, request }) => {
+    // 1. Pan/zoom viewport to a custom transform and verify editing an edge does NOT reset camera viewport
+    const viewportEl = page.locator('.react-flow__viewport');
+    await page.locator('.react-flow__pane').hover({ position: { x: 400, y: 300 } });
+    await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(200);
+    const transformBeforeEdit = await viewportEl.getAttribute('style');
+
+    // Select existing edge (ids.root -> ids.child) via API lookup + click
+    const initialGraph = await (await request.get('/api/graph')).json();
+    const rootToChildEdge = initialGraph.edges.find((e: any) => e.source === ids.root && e.target === ids.child);
+    expect(rootToChildEdge).toBeTruthy();
+
+    const edgeLocator = page.locator(`.react-flow__edge[data-id="${rootToChildEdge.id}"]`);
+    await edgeLocator.locator('.react-flow__edge-interaction').click({ force: true });
+    await expect(page.locator('#edgeType')).toBeVisible();
+
+    // Update Action/Trigger without changing edge type -> elementId and camera viewport must remain identical
+    const actionInput = page.locator('.details-panel input[placeholder*="Android Back Button"]');
+    await actionInput.fill('Click Start Button');
+    const putEdgePromise = page.waitForResponse(
+      res => res.url().includes('/api/edges/') && res.request().method() === 'PUT'
+    );
+    await page.locator('.details-panel button.primary:has-text("Save")').click();
+    const putRes = await putEdgePromise;
+    expect(putRes.ok()).toBeTruthy();
+    const putData = await putRes.json();
+    expect(putData.new_id).toBe(rootToChildEdge.id);
+
+    await page.waitForTimeout(150);
+    const transformAfterEdit = await viewportEl.getAttribute('style');
+    expect(transformAfterEdit).toBe(transformBeforeEdit);
+
+    // 2. Pattern A: Drag from ids.root outer rim (.halo-handle) and drop on empty pane (>= 50px) -> Quick Connect Popover opens
+    const rootBox = await nodeLocator(page, ids.root).locator('.custom-node').boundingBox();
+    expect(rootBox).not.toBeNull();
+    const startX = rootBox!.x + rootBox!.width + 4;
+    const startY = rootBox!.y + rootBox!.height / 2;
+    const dropX = Math.max(60, rootBox!.x - 160);
+    const dropY = Math.max(60, rootBox!.y - 140);
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(dropX, dropY, { steps: 10 });
+    await page.mouse.up();
+
+    const popover = page.locator('.quick-connect-popover');
+    await expect(popover).toBeVisible();
+
+    // Choose Depends_On pill, search for 'Game Settings', and click candidate
+    await popover.locator('.quick-connect-type-pill', { hasText: 'Depends_On' }).click();
+    await popover.locator('.quick-connect-search-input').fill('Game Settings');
+    const postQuickEdge = page.waitForResponse(
+      res => res.url().includes('/api/edges') && res.request().method() === 'POST'
+    );
+    await popover.locator('.quick-connect-item', { hasText: 'Game Settings' }).click();
+    const quickEdgeRes = await postQuickEdge;
+    expect(quickEdgeRes.ok()).toBeTruthy();
+    const quickEdgeId = await quickEdgeRes.json();
+    await expect(popover).toBeHidden();
+    await expect(page.locator(`.react-flow__edge[data-id="${quickEdgeId}"]`)).toBeVisible();
+
+    // 3. Pattern B: Select ids.settings, click .start-connect-mode-btn, then click ids.child on canvas
+    await selectNode(page, ids.settings);
+    const startConnectBtn = page.locator('.details-panel .start-connect-mode-btn');
+    await expect(startConnectBtn).toBeVisible();
+    await startConnectBtn.click();
+
+    const pendingBanner = page.locator('.pending-connect-banner');
+    await expect(pendingBanner).toBeVisible();
+
+    const postStepEdge = page.waitForResponse(
+      res => res.url().includes('/api/edges') && res.request().method() === 'POST'
+    );
+    await nodeLocator(page, ids.child).click({ force: true });
+    const stepEdgeRes = await postStepEdge;
+    expect(stepEdgeRes.ok()).toBeTruthy();
+    const stepEdgeId = await stepEdgeRes.json();
+    await expect(pendingBanner).toBeHidden();
+    await expect(page.locator(`.react-flow__edge[data-id="${stepEdgeId}"]`)).toBeVisible();
+  });
+
+  test('P. Badge selection clearing on pane click & Un-globalizing a Global Node restores it and its edges to canvas', async ({ page, request }) => {
+    // 1. Create a global node and attach it to ids.root and ids.child
+    const gRes = await request.post('/api/nodes', {
+      data: {
+        label: 'Screen',
+        name: 'Common_Auth_Global',
+        aliases: ['auth'],
+        test_status: 'Passed',
+        properties: { is_global: 'true' },
+      },
+    });
+    expect(gRes.ok()).toBeTruthy();
+    const globalId = await gRes.json();
+
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: globalId, type: 'Depends_On', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.child, target: globalId, type: 'Depends_On', test_status: 'Passed', properties: {} },
+    });
+
+    const reloadGraph = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadGraph;
+
+    // 2. Click the badge pill on ids.root -> badge pill highlights, holder nodes (ids.root, ids.child) are .active, unrelated (ids.settings) is .de-emphasized
+    const badgePill = nodeLocator(page, ids.root).locator('.badge-pill', { hasText: 'Common_Auth_Global' });
+    await expect(badgePill).toBeVisible();
+    await badgePill.click();
+
+    await expect(page.locator('#nodeName')).toHaveValue('Common_Auth_Global');
+    await expect(badgePill).toHaveCSS('box-shadow', /rgba\(96,\s*165,\s*250,\s*0\.5\)/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bde-emphasized\b/);
+
+    // 3. Click empty pane -> badge pill selection highlight and canvas .has-selection must clear immediately
+    await page.locator('.react-flow__pane').click({ position: { x: 25, y: 250 } });
+    await expect(badgePill).not.toHaveCSS('box-shadow', /rgba\(96,\s*165,\s*250,\s*0\.5\)/);
+    await expect(page.locator('.react-flow')).not.toHaveClass(/\bhas-selection\b/);
+
+    // 4. Open Globals tab, click [✎ 편집] (.global-node-edit-btn), uncheck #nodeIsGlobal (even though label was 'Screen'), and Save
+    await page.getByRole('button', { name: 'Globals' }).click();
+    const editGlobalBtn = page.locator('.global-node-edit-btn').first();
+    await expect(editGlobalBtn).toBeVisible();
+    await editGlobalBtn.click();
+
+    const globalCheckbox = page.locator('#nodeIsGlobal');
+    await expect(globalCheckbox).toBeVisible();
+    await expect(globalCheckbox).toBeEnabled();
+    await expect(globalCheckbox).toBeChecked();
+
+    await globalCheckbox.uncheck();
+    const refreshAfterUnglobal = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.locator('.details-panel button.primary:has-text("Save")').click();
+    await refreshAfterUnglobal;
+
+    // Verify Common_Auth_Global is now a visible canvas node and its edges are visible on the canvas
+    await expect(nodeLocator(page, globalId)).toBeVisible();
+    await expect(nodeLocator(page, ids.root).locator('.badge-pill', { hasText: 'Common_Auth_Global' })).toHaveCount(0);
+  });
+
+  test('Q. Distinct highlight classes (.highlight-selected, .highlight-search-match, .highlight-incoming, .highlight-outgoing) & Multi-Global OR/AND Impact Overlay', async ({ page, request }) => {
+    // 1. Select ids.root -> ids.root gets .highlight-selected, ids.tc1 gets .highlight-incoming, ids.child gets .highlight-outgoing with amber border
+    await selectNode(page, ids.root);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bhighlight-selected\b/);
+    await expect(nodeLocator(page, ids.tc1)).toHaveClass(/\bhighlight-incoming\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bhighlight-outgoing\b/);
+
+    // Verify .highlight-outgoing custom-node border color is amber (rgb(217, 119, 6)), NOT overridden by active blue
+    await expect(nodeLocator(page, ids.child).locator('.custom-node')).toHaveCSS('border-color', 'rgb(217, 119, 6)');
+
+    // 2. Search Highlight -> search seed gets .highlight-search-match (cyan border rgb(8, 145, 178))
+    await page.locator('.react-flow__pane').click({ position: { x: 25, y: 250 } });
+    await page.getByRole('button', { name: 'Filters' }).click();
+    const searchInput = page.locator('input[placeholder="Type to highlight nodes..."]');
+    await searchInput.fill('Game Testing Root');
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bhighlight-search-match\b/);
+    await expect(nodeLocator(page, ids.root).locator('.custom-node')).toHaveCSS('border-color', 'rgb(8, 145, 178)');
+    await searchInput.fill('');
+
+    // 3. Create 2 Global Nodes: Global_Alpha (attached to ids.root & ids.child) and Global_Beta (attached to ids.child & ids.settings)
+    const g1Res = await request.post('/api/nodes', {
+      data: { label: 'Component', name: 'Global_Alpha', aliases: [], test_status: 'Passed', properties: { is_global: 'true' } },
+    });
+    const g2Res = await request.post('/api/nodes', {
+      data: { label: 'Component', name: 'Global_Beta', aliases: [], test_status: 'Failed', properties: { is_global: 'true' } },
+    });
+    const g1Id = await g1Res.json();
+    const g2Id = await g2Res.json();
+
+    await request.post('/api/edges', { data: { source: ids.root, target: g1Id, type: 'Depends_On', test_status: 'Passed', properties: {} } });
+    await request.post('/api/edges', { data: { source: ids.child, target: g1Id, type: 'Depends_On', test_status: 'Passed', properties: {} } });
+    await request.post('/api/edges', { data: { source: ids.child, target: g2Id, type: 'Depends_On', test_status: 'Failed', properties: {} } });
+    await request.post('/api/edges', { data: { source: ids.settings, target: g2Id, type: 'Depends_On', test_status: 'Failed', properties: {} } });
+
+    const reloadGraph = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadGraph;
+
+    // 4. Activate BOTH Global_Alpha and Global_Beta in Globals tab
+    await page.getByRole('button', { name: 'Globals' }).click();
+    await page.locator('button[title="Show impact: which nodes are affected by Global_Alpha"]').click();
+    await page.locator('button[title="Show impact: which nodes are affected by Global_Beta"]').click();
+
+    const statsBar = page.locator('.impact-stats-bar');
+    await expect(statsBar).toBeVisible();
+    await expect(statsBar.locator('.impact-chip')).toHaveCount(2);
+    await expect(statsBar).toContainText('영향 받는 노드 3개');
+
+    // In OR mode: ids.root has impact-slot-0, ids.settings has impact-slot-1, and overlapping ids.child has impact-multi-overlap
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bimpact-slot-0\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bimpact-slot-1\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bimpact-multi-overlap\b/);
+
+    // 5. Switch to AND (교집합) filter -> only ids.child (affected by both) stays .impact-highlighted
+    await statsBar.locator('.impact-operator-btn', { hasText: '교집합 (AND)' }).click();
+    await expect(statsBar).toContainText('영향 받는 노드 1개');
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bimpact-highlighted\b/);
+    await expect(nodeLocator(page, ids.root)).not.toHaveClass(/\bimpact-highlighted\b/);
+    await expect(nodeLocator(page, ids.settings)).not.toHaveClass(/\bimpact-highlighted\b/);
+  });
 });

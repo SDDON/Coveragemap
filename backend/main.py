@@ -99,7 +99,7 @@ def api_create_node(node: NodeCreate, session = Depends(get_db)):
 @app.get("/api/globals")
 def api_get_globals(session = Depends(get_db)):
     try:
-        res = session.run("MATCH (n) WHERE n.is_global = 'true' RETURN elementId(n) AS id, labels(n)[0] AS type, n.name AS name, n.aliases AS aliases, n.description AS description, n.issue_link AS issue_link, n.test_status AS test_status, properties(n) AS properties").data()
+        res = session.run("MATCH (n) WHERE n.is_global = 'true' RETURN elementId(n) AS id, labels(n)[0] AS type, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, n.description AS description, n.issue_link AS issue_link, coalesce(n.test_status, 'Untested') AS test_status, properties(n) AS properties").data()
         for item in res:
             item["properties"] = deserialize_props_from_neo4j(item.get("properties") or {})
         return res
@@ -118,7 +118,7 @@ def api_get_node_details(node_id: str, session = Depends(get_db)):
 @app.get("/api/nodes/{node_id}")
 def api_get_node(node_id: str, session = Depends(get_db)):
     try:
-        res = session.run("MATCH (n) WHERE elementId(n) = $id RETURN elementId(n) AS id, labels(n)[0] AS type, n.name AS name, n.aliases AS aliases, properties(n) AS properties", id=node_id).single()
+        res = session.run("MATCH (n) WHERE elementId(n) = $id RETURN elementId(n) AS id, labels(n)[0] AS type, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, coalesce(n.test_status, 'Untested') AS test_status, properties(n) AS properties", id=node_id).single()
         if not res:
             raise HTTPException(status_code=404, detail="Node not found")
         data = res.data()

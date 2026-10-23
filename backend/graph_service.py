@@ -593,21 +593,28 @@ def update_edge(session, edge_id: str, edge_data: EdgeUpdate) -> str:
     
     new_id = edge_id
     if getattr(edge_data, "type", None) is not None:
-        query = f"""
-        MATCH (a)-[r]->(b) WHERE elementId(r) = $id
-        CREATE (a)-[r2:`{edge_data.type}`]->(b)
-        SET r2 = properties(r)
-        {set_query.replace('r.', 'r2.').replace('r +=', 'r2 +=')}
-        DELETE r
-        RETURN elementId(r2) AS new_id, elementId(b) AS target_id
-        """
-        result = session.run(query, **params)
-        record = result.single()
-        if record:
-            new_id = record["new_id"]
-            _recalc_target_node_status(session, record["target_id"])
+        # 기존 관계 타입(type(r))과 요청된 타입이 동일하면 불필요한 삭제·재생성(ID 변경)을 생략하고 속성만 갱신합니다.
+        type_check = session.run(
+            "MATCH ()-[r]->() WHERE elementId(r) = $id RETURN type(r) AS rel_type",
+            id=edge_id
+        ).single()
+        existing_type = type_check.get("rel_type") if type_check and hasattr(type_check, "get") else None
+        if not isinstance(existing_type, str) or existing_type.lower() != edge_data.type.lower():
+            query = f"""
+            MATCH (a)-[r]->(b) WHERE elementId(r) = $id
+            CREATE (a)-[r2:`{edge_data.type}`]->(b)
+            SET r2 = properties(r)
+            {set_query.replace('r.', 'r2.').replace('r +=', 'r2 +=')}
+            DELETE r
+            RETURN elementId(r2) AS new_id, elementId(b) AS target_id
+            """
+            result = session.run(query, **params)
+            record = result.single()
+            if record:
+                new_id = record["new_id"]
+                _recalc_target_node_status(session, record["target_id"])
+                return new_id
             return new_id
-        return new_id
         
     if set_query:
         query = f"""

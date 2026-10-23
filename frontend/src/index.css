@@ -458,32 +458,43 @@ body {
 }
 
 /* Focus + Context Dimming (Pure CSS) */
-.has-selection .react-flow__node:not(.active):not(.related):not(.hovered-global-neighbor),
-.has-selection .react-flow__edge:not(.active):not(.related):not(.hovered-global-neighbor) {
+.has-selection:not(.has-impact) .react-flow__node:not(.active):not(.related):not(.hovered-global-neighbor),
+.has-selection:not(.has-impact) .react-flow__edge:not(.active):not(.related):not(.hovered-global-neighbor) {
   opacity: 0.35;
   filter: grayscale(80%) contrast(0.9);
 }
 .react-flow__node.active, .react-flow__edge.active,
 .react-flow__node.related, .react-flow__edge.related,
-.react-flow__node.hovered-global-neighbor, .react-flow__edge.hovered-global-neighbor {
+.react-flow__node.hovered-global-neighbor, .react-flow__edge.hovered-global-neighbor,
+.react-flow__node.impact-highlighted, .react-flow__edge.impact-edge {
   opacity: 1;
   filter: none;
 }
-/* Directional Highlights - Pure Focus Ring without transform scale to protect Subflow coordinates */
+/* Directional, Search & Selection Highlights - Pure Focus Ring without transform scale to protect Subflow coordinates */
 .react-flow__node.active > .custom-node-wrapper > .custom-node {
-  box-shadow: 0 0 0 2.5px #2563eb, 0 10px 25px rgba(37, 99, 235, 0.25) !important;
-  border-color: #2563eb !important;
+  box-shadow: 0 0 0 2px #3b82f6, 0 8px 20px rgba(37, 99, 235, 0.2) !important;
+  border-color: #3b82f6 !important;
   transform: none !important;
   transition: all 0.2s ease;
 }
 
 .react-flow__node.highlight-incoming > .custom-node-wrapper > .custom-node {
-  box-shadow: 0 0 0 2px var(--accent-incoming), 0 4px 14px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 0 0 2.5px var(--accent-incoming), 0 6px 16px rgba(37, 99, 235, 0.25) !important;
   border-color: var(--accent-incoming) !important;
 }
 .react-flow__node.highlight-outgoing > .custom-node-wrapper > .custom-node {
-  box-shadow: 0 0 0 2px var(--accent-outgoing), 0 4px 14px rgba(217, 119, 6, 0.25);
+  box-shadow: 0 0 0 2.5px var(--accent-outgoing), 0 6px 16px rgba(217, 119, 6, 0.28) !important;
   border-color: var(--accent-outgoing) !important;
+}
+/* 필터 검색 매칭 시드 노드 (.highlight-search-match): 선명한 청록색(Teal/Cyan) 링 */
+.react-flow__node.highlight-search-match > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4.5px #06b6d4, 0 8px 22px rgba(8, 145, 178, 0.32) !important;
+  border-color: #0891b2 !important;
+}
+/* 현재 클릭/선택된 포커스 노드 (.highlight-selected): 화이트 오프셋 이중 포커스 링 */
+.react-flow__node.highlight-selected > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2.5px #ffffff, 0 0 0 5px #1d4ed8, 0 10px 25px rgba(29, 78, 216, 0.3) !important;
+  border-color: #1d4ed8 !important;
 }
 
 /* Root Cause Backtracking Animation */
@@ -978,7 +989,7 @@ select option {
 }
 
 /* ============================================
-   Impact Overlay Mode
+   Impact Overlay Mode (Multi-Global 5-Slot Palette & OR/AND Filter)
    ============================================ */
 
 /* When impact mode is active, dim non-impacted nodes/edges */
@@ -994,23 +1005,70 @@ select option {
   filter: grayscale(100%);
 }
 
-/* Impact highlighted node - pulsing purple glow */
+/* Impact highlighted node - base & 5-color slots */
+.react-flow__node.impact-highlighted > .custom-node-wrapper > .custom-node,
 .react-flow__node.impact-highlighted .custom-node {
   box-shadow: 
-    0 0 0 2px #a78bfa,
-    0 0 20px rgba(167, 139, 250, 0.5),
-    0 0 40px rgba(139, 92, 246, 0.2);
-  border-color: rgba(167, 139, 250, 0.6);
+    0 0 0 2.5px #7c3aed,
+    0 0 20px rgba(124, 58, 237, 0.45),
+    0 0 40px rgba(139, 92, 246, 0.2) !important;
+  border-color: #7c3aed !important;
   transition: all 0.3s ease;
+}
+.react-flow__node.impact-highlighted.impact-slot-0 > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2.5px #7c3aed, 0 0 20px rgba(124, 58, 237, 0.42) !important;
+  border-color: #7c3aed !important;
+}
+.react-flow__node.impact-highlighted.impact-slot-1 > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2.5px #0891b2, 0 0 20px rgba(8, 145, 178, 0.42) !important;
+  border-color: #0891b2 !important;
+}
+.react-flow__node.impact-highlighted.impact-slot-2 > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2.5px #db2777, 0 0 20px rgba(219, 39, 119, 0.42) !important;
+  border-color: #db2777 !important;
+}
+.react-flow__node.impact-highlighted.impact-slot-3 > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2.5px #4f46e5, 0 0 20px rgba(79, 70, 229, 0.42) !important;
+  border-color: #4f46e5 !important;
+}
+.react-flow__node.impact-highlighted.impact-slot-4 > .custom-node-wrapper > .custom-node {
+  box-shadow: 0 0 0 2.5px #ea580c, 0 0 20px rgba(234, 88, 12, 0.42) !important;
+  border-color: #ea580c !important;
+}
+/* 2개 이상의 활성 Global Node와 동시에 연결된 교집합 노드 (.impact-multi-overlap): 다중 색상 동심원 링 */
+.react-flow__node.impact-highlighted.impact-multi-overlap > .custom-node-wrapper > .custom-node {
+  box-shadow:
+    0 0 0 2.5px #7c3aed,
+    0 0 0 5px #0891b2,
+    0 0 26px rgba(124, 58, 237, 0.5) !important;
+  border-color: #7c3aed !important;
+}
+
+/* 노드 내부 배지(.badge-pill)의 슬롯별 강조 링 */
+.badge-pill.badge-impact-slot-0 {
+  box-shadow: 0 0 0 2px #7c3aed, 0 2px 8px rgba(124, 58, 237, 0.35);
+}
+.badge-pill.badge-impact-slot-1 {
+  box-shadow: 0 0 0 2px #0891b2, 0 2px 8px rgba(8, 145, 178, 0.35);
+}
+.badge-pill.badge-impact-slot-2 {
+  box-shadow: 0 0 0 2px #db2777, 0 2px 8px rgba(219, 39, 119, 0.35);
+}
+.badge-pill.badge-impact-slot-3 {
+  box-shadow: 0 0 0 2px #4f46e5, 0 2px 8px rgba(79, 70, 229, 0.35);
+}
+.badge-pill.badge-impact-slot-4 {
+  box-shadow: 0 0 0 2px #ea580c, 0 2px 8px rgba(234, 88, 12, 0.35);
 }
 
 /* The source global node itself gets a special golden glow */
+.react-flow__node.impact-source > .custom-node-wrapper > .custom-node,
 .react-flow__node.impact-source .custom-node {
   box-shadow: 
-    0 0 0 2px #f59e0b,
+    0 0 0 2.5px #f59e0b,
     0 0 25px rgba(245, 158, 11, 0.6),
-    0 0 50px rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.7);
+    0 0 50px rgba(245, 158, 11, 0.2) !important;
+  border-color: rgba(245, 158, 11, 0.85) !important;
 }
 
 /* Impact edges - dashed purple */
@@ -1030,15 +1088,17 @@ select option {
 
 /* Impact stats floating bar */
 .impact-stats-bar {
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(15, 23, 42, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(167, 139, 250, 0.3);
+  border: 1px solid rgba(167, 139, 250, 0.35);
   border-radius: 12px;
-  padding: 12px 20px;
+  padding: 10px 18px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+  max-width: 90vw;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 20px rgba(167, 139, 250, 0.15);
   animation: impact-bar-enter 0.3s ease-out;
 }
@@ -1046,6 +1106,78 @@ select option {
 @keyframes impact-bar-enter {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.impact-chips-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.impact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1.5px solid #a78bfa;
+}
+.impact-chip.impact-slot-0 { border-color: #a78bfa; background: rgba(124, 58, 237, 0.25); }
+.impact-chip.impact-slot-1 { border-color: #22d3ee; background: rgba(8, 145, 178, 0.25); }
+.impact-chip.impact-slot-2 { border-color: #f472b6; background: rgba(219, 39, 119, 0.25); }
+.impact-chip.impact-slot-3 { border-color: #818cf8; background: rgba(79, 70, 229, 0.25); }
+.impact-chip.impact-slot-4 { border-color: #fb923c; background: rgba(234, 88, 12, 0.25); }
+
+.impact-slot-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.impact-slot-dot.slot-0 { background: #a78bfa; }
+.impact-slot-dot.slot-1 { background: #22d3ee; }
+.impact-slot-dot.slot-2 { background: #f472b6; }
+.impact-slot-dot.slot-3 { background: #818cf8; }
+.impact-slot-dot.slot-4 { background: #fb923c; }
+
+.impact-chip-remove {
+  background: transparent !important;
+  border: none !important;
+  color: #cbd5e1 !important;
+  padding: 0 2px !important;
+  font-size: 0.75rem !important;
+  line-height: 1;
+  cursor: pointer;
+}
+.impact-chip-remove:hover {
+  color: #ffffff !important;
+}
+
+.impact-operator-toggle {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.impact-operator-btn {
+  background: transparent !important;
+  border: none !important;
+  color: #cbd5e1 !important;
+  padding: 4px 10px !important;
+  font-size: 0.76rem !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+}
+.impact-operator-btn.active {
+  background: #2563eb !important;
+  color: #ffffff !important;
 }
 
 .impact-stat-item {
@@ -1065,6 +1197,7 @@ select option {
 .impact-close-btn {
   background: rgba(255, 255, 255, 0.08) !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #f8fafc !important;
   padding: 4px 12px !important;
   font-size: 0.8rem !important;
   border-radius: 6px !important;
@@ -1074,6 +1207,199 @@ select option {
 .impact-close-btn:hover {
   background: rgba(255, 255, 255, 0.15) !important;
   border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Globals 탭 내 다중 Impact 토글 및 편집 버튼 */
+.impact-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  color: #7c3aed;
+  border-radius: 6px;
+}
+.impact-toggle-btn.active.impact-slot-0 { background: #ede9fe; border: 1.5px solid #7c3aed; color: #5b21b6; }
+.impact-toggle-btn.active.impact-slot-1 { background: #cffafe; border: 1.5px solid #0891b2; color: #0e7490; }
+.impact-toggle-btn.active.impact-slot-2 { background: #fce7f3; border: 1.5px solid #db2777; color: #9d174d; }
+.impact-toggle-btn.active.impact-slot-3 { background: #e0e7ff; border: 1.5px solid #4f46e5; color: #3730a3; }
+.impact-toggle-btn.active.impact-slot-4 { background: #ffedd5; border: 1.5px solid #ea580c; color: #9a3412; }
+
+.global-node-edit-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  border-radius: 6px;
+}
+.global-node-edit-btn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+/* ============================================
+   Quick Connect Popover & 2-Step Target Pick Banner
+   ============================================ */
+.quick-connect-popover {
+  position: fixed;
+  z-index: var(--z-context-menu);
+  width: 310px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1.5px solid #93c5fd;
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.22);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.quick-connect-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+.quick-connect-close-btn {
+  padding: 2px 6px !important;
+  font-size: 0.78rem !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  border: none !important;
+  color: #64748b !important;
+}
+.quick-connect-close-btn:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+.quick-connect-type-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.quick-connect-type-pill {
+  padding: 3px 8px !important;
+  font-size: 0.72rem !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+}
+.quick-connect-type-pill.active {
+  background: #dbeafe !important;
+  border-color: #2563eb !important;
+  color: #1d4ed8 !important;
+}
+.quick-connect-search-input {
+  padding: 7px 10px !important;
+  font-size: 0.84rem !important;
+}
+.quick-connect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 210px;
+  overflow-y: auto;
+}
+.quick-connect-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px !important;
+  font-size: 0.82rem !important;
+  border-radius: 8px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+.quick-connect-item:hover {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+}
+.quick-connect-item-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.quick-connect-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 10px 4px;
+}
+.quick-connect-pick-canvas-btn {
+  width: 100%;
+  padding: 7px 10px !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  background: #f0f9ff !important;
+  border: 1px dashed #38bdf8 !important;
+  color: #0369a1 !important;
+  border-radius: 8px !important;
+}
+.quick-connect-pick-canvas-btn:hover {
+  background: #e0f2fe !important;
+}
+.start-connect-mode-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1.5px solid #93c5fd;
+  border-radius: 8px;
+}
+.start-connect-mode-btn:hover {
+  background: #dbeafe;
+}
+.pending-connect-banner {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-floating-panel);
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid #60a5fa;
+  border-radius: 999px;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #f8fafc;
+  font-size: 0.86rem;
+  font-weight: 600;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.35);
+}
+.pending-connect-cancel-btn {
+  background: rgba(239, 68, 68, 0.85) !important;
+  border: 1px solid #f87171 !important;
+  color: #ffffff !important;
+  padding: 4px 10px !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
 }
 
 /* Context Menu */

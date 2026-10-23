@@ -125,3 +125,43 @@ def test_api_node_statuses():
     assert "coalesce(n.test_status, 'Untested')" in mock_session.run.call_args[0][0]
 
     app.dependency_overrides.clear()
+
+
+def test_api_get_node_and_globals_include_label_and_test_status():
+    mock_session = Mock()
+    mock_node_res = Mock()
+    mock_node_dict = {
+        "id": "4:abc:77",
+        "type": "Component",
+        "label": "Component",
+        "name": "Global_Lang",
+        "aliases": ["i18n"],
+        "test_status": "Passed",
+        "properties": {"is_global": "true"},
+    }
+    mock_single = Mock()
+    mock_single.data.return_value = dict(mock_node_dict)
+    mock_node_res.single.return_value = mock_single
+
+    mock_globals_res = Mock()
+    mock_globals_res.data.return_value = [dict(mock_node_dict)]
+
+    mock_session.run.side_effect = [mock_node_res, mock_globals_res]
+    app.dependency_overrides[get_db] = lambda: mock_session
+
+    res_node = client.get("/api/nodes/4:abc:77")
+    assert res_node.status_code == 200
+    body_node = res_node.json()
+    assert body_node["label"] == "Component"
+    assert body_node["test_status"] == "Passed"
+    assert body_node["properties"]["is_global"] == "true"
+
+    res_globals = client.get("/api/globals")
+    assert res_globals.status_code == 200
+    body_globals = res_globals.json()
+    assert len(body_globals) == 1
+    assert body_globals[0]["label"] == "Component"
+    assert body_globals[0]["test_status"] == "Passed"
+
+    app.dependency_overrides.clear()
+

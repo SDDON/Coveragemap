@@ -180,11 +180,18 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                                 : '#334155';
                 const isSelected = selectedBadgeId === badge.id;
                 const highlightStyle = isSelected 
-                  ? { boxShadow: '0 0 0 2px #2563eb, 0 0 10px rgba(37, 99, 235, 0.4)', borderColor: '#2563eb' } 
+                  ? { boxShadow: '0 0 0 2px #2563eb, 0 0 10px rgba(96, 165, 250, 0.5)', borderColor: '#2563eb' } 
                   : {};
+                const impactSlot = data.activeImpactSlots && typeof data.activeImpactSlots[badge.id] === 'number'
+                  ? data.activeImpactSlots[badge.id]
+                  : undefined;
+                const badgeSlotClass = impactSlot !== undefined
+                  ? ` badge-impact-active badge-impact-slot-${impactSlot}`
+                  : '';
 
                 return (
-                  <div key={i} className="badge-pill" 
+                  <div key={i} className={`badge-pill${badgeSlotClass}`}
+                       data-badge-id={badge.id}
                        onClick={(e) => {
                          e.stopPropagation();
                          window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: badge.id }));

@@ -148,30 +148,76 @@ export default function App() {
   const [globalNodesList, setGlobalNodesList] = useState<any[]>([]);
   const [rfInstance, setRfInstance] = useState<any>(null);
 
-  // Impact Overlay Mode
-  const [impactMode, setImpactMode] = useState<{
+  // Impact Overlay Mode (다중 글로벌 노드 동시 비교 및 합집합 OR / 교집합 AND 필터 지원)
+  type ActiveImpactItem = {
     globalNodeId: string;
     globalNodeName: string;
+    slotIndex: number;
     connectedIds: Set<string>;
     edgeIds: Set<string>;
     stats: { Passed: number; Failed: number; Untested: number };
     total: number;
+  };
+  const [activeImpacts, setActiveImpacts] = useState<ActiveImpactItem[]>([]);
+  const [impactFilterOperator, setImpactFilterOperator] = useState<'OR' | 'AND'>('OR');
+  const hasImpactOverlay = activeImpacts.length > 0;
+
+  // 장거리 노드 연결 UI/UX (Pattern A: 빈 캔버스 드롭 팝오버 / Pattern B: 2-Step 소스 고정 후 타겟 클릭)
+  const [quickConnectPopover, setQuickConnectPopover] = useState<{
+    sourceNodeId: string;
+    x: number;
+    y: number;
+    edgeType: string;
+    search: string;
+  } | null>(null);
+  const connectDragRef = useRef<{
+    sourceNodeId: string | null;
+    startX: number;
+    startY: number;
+    didConnect: boolean;
+  }>({ sourceNodeId: null, startX: 0, startY: 0, didConnect: false });
+  const quickConnectOpenedAtRef = useRef<number>(0);
+  const [pendingConnectSource, setPendingConnectSource] = useState<{
+    nodeId: string;
+    edgeType: string;
   } | null>(null);
 
-  const activateImpact = useCallback(async (globalNodeId: string, globalNodeName: string) => {
+  const toggleImpact = useCallback(async (globalNodeId: string, globalNodeName: string) => {
+    // 이미 활성화된 글로벌 노드면 즉시 토글 해제
+    if (activeImpacts.some(item => item.globalNodeId === globalNodeId)) {
+      setActiveImpacts(prev => prev.filter(item => item.globalNodeId !== globalNodeId));
+      return;
+    }
     try {
       const res = await fetch(`/api/impact/${globalNodeId}`);
       if (!res.ok) throw new Error('Failed to fetch impact data');
       const data = await res.json();
       const connectedIds = new Set<string>(data.connected_nodes.map((n: any) => n.id));
       const edgeIds = new Set<string>(data.connected_nodes.map((n: any) => n.edge_id).filter(Boolean));
-      setImpactMode({
-        globalNodeId,
-        globalNodeName,
-        connectedIds,
-        edgeIds,
-        stats: data.stats,
-        total: data.total,
+      setActiveImpacts(prev => {
+        if (prev.some(item => item.globalNodeId === globalNodeId)) {
+          return prev.filter(item => item.globalNodeId !== globalNodeId);
+        }
+        const usedSlots = new Set(prev.map(item => item.slotIndex));
+        let slotIndex = 0;
+        while (usedSlots.has(slotIndex) && slotIndex < 4) {
+          slotIndex += 1;
+        }
+        if (usedSlots.has(slotIndex)) {
+          slotIndex = prev.length % 5;
+        }
+        return [
+          ...prev,
+          {
+            globalNodeId,
+            globalNodeName,
+            slotIndex,
+            connectedIds,
+            edgeIds,
+            stats: data.stats,
+            total: data.total,
+          },
+        ];
       });
       // Deselect everything else
       setSelectedNode(null);
@@ -181,10 +227,14 @@ export default function App() {
     } catch (err) {
       console.error('Failed to activate impact mode', err);
     }
+  }, [activeImpacts]);
+
+  const removeImpact = useCallback((globalNodeId: string) => {
+    setActiveImpacts(prev => prev.filter(item => item.globalNodeId !== globalNodeId));
   }, []);
 
   const deactivateImpact = useCallback(() => {
-    setImpactMode(null);
+    setActiveImpacts([]);
   }, []);
 
   const FILTERABLE_NODE_TYPES = useMemo(() => new Set(['Screen', 'Component', 'TestCase', 'Data']), []);
@@ -518,6 +568,10 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setQuickConnectPopover(null);
+        setPendingConnectSource(null);
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         // Only undo if not typing in an input
         if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
@@ -529,7 +583,13 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo]);
 
-  
+  // selectedNode가 해제되거나 일반 노드로 바뀌면 배지 필의 선택 상태(selectedBadgeId)도 즉시 해제
+  useEffect(() => {
+    const isGlobalSelected = (selectedNode?.data as any)?.properties?.is_global === 'true';
+    if (!isGlobalSelected) {
+      window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: null }));
+    }
+  }, [selectedNode]);
 
   useEffect(() => {
     const fetchAliases = async () => {
@@ -553,8 +613,10 @@ export default function App() {
     const handleBadgeSelect = async (e: Event) => {
       const customEvent = e as CustomEvent;
       const nodeId = customEvent.detail;
+      if (!nodeId) return;
       try {
         const res = await fetch(`/api/nodes/${nodeId}`);
+        if (!res.ok) return;
         const data = await res.json();
         const globalNode = {
           id: data.id,
@@ -562,6 +624,9 @@ export default function App() {
           position: { x: 0, y: 0 }, // Position doesn't matter for edit panel
           data: data
         };
+        setNodes(nds => (nds.some(n => n.selected) ? nds.map(n => (n.selected ? { ...n, selected: false } : n)) : nds));
+        setEdges(eds => (eds.some(ed => ed.selected) ? eds.map(ed => (ed.selected ? { ...ed, selected: false } : ed)) : eds));
+        setSelectedEdge(null);
         setSelectedNode(globalNode as Node);
       } catch (err) {
         console.error("Failed to fetch badge node", err);
@@ -676,10 +741,12 @@ export default function App() {
       window.removeEventListener('hoverGlobalBadge', handleHoverGlobalBadge);
       window.removeEventListener('unhoverGlobalBadge', handleUnhoverGlobalBadge);
     };
-  }, [setNodes, setSelectedNode]);
+  }, [setNodes, setEdges, setSelectedNode]);
 
   const prevFilterRef = useRef(filterText);
   const prevRefreshRef = useRef(refreshKey);
+  const hasInitialFitRef = useRef(false);
+  const prevFilterForFitRef = useRef(filterText);
 
   useEffect(() => {
     // If only maxDepth changed and there is no filter text, the backend will return the exact same full graph anyway.
@@ -692,6 +759,8 @@ export default function App() {
     const currentDebounceId = Date.now().toString();
 
     const fetchGraph = async () => {
+      const shouldFitView = !hasInitialFitRef.current || prevFilterForFitRef.current !== filterText;
+      prevFilterForFitRef.current = filterText;
       prevFilterRef.current = filterText;
       prevRefreshRef.current = refreshKey;
       try {
@@ -827,12 +896,46 @@ export default function App() {
           initialEdges
         );
 
+        // 백그라운드 triggerRefresh() 시에는 기존 루트 노드들의 위치를 그대로 유지하여 캔버스 점프를 방지합니다.
+        const prevNodesMap = new Map(nodesRef.current.map(n => [n.id, n]));
+        let finalNodes = layoutedNodes;
+        if (!shouldFitView && prevNodesMap.size > 0) {
+          const preservedPositions: Array<{ x: number; y: number }> = [];
+          finalNodes = layoutedNodes.map(ln => {
+            const prevNode = prevNodesMap.get(ln.id);
+            if (prevNode && !prevNode.hidden && !prevNode.parentId && !ln.parentId && prevNode.position) {
+              preservedPositions.push(prevNode.position);
+              return { ...ln, position: prevNode.position };
+            }
+            return ln;
+          });
+          if (preservedPositions.length > 0) {
+            let maxPreservedX = Math.max(...preservedPositions.map(p => p.x));
+            finalNodes = finalNodes.map(ln => {
+              const prevNode = prevNodesMap.get(ln.id);
+              const isNewlyVisibleRoot = !ln.hidden && !ln.parentId && (!prevNode || prevNode.hidden || Boolean(prevNode.parentId));
+              if (isNewlyVisibleRoot) {
+                const collides = preservedPositions.some(
+                  p => Math.abs(p.x - ln.position.x) < 260 && Math.abs(p.y - ln.position.y) < 140
+                );
+                if (collides) {
+                  maxPreservedX += 380;
+                  const newPos = { x: maxPreservedX, y: preservedPositions[0].y };
+                  preservedPositions.push(newPos);
+                  return { ...ln, position: newPos };
+                }
+              }
+              return ln;
+            });
+          }
+        }
+
         setHoveredNode(null);
         setHoveredEdge(null);
-        setNodes(layoutedNodes);
+        setNodes(finalNodes);
         setEdges(layoutedEdges);
         if (selectedNodeRef.current?.id) {
-          const matchedNode = layoutedNodes.find(n => n.id === selectedNodeRef.current?.id);
+          const matchedNode = finalNodes.find(n => n.id === selectedNodeRef.current?.id);
           if (matchedNode) {
             selectedNodeRef.current = matchedNode;
             setSelectedNode(matchedNode);
@@ -841,10 +944,13 @@ export default function App() {
         setGraphVersion(v => v + 1);
         setError(null);
         
-        // Auto-fit view when the graph is loaded to center all elements nicely
-        setTimeout(() => {
-          if (rfInstance) rfInstance.fitView({ padding: 0.2 });
-        }, 50);
+        // 초기 로드 또는 필터 변경 시에만 fitView를 실행하고, 백그라운드 재조회(triggerRefresh)에서는 현재 뷰포트를 보존합니다.
+        if (shouldFitView) {
+          hasInitialFitRef.current = true;
+          setTimeout(() => {
+            if (rfInstance) rfInstance.fitView({ padding: 0.2 });
+          }, 50);
+        }
       } catch (err: any) {
         if (err instanceof Error) {
           setError(err.message);
@@ -1041,35 +1147,45 @@ export default function App() {
     });
     if (deletedContains.length > 0) {
       unparentNodesOnContainsDelete(deletedContains, remainingEdges);
-      triggerRefresh();
     }
   }, [pushUndo, applyLocalStatusChanges, syncStatusesFromServer, unparentNodesOnContainsDelete]);
 
-  const onConnect = useCallback(async (connection: Connection) => {
-    if (!connection.source || !connection.target || connection.source === connection.target) return;
-    
-    const sourceNode = nodesRef.current.find(n => n.id === connection.source);
-    const targetNode = nodesRef.current.find(n => n.id === connection.target);
-    const sourceIsGlobal = (sourceNode?.data as any)?.properties?.is_global === 'true';
-    const targetIsGlobal = (targetNode?.data as any)?.properties?.is_global === 'true';
-
-    let defaultType = "Transition";
+  const getSmartDefaultEdgeType = useCallback((sourceNode?: Node, targetNode?: Node): string => {
     const sourceLabel = (sourceNode?.data as any)?.label;
     const targetLabel = (targetNode?.data as any)?.label;
-    if (sourceLabel === 'System' || sourceLabel === 'Category') {
-      defaultType = "Contains";
-    } else if (sourceLabel === 'TestCase') {
-      defaultType = targetLabel === 'TestCase' ? "Depends_On" : "Tests";
-    }
+    if (sourceLabel === 'System' || sourceLabel === 'Category') return 'Contains';
+    if (sourceLabel === 'TestCase') return targetLabel === 'TestCase' ? 'Depends_On' : 'Tests';
+    return 'Transition';
+  }, []);
+
+  /**
+   * 캔버스 드래그 연결(onConnect), Quick Connect 팝오버(Pattern A), 2-Step 클릭 연결(Pattern B)이
+   * 공통으로 사용하는 엣지 생성 핸들러입니다.
+   */
+  const createEdgeBetweenNodes = useCallback(async (
+    sourceId: string,
+    targetId: string,
+    explicitEdgeType?: string,
+    extraProperties?: Record<string, any>
+  ) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+
+    const sourceNode = nodesRef.current.find(n => n.id === sourceId);
+    const targetNode = nodesRef.current.find(n => n.id === targetId);
+    if (sourceNode?.parentId && sourceNode.parentId === targetId) return;
+
+    const sourceIsGlobal = (sourceNode?.data as any)?.properties?.is_global === 'true';
+    const targetIsGlobal = (targetNode?.data as any)?.properties?.is_global === 'true';
+    const defaultType = explicitEdgeType || getSmartDefaultEdgeType(sourceNode, targetNode);
 
     const payload = {
-      source: connection.source,
-      target: connection.target,
+      source: sourceId,
+      target: targetId,
       type: defaultType,
       test_status: "Untested",
-      properties: (connection as any).properties || {}
+      properties: extraProperties || {}
     };
-    
+
     try {
       const res = await fetch('/api/edges', {
         method: 'POST',
@@ -1081,11 +1197,11 @@ export default function App() {
 
       if (sourceIsGlobal || targetIsGlobal) {
         setNodes(nds => nds.map(n => {
-          if (sourceIsGlobal && n.id === connection.target) {
-            return { ...n, data: { ...n.data, badges: [...((n.data as any).badges || []), { ...sourceNode?.data, edgeId: newEdgeId, edgeType: 'Transition' }] } };
+          if (sourceIsGlobal && n.id === targetId) {
+            return { ...n, data: { ...n.data, badges: [...((n.data as any).badges || []), { ...sourceNode?.data, edgeId: newEdgeId, edgeType: defaultType }] } };
           }
-          if (targetIsGlobal && n.id === connection.source) {
-            return { ...n, data: { ...n.data, badges: [...((n.data as any).badges || []), { ...targetNode?.data, edgeId: newEdgeId, edgeType: 'Transition' }] } };
+          if (targetIsGlobal && n.id === sourceId) {
+            return { ...n, data: { ...n.data, badges: [...((n.data as any).badges || []), { ...targetNode?.data, edgeId: newEdgeId, edgeType: defaultType }] } };
           }
           return n;
         }));
@@ -1098,12 +1214,12 @@ export default function App() {
       // Contains/Has 연결 시에도 조기 리턴하지 않고 캔버스에 newEdge(.edge-contains)를 즉시 등록합니다.
       const newEdge: Edge = {
         id: newEdgeId,
-        source: connection.source!,
-        target: connection.target!,
+        source: sourceId,
+        target: targetId,
         label: defaultType,
         type: 'floating',
         className: isContainsEdge ? 'edge-contains status-untested' : 'status-untested',
-        data: { type: defaultType, test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
+        data: { type: defaultType, test_status: 'Untested', properties: extraProperties || {}, markerColor: '#64748b' },
         style: { stroke: 'gray', strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
       };
@@ -1113,8 +1229,8 @@ export default function App() {
       setEdges(bundledEds);
       setSelectedEdge(null);
       const relatedEndpointIds = new Set<string>([
-        connection.source!,
-        connection.target!,
+        sourceId,
+        targetId,
         ...(sourceNode?.parentId ? [sourceNode.parentId] : []),
         ...(targetNode?.parentId ? [targetNode.parentId] : []),
       ]);
@@ -1123,7 +1239,7 @@ export default function App() {
         setNodes(nds => (nds.some(n => n.selected) ? nds.map(n => (n.selected ? { ...n, selected: false } : n)) : nds));
       }
       // 새 입력 엣지가 생긴 타겟을 재계산하고, 바뀌면 하류(Depends_On/Tests)로 연쇄 전파 (낙관적)
-      applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, bundledEds, [connection.target!]));
+      applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, bundledEds, [targetId]));
       syncStatusesFromServer();
 
       if (isContainsEdge) {
@@ -1133,7 +1249,19 @@ export default function App() {
     } catch (err) {
       console.error("Failed to create edge:", err);
     }
-  }, [pushUndo, setEdges, setNodes, applyLocalStatusChanges, syncStatusesFromServer]);
+  }, [pushUndo, setEdges, setNodes, applyLocalStatusChanges, syncStatusesFromServer, getSmartDefaultEdgeType]);
+
+  const onConnect = useCallback(async (connection: Connection) => {
+    if (!connection.source || !connection.target || connection.source === connection.target) return;
+    connectDragRef.current.didConnect = true;
+    setQuickConnectPopover(null);
+    await createEdgeBetweenNodes(
+      connection.source,
+      connection.target,
+      undefined,
+      (connection as any).properties || {}
+    );
+  }, [createEdgeBetweenNodes]);
 
   
   const handleDelete = async () => {
@@ -1198,7 +1326,6 @@ export default function App() {
         const edgeTypeLower = String((edge.data as any)?.type || edge.label || '').toLowerCase();
         if (edgeTypeLower === 'contains' || edgeTypeLower === 'has') {
           unparentNodesOnContainsDelete([edge], nextEds);
-          triggerRefresh();
         }
       }
     } 
@@ -1412,7 +1539,7 @@ export default function App() {
         if (isNowContains) cls += ' edge-contains';
         return {
           ...e,
-          selected: (wasContains !== isNowContains) ? false : e.selected,
+          selected: (!wasContains && isNowContains) ? false : e.selected,
           label: nextEdgeTypeStr || e.label,
           data: {
             ...(e.data || {}),
@@ -1441,9 +1568,9 @@ export default function App() {
         if (resData?.new_id) newId = resData.new_id;
       } catch {}
       if (newId !== editFormData.id) {
-        setEdges(eds => eds.map(e => e.id === editFormData.id ? { ...e, id: newId, selected: (wasContains !== isNowContains) ? false : e.selected } : e));
+        setEdges(eds => eds.map(e => e.id === editFormData.id ? { ...e, id: newId, selected: (!wasContains && isNowContains) ? false : e.selected } : e));
         setEditFormData((prev: any) => prev.id === editFormData.id ? { ...prev, id: newId } : prev);
-        if (wasContains === isNowContains) {
+        if (!(!wasContains && isNowContains)) {
           setSelectedEdge(prev => prev && prev.id === editFormData.id ? { ...prev, id: newId } : prev);
         }
       }
@@ -1460,7 +1587,7 @@ export default function App() {
       if (wasContains && !isNowContains) {
         unparentNodesOnContainsDelete([edge], nextEds);
       }
-      if (wasContains !== isNowContains) {
+      if (!wasContains && isNowContains) {
         setSelectedEdge(null);
         triggerRefresh();
       }
@@ -1469,7 +1596,7 @@ export default function App() {
 
   const handleSave = async () => {
     if (editFormData.type === 'node') {
-      const node = nodes.find(n => n.id === editFormData.id);
+      const node = nodes.find(n => n.id === editFormData.id) || (selectedNode?.id === editFormData.id ? selectedNode : undefined);
       
       // Extract description and issue_link to top-level for the backend, while preserving is_global in properties
       const props = { ...(editFormData.properties || {}) };
@@ -1618,6 +1745,9 @@ export default function App() {
           }
         } : prev);
         if (prevIsGlobal !== nextIsGlobal) {
+          if (nextIsGlobal !== 'true') {
+            window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: null }));
+          }
           fetchGlobals();
           triggerRefresh();
         }
@@ -1657,18 +1787,19 @@ export default function App() {
       const nextEdgeType = String(payload.type || prevEdgeType).toLowerCase();
       const wasContains = prevEdgeType === 'contains' || prevEdgeType === 'has';
       const isNowContains = nextEdgeType === 'contains' || nextEdgeType === 'has';
+      const statusCls = `status-${String(payload.test_status || 'untested').toLowerCase()}`;
       // data.type도 함께 갱신해야 전파 엔진(edgeTypeOf)이 바뀐 타입(예: Return 전환)을 인식합니다.
       const nextEds = edgesRef.current.map(e => {
         if (e.id !== editFormData.id) return e;
-        const baseCls = (e.className || '').replace(/\bedge-contains\b/g, '').trim();
-        const nextCls = isNowContains ? `${baseCls} edge-contains`.trim() : baseCls;
+        const baseCls = (e.className || '').replace(/\b(edge-contains|status-[a-z-]+)\b/g, '').trim();
+        const combinedCls = `${baseCls} ${statusCls}${isNowContains ? ' edge-contains' : ''}`.trim();
         return {
           ...e,
           id: newId,
-          selected: (wasContains || isNowContains) ? false : e.selected,
+          selected: (!wasContains && isNowContains) ? false : e.selected,
           type: e.type,
           label: payload.type || e.label,
-          className: nextCls || undefined,
+          className: combinedCls || undefined,
           data: { ...e.data as any, type: payload.type || (e.data as any)?.type, action: payload.action, test_status: payload.test_status, properties: payload.properties }
         };
       });
@@ -1676,16 +1807,17 @@ export default function App() {
       // 타입/상태가 바뀐 엣지의 타겟을 재계산하고 하류로 전파 (낙관적) → 서버 결과로 재동기화
       applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [edge.target]));
       syncStatusesFromServer();
+      const updatedEdgeObj = nextEds.find(e => e.id === newId);
       if (newId !== editFormData.id) {
         setEditFormData({...editFormData, id: newId});
-        if (!wasContains && !isNowContains) {
-          setSelectedEdge(prev => prev ? {...prev, id: newId} : null);
-        }
+      }
+      if (!(!wasContains && isNowContains) && updatedEdgeObj) {
+        setSelectedEdge(updatedEdgeObj);
       }
       if (wasContains && !isNowContains) {
         unparentNodesOnContainsDelete([edge], nextEds);
       }
-      if (wasContains || isNowContains) {
+      if (!wasContains && isNowContains) {
         setSelectedEdge(null);
         triggerRefresh();
       }
@@ -2159,8 +2291,28 @@ export default function App() {
           return name.includes(q) || label.includes(q) || aliases.some((a: string) => a.includes(q));
         })
       : [];
+    const searchSeedIds = new Set(searchSeeds.map(s => s.id));
 
     const hasPinnedFocus = Boolean(pinnedFocusNodeId && nodes.some(n => n.id === pinnedFocusNodeId));
+    const isSelectedGlobalNode = (selectedNode?.data as any)?.properties?.is_global === 'true';
+
+    const addGlobalBadgeHoldersToActive = (globalId: string) => {
+      nodes.forEach(n => {
+        const badges = (n.data as any)?.badges || [];
+        if (badges.some((b: any) => b.id === globalId)) {
+          activeNodes.add(n.id);
+          if (n.parentId) {
+            activeNodes.add(n.parentId);
+            edges.forEach(ce => {
+              const et = String((ce.data as any)?.type || ce.label || '').toLowerCase();
+              if ((et === 'contains' || et === 'has') && ce.source === n.parentId && ce.target === n.id) {
+                edgeHighlights.add(ce.id);
+              }
+            });
+          }
+        }
+      });
+    };
 
     if (scopedAuditScopeRef.current.nodeIds.size > 0) {
       scopedAuditScopeRef.current.nodeIds.forEach(id => {
@@ -2186,18 +2338,22 @@ export default function App() {
       // pinnedFocusNodeId 또는 searchQuery 활성 상태에서는 주변 노드/엣지를 클릭해 selectedNode/selectedEdge가 바뀌어도
       // BFS 시드를 덮어쓰지 않고 유지하며, 현재 클릭해 편집 중인 대상도 선명하게 표시합니다.
       if (selectedNode) {
-        activeNodes.add(selectedNode.id);
-        if (selectedNode.parentId) {
-          activeNodes.add(selectedNode.parentId);
-        }
-        edges.forEach(e => {
-          if (
-            (e.source === selectedNode.id && activeNodes.has(e.target)) ||
-            (e.target === selectedNode.id && activeNodes.has(e.source))
-          ) {
-            edgeHighlights.add(e.id);
+        if (isSelectedGlobalNode) {
+          addGlobalBadgeHoldersToActive(selectedNode.id);
+        } else {
+          activeNodes.add(selectedNode.id);
+          if (selectedNode.parentId) {
+            activeNodes.add(selectedNode.parentId);
           }
-        });
+          edges.forEach(e => {
+            if (
+              (e.source === selectedNode.id && activeNodes.has(e.target)) ||
+              (e.target === selectedNode.id && activeNodes.has(e.source))
+            ) {
+              edgeHighlights.add(e.id);
+            }
+          });
+        }
       }
       if (selectedEdge) {
         edgeHighlights.add(selectedEdge.id);
@@ -2209,11 +2365,15 @@ export default function App() {
         if (tgtParent) activeNodes.add(tgtParent);
       }
     } else if (selectedNode) {
-      const scope = computeContentFocusScope([selectedNode.id], nodes, edges, maxDepth);
-      scope.activeNodes.forEach(id => activeNodes.add(id));
-      scope.incoming.forEach(id => incoming.add(id));
-      scope.outgoing.forEach(id => outgoing.add(id));
-      scope.edgeHighlights.forEach(eid => edgeHighlights.add(eid));
+      if (isSelectedGlobalNode) {
+        addGlobalBadgeHoldersToActive(selectedNode.id);
+      } else {
+        const scope = computeContentFocusScope([selectedNode.id], nodes, edges, maxDepth);
+        scope.activeNodes.forEach(id => activeNodes.add(id));
+        scope.incoming.forEach(id => incoming.add(id));
+        scope.outgoing.forEach(id => outgoing.add(id));
+        scope.edgeHighlights.forEach(eid => edgeHighlights.add(eid));
+      }
     } else if (selectedEdge) {
       edgeHighlights.add(selectedEdge.id);
       activeNodes.add(selectedEdge.source);
@@ -2259,35 +2419,70 @@ export default function App() {
       }
       let changed = false;
       const next = nds.map(n => {
-        let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
+        let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z0-9-]+|status-[a-z-]+)\b/g, '').trim();
         const status = ((n.data as any)?.test_status || 'untested').toLowerCase();
         cls += ' status-' + status;
         const isRootCauseNode = rootCauseScopeRef.current.nodeIds.has(n.id);
 
         // COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 4.1:
-        // 접힌 부모 Screen(isCollapsed)의 하위 자식 컴포넌트가 글로벌 영향도(impactMode) 또는 스펙 변경 영향권(affectedScope)에 포함된 경우 상향 롤업
+        // 접힌 부모 Screen(isCollapsed)의 하위 자식 컴포넌트가 글로벌 영향도(activeImpacts) 또는 스펙 변경 영향권(affectedScope)에 포함된 경우 상향 롤업
         const childNodes = (n.data as any)?.hasChildren ? nds.filter(child => child.parentId === n.id) : [];
-        const impactedChildrenInOverlay = impactMode
-          ? childNodes.filter(child => impactMode.connectedIds.has(child.id))
+        const matchingImpacts = hasImpactOverlay
+          ? activeImpacts.filter(item =>
+              item.globalNodeId === n.id ||
+              item.connectedIds.has(n.id) ||
+              Boolean((n.data as any)?.isCollapsed && childNodes.some(child => item.connectedIds.has(child.id)))
+            )
+          : [];
+        const isNodeMatchedByImpact = hasImpactOverlay && (
+          impactFilterOperator === 'AND'
+            ? matchingImpacts.length === activeImpacts.length
+            : matchingImpacts.length >= 1
+        );
+
+        const nextImpactSlots: Record<string, number> = {};
+        if (hasImpactOverlay) {
+          for (const item of activeImpacts) {
+            if (item.connectedIds.has(n.id)) {
+              nextImpactSlots[item.globalNodeId] = item.slotIndex;
+            }
+          }
+        }
+
+        const impactedChildrenInOverlay = hasImpactOverlay
+          ? childNodes.filter(child =>
+              impactFilterOperator === 'AND'
+                ? activeImpacts.every(item => item.connectedIds.has(child.id))
+                : activeImpacts.some(item => item.connectedIds.has(child.id))
+            )
           : [];
         const impactedChildrenInRipple = childNodes.filter(child => {
           const isChildMod = (child.data as any)?.properties?.is_modified === true || (child.data as any)?.properties?.is_modified === 'true';
           return isChildMod || affectedScopeRef.current.nodeIds.has(child.id);
         });
-        const isParentOfImpactedChild = Boolean((n.data as any)?.isCollapsed && impactedChildrenInOverlay.length > 0);
         const impactedChildCount = (n.data as any)?.isCollapsed
-          ? (impactMode ? impactedChildrenInOverlay.length : impactedChildrenInRipple.length)
+          ? (hasImpactOverlay ? impactedChildrenInOverlay.length : impactedChildrenInRipple.length)
           : 0;
 
         // Impact mode classes
-        if (impactMode) {
-          if (n.id === impactMode.globalNodeId) {
-            cls += ' impact-highlighted impact-source';
-          } else if (impactMode.connectedIds.has(n.id) || isParentOfImpactedChild) {
+        if (hasImpactOverlay) {
+          if (isNodeMatchedByImpact) {
             cls += ' impact-highlighted';
+            cls += ` impact-slot-${matchingImpacts[0].slotIndex}`;
+            if (matchingImpacts.length >= 2) {
+              cls += ' impact-multi-overlap';
+            }
+            if (activeImpacts.some(item => item.globalNodeId === n.id)) {
+              cls += ' impact-source';
+            }
+          }
+          if (selectedNode?.id === n.id) {
+            cls += ' highlight-selected';
           }
         } else if (activeNodes.has(n.id) || hoveredNode === n.id || isRootCauseNode) {
           cls += ' active';
+          if (selectedNode?.id === n.id) cls += ' highlight-selected';
+          if (searchSeedIds.has(n.id)) cls += ' highlight-search-match';
           if (outgoing.has(n.id)) cls += ' highlight-outgoing';
           if (incoming.has(n.id)) cls += ' highlight-incoming';
         } else if (relatedNodes.has(n.id)) {
@@ -2301,14 +2496,20 @@ export default function App() {
         if (affectedScopeRef.current.nodeIds.has(n.id)) cls += ' highlight-affected';
         
         const prevImpactedCount = (n.data as any)?.impactedChildCount || 0;
+        const prevImpactSlots: Record<string, number> = (n.data as any)?.activeImpactSlots || {};
+        const prevSlotKeys = Object.keys(prevImpactSlots);
+        const nextSlotKeys = Object.keys(nextImpactSlots);
+        const slotsChanged =
+          prevSlotKeys.length !== nextSlotKeys.length ||
+          nextSlotKeys.some(k => prevImpactSlots[k] !== nextImpactSlots[k]);
         const nextCls = cls.trim();
-        if (n.className !== nextCls || prevImpactedCount !== impactedChildCount) {
+        if (n.className !== nextCls || prevImpactedCount !== impactedChildCount || slotsChanged) {
           changed = true;
           return {
             ...n,
             className: nextCls,
-            data: prevImpactedCount !== impactedChildCount
-              ? { ...n.data, impactedChildCount }
+            data: (prevImpactedCount !== impactedChildCount || slotsChanged)
+              ? { ...n.data, impactedChildCount, activeImpactSlots: nextImpactSlots }
               : n.data,
           };
         }
@@ -2320,7 +2521,7 @@ export default function App() {
     setEdges(eds => {
       let changed = false;
       const next = eds.map(e => {
-        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+|edge-contains)\b/g, '').trim();
+        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z0-9-]+|status-[a-z-]+|edge-contains)\b/g, '').trim();
         const eTypeLower = String((e.data as any)?.type || e.label || '').toLowerCase();
         if (eTypeLower === 'contains' || eTypeLower === 'has') {
           cls += ' edge-contains';
@@ -2329,14 +2530,20 @@ export default function App() {
         cls += ' status-' + status;
         const isRootCauseEdge = rootCauseScopeRef.current.edgeIds.has(e.id);
 
+        const isImpactEdge = hasImpactOverlay && (
+          impactFilterOperator === 'AND'
+            ? activeImpacts.every(item => item.edgeIds.has(e.id))
+            : activeImpacts.some(item => item.edgeIds.has(e.id))
+        );
+
         // Impact mode edge classes
-        if (impactMode && impactMode.edgeIds.has(e.id)) {
+        if (isImpactEdge) {
           cls += ' impact-edge';
-        } else if (edgeHighlights.has(e.id) || hoveredEdge === e.id || isRootCauseEdge) {
+        } else if (!hasImpactOverlay && (edgeHighlights.has(e.id) || hoveredEdge === e.id || isRootCauseEdge)) {
           cls += ' active highlight-edge';
-        } else if (relatedEdges.has(e.id)) {
+        } else if (!hasImpactOverlay && relatedEdges.has(e.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId) {
+        } else if (!hasImpactOverlay && (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId)) {
           cls += ' de-emphasized';
         }
         // 결함 원인 역추적 엣지 강조
@@ -2358,7 +2565,7 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, pinnedFocusNodeId, computeContentFocusScope, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, collapsedKey, edgesKey, allNodesMeasured, graphVersion]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, pinnedFocusNodeId, computeContentFocusScope, activeImpacts, impactFilterOperator, hasImpactOverlay, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, collapsedKey, edgesKey, allNodesMeasured, graphVersion]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
@@ -2539,14 +2746,62 @@ export default function App() {
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onConnect={onConnect}
+        onNodeClick={(_, node) => {
+          setQuickConnectPopover(null);
+          if (pendingConnectSource) {
+            if (node.id !== pendingConnectSource.nodeId) {
+              createEdgeBetweenNodes(pendingConnectSource.nodeId, node.id, pendingConnectSource.edgeType);
+              setPendingConnectSource(null);
+            }
+          }
+        }}
         // E. 연결 드래그 중에만 컨테이너에 .react-flow--connecting을 붙여 타겟 드롭 히트박스를 노드 전체로 확장
-        onConnectStart={() => setIsConnecting(true)}
-        onConnectEnd={() => setIsConnecting(false)}
+        onConnectStart={(event, params) => {
+          setIsConnecting(true);
+          const clientX = 'clientX' in event ? event.clientX : (event as TouchEvent).touches?.[0]?.clientX ?? 0;
+          const clientY = 'clientY' in event ? event.clientY : (event as TouchEvent).touches?.[0]?.clientY ?? 0;
+          connectDragRef.current = {
+            sourceNodeId: params.nodeId || null,
+            startX: clientX,
+            startY: clientY,
+            didConnect: false,
+          };
+        }}
+        onConnectEnd={(event) => {
+          setIsConnecting(false);
+          const drag = connectDragRef.current;
+          if (!drag.sourceNodeId || drag.didConnect) {
+            connectDragRef.current = { sourceNodeId: null, startX: 0, startY: 0, didConnect: false };
+            return;
+          }
+          const clientX = 'clientX' in event ? event.clientX : (event as TouchEvent).changedTouches?.[0]?.clientX ?? 0;
+          const clientY = 'clientY' in event ? event.clientY : (event as TouchEvent).changedTouches?.[0]?.clientY ?? 0;
+          const dist = Math.hypot(clientX - drag.startX, clientY - drag.startY);
+          if (dist >= 50) {
+            const srcNode = nodesRef.current.find(n => n.id === drag.sourceNodeId);
+            const defaultEdgeType = getSmartDefaultEdgeType(srcNode, undefined);
+            const clampedX = Math.min(Math.max(clientX, 20), window.innerWidth - 340);
+            const clampedY = Math.min(Math.max(clientY, 20), window.innerHeight - 380);
+            quickConnectOpenedAtRef.current = Date.now();
+            setQuickConnectPopover({
+              sourceNodeId: drag.sourceNodeId,
+              x: clampedX,
+              y: clampedY,
+              edgeType: defaultEdgeType,
+              search: '',
+            });
+          }
+          connectDragRef.current = { sourceNodeId: null, startX: 0, startY: 0, didConnect: false };
+        }}
         onPaneClick={() => {
+          if (Date.now() - quickConnectOpenedAtRef.current < 250) {
+            return;
+          }
+          setQuickConnectPopover(null);
           setSelectedNode(null);
           setSelectedEdge(null);
           setScopedAuditRootId(null);
-          if (impactMode) deactivateImpact();
+          if (hasImpactOverlay) deactivateImpact();
           setContextMenu(null);
         }}
         onPaneContextMenu={(event) => {
@@ -2562,7 +2817,7 @@ export default function App() {
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || pinnedFocusNodeId || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : ''} ${impactMode ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
+        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || pinnedFocusNodeId || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : ''} ${hasImpactOverlay ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -2841,19 +3096,26 @@ export default function App() {
                   })()}
                   <div className="form-group" style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1.5px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                     {(() => {
+                      const isCurrentlyGlobal = editFormData.properties?.is_global === 'true';
                       const isGlobalAllowed = ['Component', 'Data', 'TestCase'].includes(editFormData.label);
+                      const canToggleGlobal = isGlobalAllowed || isCurrentlyGlobal;
                       return (
                         <>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', opacity: isGlobalAllowed ? 1 : 0.5 }}>
-                            <input type="checkbox" id="nodeIsGlobal" disabled={!isGlobalAllowed} checked={editFormData.properties?.is_global === 'true'} onChange={e => {
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', opacity: canToggleGlobal ? 1 : 0.5 }}>
+                            <input type="checkbox" id="nodeIsGlobal" disabled={!canToggleGlobal} checked={isCurrentlyGlobal} onChange={e => {
                               const newProps = { ...(editFormData.properties || {}), is_global: e.target.checked ? 'true' : 'false' };
                               setEditFormData({...editFormData, properties: newProps});
-                            }} style={{ cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }} />
-                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: isGlobalAllowed ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>{t.globalNode.title}<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.globalNode}>?</span></label>
+                            }} style={{ cursor: canToggleGlobal ? 'pointer' : 'not-allowed', width: '16px', height: '16px' }} />
+                            <label htmlFor="nodeIsGlobal" className="form-label" style={{ marginBottom: 0, cursor: canToggleGlobal ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.9rem', color: '#1e293b' }}>{t.globalNode.title}<span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.globalNode}>?</span></label>
                           </div>
-                          {!isGlobalAllowed && (
+                          {!isGlobalAllowed && !isCurrentlyGlobal && (
                             <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: '#dc2626', fontWeight: 500 }}>
                               {t.globalNode.notAllowed}
+                            </p>
+                          )}
+                          {isCurrentlyGlobal && (
+                            <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: '#0369a1', fontWeight: 500 }}>
+                              {t.globalNode.uncheckHint}
                             </p>
                           )}
                           <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
@@ -2977,6 +3239,28 @@ export default function App() {
                       }}
                     >
                       {pinnedFocusNodeId === editFormData.id ? t.contentFocus.unpinButton : t.contentFocus.pinButton}
+                    </button>
+                  )}
+                  {/* 장거리 노드 2-Step 클릭 연결 시작 버튼 (Pattern B) */}
+                  {editFormData.type === 'node' && !isCreatingNode && (selectedNode?.data as any)?.properties?.is_global !== 'true' && (
+                    <button
+                      type="button"
+                      className={`start-connect-mode-btn${pendingConnectSource?.nodeId === editFormData.id ? ' active' : ''}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const targetId = editFormData.id;
+                        if (pendingConnectSource?.nodeId === targetId) {
+                          setPendingConnectSource(null);
+                        } else {
+                          const srcNode = nodesRef.current.find(n => n.id === targetId);
+                          setPendingConnectSource({
+                            nodeId: targetId,
+                            edgeType: getSmartDefaultEdgeType(srcNode, undefined),
+                          });
+                        }
+                      }}
+                    >
+                      {t.quickConnect.startButton}
                     </button>
                   )}
                 </div>
@@ -3260,83 +3544,106 @@ export default function App() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {globalNodesList.map(g => (
-                    <div key={g.id} style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: '#f8fafc', border: '1.5px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, overflow: 'hidden' }}>
-                        <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={g.name}>{g.name}</span>
-                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{g.type}</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
-                        <button 
-                          onClick={() => {
-                            if (impactMode?.globalNodeId === g.id) {
-                              deactivateImpact();
-                            } else {
-                              activateImpact(g.id, g.name);
-                            }
-                          }}
-                          title={`Show impact: which nodes are affected by ${g.name}`}
-                          style={{ 
-                            padding: '5px 10px', fontSize: '12px', fontWeight: 600,
-                            background: impactMode?.globalNodeId === g.id ? '#ede9fe' : '#f5f3ff',
-                            border: impactMode?.globalNodeId === g.id ? '1.5px solid #7c3aed' : '1px solid #ddd6fe',
-                            color: impactMode?.globalNodeId === g.id ? '#6d28d9' : '#7c3aed',
-                            borderRadius: '6px'
-                          }}
-                        >
-                          {impactMode?.globalNodeId === g.id ? '🔍 ON' : '🔍 Impact'}
-                        </button>
-                        <button 
-                          className="primary" 
-                          disabled={!selectedNode}
-                          onClick={async () => {
-                            if (!selectedNode) return;
-                            try {
-                              const res = await fetch('/api/edges', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  source: selectedNode.id,
-                                  target: g.id,
-                                  type: 'Depends_On',
-                                  action: '',
-                                  properties: {},
-                                  test_status: 'Untested'
-                                })
-                              });
-                              if (res.ok) {
-                                const newEdgeId = await res.json();
-                                setNodes(nds => nds.map(n => {
-                                  if (n.id !== selectedNode.id) return n;
-                                  const liveGlobalData = (nodesRef.current.find(gn => gn.id === g.id)?.data as any) || {};
-                                  const mergedGlobalProps = {
-                                    ...(g.properties || {}),
-                                    ...(liveGlobalData.properties || {}),
-                                    ...(g.description !== undefined ? { description: g.description } : {}),
-                                    ...(g.issue_link !== undefined ? { issue_link: g.issue_link } : {}),
-                                  };
-                                  const newBadges = [
-                                    ...((n.data as any).badges || []),
-                                    { ...g, ...liveGlobalData, properties: mergedGlobalProps, edgeId: newEdgeId, edgeType: 'Depends_On', test_status: 'Untested' }
-                                  ];
-                                  return { ...n, data: { ...n.data, badges: newBadges } };
-                                }));
-                              } else {
-                                const text = await res.text();
-                                setError(text);
+                  {globalNodesList.map(g => {
+                    const activeImpactItem = activeImpacts.find(item => item.globalNodeId === g.id);
+                    return (
+                      <div key={g.id} style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '8px', background: '#f8fafc', border: '1.5px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, overflow: 'hidden' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={g.name}>{g.name}</span>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{g.type}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', marginLeft: '8px', flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            className="global-node-edit-btn"
+                            title={t.globalNode.editButtonTitle(g.name)}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/nodes/${encodeURIComponent(g.id)}`);
+                                const data = res.ok ? await res.json() : g;
+                                const globalNodeObj: Node = {
+                                  id: data.id || g.id,
+                                  type: 'custom',
+                                  position: { x: 0, y: 0 },
+                                  data: {
+                                    ...data,
+                                    label: data.label || g.label || g.type || 'Component',
+                                    test_status: data.test_status || g.test_status || 'Untested',
+                                  },
+                                };
+                                setNodes(nds => (nds.some(n => n.selected) ? nds.map(n => (n.selected ? { ...n, selected: false } : n)) : nds));
+                                setEdges(eds => (eds.some(ed => ed.selected) ? eds.map(ed => (ed.selected ? { ...ed, selected: false } : ed)) : eds));
+                                setSelectedEdge(null);
+                                setSelectedNode(globalNodeObj);
+                                window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: globalNodeObj.id }));
+                                setRightPanelTab('edit');
+                              } catch (err) {
+                                console.error('Failed to open global node for edit', err);
                               }
-                            } catch (err: any) {
-                              setError(err.message);
-                            }
-                          }}
-                          title={selectedNode ? `Attach to ${(selectedNode.data as any)?.name || 'selected node'}` : 'Select a node on the canvas first to attach'}
-                          style={{ padding: '4px 8px', fontSize: '12px', opacity: selectedNode ? 1 : 0.5 }}
-                        >
-                          [+] Attach
-                        </button>
+                            }}
+                          >
+                            {t.globalNode.editButton}
+                          </button>
+                          <button
+                            type="button"
+                            className={`impact-toggle-btn${activeImpactItem ? ` active slot-${activeImpactItem.slotIndex}` : ''}`}
+                            onClick={() => toggleImpact(g.id, g.name)}
+                            title={`Show impact: which nodes are affected by ${g.name}`}
+                          >
+                            {activeImpactItem ? '🔍 ON' : '🔍 Impact'}
+                          </button>
+                          <button 
+                            className="primary" 
+                            disabled={!selectedNode}
+                            onClick={async () => {
+                              if (!selectedNode) return;
+                              try {
+                                const res = await fetch('/api/edges', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    source: selectedNode.id,
+                                    target: g.id,
+                                    type: 'Depends_On',
+                                    action: '',
+                                    properties: {},
+                                    test_status: 'Untested'
+                                  })
+                                });
+                                if (res.ok) {
+                                  const newEdgeId = await res.json();
+                                  setNodes(nds => nds.map(n => {
+                                    if (n.id !== selectedNode.id) return n;
+                                    const liveGlobalData = (nodesRef.current.find(gn => gn.id === g.id)?.data as any) || {};
+                                    const mergedGlobalProps = {
+                                      ...(g.properties || {}),
+                                      ...(liveGlobalData.properties || {}),
+                                      ...(g.description !== undefined ? { description: g.description } : {}),
+                                      ...(g.issue_link !== undefined ? { issue_link: g.issue_link } : {}),
+                                    };
+                                    const newBadges = [
+                                      ...((n.data as any).badges || []),
+                                      { ...g, ...liveGlobalData, properties: mergedGlobalProps, edgeId: newEdgeId, edgeType: 'Depends_On', test_status: 'Untested' }
+                                    ];
+                                    return { ...n, data: { ...n.data, badges: newBadges } };
+                                  }));
+                                } else {
+                                  const text = await res.text();
+                                  setError(text);
+                                }
+                              } catch (err: any) {
+                                setError(err.message);
+                              }
+                            }}
+                            title={selectedNode ? `Attach to ${(selectedNode.data as any)?.name || 'selected node'}` : 'Select a node on the canvas first to attach'}
+                            style={{ padding: '4px 8px', fontSize: '12px', opacity: selectedNode ? 1 : 0.5 }}
+                          >
+                            [+] Attach
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -3359,7 +3666,7 @@ export default function App() {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
-                            label: 'Screen',
+                            label: 'Component',
                             name: input.value.trim(),
                             aliases: [],
                             properties: { is_global: 'true' },
@@ -3430,6 +3737,133 @@ export default function App() {
         </div>
       )}
 
+      {/* Pattern A: 빈 캔버스에 연결선 드롭 시 열리는 Quick Connect 검색 팝오버 */}
+      {quickConnectPopover && (() => {
+        const srcNode = nodes.find(n => n.id === quickConnectPopover.sourceNodeId);
+        const srcName = (srcNode?.data as any)?.name || quickConnectPopover.sourceNodeId;
+        const q = quickConnectPopover.search.trim().toLowerCase();
+        const candidates = nodes.filter(n => {
+          if (n.hidden || n.id === quickConnectPopover.sourceNodeId) return false;
+          if (srcNode?.parentId && srcNode.parentId === n.id) return false;
+          if (!q) return true;
+          const name = String((n.data as any)?.name || '').toLowerCase();
+          const label = String((n.data as any)?.label || '').toLowerCase();
+          const nodeAliases: string[] = Array.isArray((n.data as any)?.aliases) ? (n.data as any).aliases : [];
+          return name.includes(q) || label.includes(q) || nodeAliases.some(a => String(a).toLowerCase().includes(q));
+        });
+        const edgeTypes = ['Transition', 'Contains', 'Depends_On', 'Tests', 'Return'];
+        return (
+          <div
+            className="quick-connect-popover"
+            style={{ top: quickConnectPopover.y, left: quickConnectPopover.x }}
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="quick-connect-header">
+              <span className="quick-connect-title" title={srcName}>{t.quickConnect.title(srcName)}</span>
+              <button
+                type="button"
+                className="quick-connect-close"
+                onClick={() => setQuickConnectPopover(null)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="quick-connect-edge-types" aria-label={t.quickConnect.edgeTypeLabel}>
+              {edgeTypes.map(et => (
+                <button
+                  key={et}
+                  type="button"
+                  className={`quick-connect-type-pill${quickConnectPopover.edgeType === et ? ' active' : ''}`}
+                  onClick={() => setQuickConnectPopover(prev => prev ? { ...prev, edgeType: et } : null)}
+                >
+                  {et}
+                </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              autoFocus
+              className="quick-connect-search-input"
+              placeholder={t.quickConnect.searchPlaceholder}
+              value={quickConnectPopover.search}
+              onChange={e => setQuickConnectPopover(prev => prev ? { ...prev, search: e.target.value } : null)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setQuickConnectPopover(null);
+                } else if (e.key === 'Enter' && candidates.length > 0 && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  const target = candidates[0];
+                  const popoverSnap = quickConnectPopover;
+                  setQuickConnectPopover(null);
+                  createEdgeBetweenNodes(popoverSnap.sourceNodeId, target.id, popoverSnap.edgeType);
+                }
+              }}
+            />
+            <div className="quick-connect-list">
+              {candidates.length === 0 ? (
+                <div className="quick-connect-empty">{t.quickConnect.emptyResult}</div>
+              ) : (
+                candidates.slice(0, 30).map(cand => {
+                  const candName = (cand.data as any)?.name || cand.id;
+                  const candLabel = (cand.data as any)?.label || 'Node';
+                  return (
+                    <button
+                      key={cand.id}
+                      type="button"
+                      className="quick-connect-item"
+                      onClick={() => {
+                        const popoverSnap = quickConnectPopover;
+                        setQuickConnectPopover(null);
+                        createEdgeBetweenNodes(popoverSnap.sourceNodeId, cand.id, popoverSnap.edgeType);
+                      }}
+                    >
+                      <span className="quick-connect-item-name" title={candName}>{candName}</span>
+                      <span className="quick-connect-item-meta">{candLabel}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <button
+              type="button"
+              className="quick-connect-pick-canvas-btn"
+              onClick={() => {
+                setPendingConnectSource({
+                  nodeId: quickConnectPopover.sourceNodeId,
+                  edgeType: quickConnectPopover.edgeType,
+                });
+                setQuickConnectPopover(null);
+              }}
+            >
+              {t.quickConnect.pickOnCanvasButton}
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Pattern B: 2-Step 출발 노드 고정 후 타겟 노드 클릭 대기 배너 */}
+      {pendingConnectSource && (() => {
+        const srcNode = nodes.find(n => n.id === pendingConnectSource.nodeId);
+        const srcName = (srcNode?.data as any)?.name || pendingConnectSource.nodeId;
+        return (
+          <div
+            className="pending-connect-banner"
+            style={hasImpactOverlay ? { bottom: 88 } : undefined}
+          >
+            <span>{t.quickConnect.pendingBanner(srcName, pendingConnectSource.edgeType)}</span>
+            <button
+              type="button"
+              className="pending-connect-cancel-btn"
+              onClick={() => setPendingConnectSource(null)}
+            >
+              {t.quickConnect.cancelPending}
+            </button>
+          </div>
+        );
+      })()}
+
       {/* 특정 콘텐츠 포커스 고정 플로팅 배너 (Content Focus Pinning — 기존 Workspace 관리자 모달은 제거됨) */}
       {pinnedFocusNodeId && (() => {
         const pinnedNode = nodes.find(n => n.id === pinnedFocusNodeId);
@@ -3438,7 +3872,7 @@ export default function App() {
         return (
           <div
             className="pinned-focus-banner"
-            style={impactMode ? { bottom: 88 } : undefined}
+            style={hasImpactOverlay ? { bottom: 88 } : undefined}
           >
             <span>{t.contentFocus.banner(pinnedName)}</span>
             <button
@@ -3466,33 +3900,96 @@ export default function App() {
         }}
       />
 
-      {/* Impact Overlay Stats Bar */}
-      {impactMode && (
-        <div className="impact-stats-bar" style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 'var(--z-floating-panel)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '1.1rem' }}>🔍</span>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#c4b5fd' }}>{impactMode.globalNodeName}</div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.impact.affected(impactMode.total)}</div>
+      {/* Impact Overlay Stats Bar (Multi-Global 5-Slot & OR/AND Filter) */}
+      {hasImpactOverlay && (() => {
+        let matchedIds: Set<string>;
+        if (activeImpacts.length === 1) {
+          matchedIds = activeImpacts[0].connectedIds;
+        } else if (impactFilterOperator === 'AND') {
+          const [first, ...rest] = activeImpacts;
+          matchedIds = new Set(
+            Array.from(first.connectedIds).filter(id => rest.every(item => item.connectedIds.has(id)))
+          );
+        } else {
+          matchedIds = new Set<string>();
+          activeImpacts.forEach(item => item.connectedIds.forEach(id => matchedIds.add(id)));
+        }
+
+        const stats = activeImpacts.length === 1
+          ? activeImpacts[0].stats
+          : (() => {
+              let Passed = 0;
+              let Failed = 0;
+              let Untested = 0;
+              matchedIds.forEach(id => {
+                const nd = nodes.find(n => n.id === id);
+                const st = (nd?.data as any)?.test_status || 'Untested';
+                if (st === 'Passed') Passed += 1;
+                else if (st === 'Failed') Failed += 1;
+                else Untested += 1;
+              });
+              return { Passed, Failed, Untested };
+            })();
+        const total = activeImpacts.length === 1 ? activeImpacts[0].total : matchedIds.size;
+
+        return (
+          <div className="impact-stats-bar" style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 'var(--z-floating-panel)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '1.1rem' }}>🔍</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                {activeImpacts.map(item => (
+                  <span key={item.globalNodeId} className={`impact-chip impact-chip-slot-${item.slotIndex}`}>
+                    <span className="impact-chip-dot" />
+                    <span>{item.globalNodeName}</span>
+                    <button
+                      type="button"
+                      className="impact-chip-remove"
+                      title={t.impact.removeChipTitle(item.globalNodeName)}
+                      onClick={() => removeImpact(item.globalNodeId)}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.impact.affected(total)}</div>
             </div>
+            <div className="impact-operator-toggle" role="group">
+              <button
+                type="button"
+                className={`impact-operator-btn${impactFilterOperator === 'OR' ? ' active' : ''}`}
+                title={t.impact.modeOrTitle}
+                onClick={() => setImpactFilterOperator('OR')}
+              >
+                {t.impact.modeOr}
+              </button>
+              <button
+                type="button"
+                className={`impact-operator-btn${impactFilterOperator === 'AND' ? ' active' : ''}`}
+                title={t.impact.modeAndTitle}
+                onClick={() => setImpactFilterOperator('AND')}
+              >
+                {t.impact.modeAnd}
+              </button>
+            </div>
+            <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
+            <div className="impact-stat-item">
+              <div className="impact-stat-dot" style={{ background: '#22c55e' }} />
+              <span style={{ color: '#4ade80' }}>{stats.Passed}</span>
+            </div>
+            <div className="impact-stat-item">
+              <div className="impact-stat-dot" style={{ background: '#ef4444' }} />
+              <span style={{ color: '#f87171' }}>{stats.Failed}</span>
+            </div>
+            <div className="impact-stat-item">
+              <div className="impact-stat-dot" style={{ background: '#64748b' }} />
+              <span style={{ color: '#94a3b8' }}>{stats.Untested}</span>
+            </div>
+            <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
+            <button className="impact-close-btn" onClick={deactivateImpact}>✕ Close</button>
           </div>
-          <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
-          <div className="impact-stat-item">
-            <div className="impact-stat-dot" style={{ background: '#22c55e' }} />
-            <span style={{ color: '#4ade80' }}>{impactMode.stats.Passed}</span>
-          </div>
-          <div className="impact-stat-item">
-            <div className="impact-stat-dot" style={{ background: '#ef4444' }} />
-            <span style={{ color: '#f87171' }}>{impactMode.stats.Failed}</span>
-          </div>
-          <div className="impact-stat-item">
-            <div className="impact-stat-dot" style={{ background: '#64748b' }} />
-            <span style={{ color: '#94a3b8' }}>{impactMode.stats.Untested}</span>
-          </div>
-          <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
-          <button className="impact-close-btn" onClick={deactivateImpact}>✕ Close</button>
-        </div>
-      )}
+        );
+      })()}
       
       {error && (
         <div className="error-toast glass-panel" style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', color: 'var(--status-failed-text)', background: 'var(--status-failed-bg)', border: '1px solid var(--status-failed-border)', zIndex: 'var(--z-toast)' }}>

@@ -867,3 +867,49 @@ def test_clone_child_node_directly_and_child_to_child_internal_edges():
     assert in_global_kwargs["target_id"] == "4:abc:31"
 
 
+def test_update_edge_same_type_skips_recreate_and_diff_type_recreates():
+    # 1) 요청된 type이 기존 관계의 type(r)과 동일(대소문자 무관)하면 DELETE/CREATE 없이 SET만 수행해 ID 보존
+    mock_session_same = Mock()
+    mock_type_check = Mock()
+    mock_type_check.single.return_value = {"rel_type": "Contains"}
+    mock_set_res = Mock()
+    mock_set_res.single.return_value = {"new_id": "5:abc:10", "target_id": "4:abc:2"}
+    mock_recalc = Mock()
+    mock_recalc.single.return_value = {
+        "current_status": "Untested",
+        "is_override": None,
+        "is_global": None,
+        "checklist": None,
+        "inputs": [],
+    }
+    mock_session_same.run.side_effect = [mock_type_check, mock_set_res, mock_recalc]
+
+    same_id = update_edge(
+        mock_session_same,
+        "5:abc:10",
+        EdgeUpdate(type="Contains", test_status="Passed", action="Open Sub"),
+    )
+    assert same_id == "5:abc:10"
+    executed_queries = [c[0][0] for c in mock_session_same.run.call_args_list]
+    assert not any("DELETE r" in q for q in executed_queries)
+    assert any("SET r.test_status = $test_status, r.action = $action" in q for q in executed_queries)
+
+    # 2) 요청된 type이 기존 관계의 type(r)과 다르면 새 관계 생성 후 기존 관계 삭제
+    mock_session_diff = Mock()
+    mock_type_check_diff = Mock()
+    mock_type_check_diff.single.return_value = {"rel_type": "Contains"}
+    mock_recreate_res = Mock()
+    mock_recreate_res.single.return_value = {"new_id": "5:abc:99", "target_id": "4:abc:2"}
+    mock_session_diff.run.side_effect = [mock_type_check_diff, mock_recreate_res, mock_recalc]
+
+    diff_id = update_edge(
+        mock_session_diff,
+        "5:abc:10",
+        EdgeUpdate(type="Transition", test_status="Passed"),
+    )
+    assert diff_id == "5:abc:99"
+    diff_queries = [c[0][0] for c in mock_session_diff.run.call_args_list]
+    assert any("CREATE (a)-[r2:`Transition`]->(b)" in q and "DELETE r" in q for q in diff_queries)
+
+
+
