@@ -637,7 +637,135 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(nodeLocator(page, clonedParent.id)).toHaveCount(0);
     await expect(nodeLocator(page, clonedChild.id)).toHaveCount(0);
   });
+
+  test('N. Immediate UI update without reload when connecting edges between Contains child and external/sibling components (C1->C2, C2->C1, C1->C3)', async ({ page, request }) => {
+    // 1. Setup: [Screen (ids.root) - Contains - Component 1 (ids.settings), Component 3 (comp3Id)] and standalone [Component 2 (ids.child)]
+    const initialGraph = await (await request.get('/api/graph')).json();
+    for (const e of initialGraph.edges) {
+      if (e.source === ids.root && e.target === ids.child) {
+        await request.delete(`/api/edges/${encodeURIComponent(e.id)}`);
+      }
+    }
+    const comp3Res = await request.post('/api/nodes', {
+      data: { label: 'Component', name: 'Component_3', aliases: [], test_status: 'Untested', properties: {} },
+    });
+    expect(comp3Res.ok()).toBeTruthy();
+    const comp3Id = await comp3Res.json();
+
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: comp3Id, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+
+    const initialLoad = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await initialLoad;
+    await page.waitForTimeout(600);
+
+    // Helper to drag a connection from source node's outer rim (.halo-handle) to target node center without reloading
+    const dragConnectNodes = async (sourceId: string, targetId: string): Promise<string> => {
+      const srcBox = await nodeLocator(page, sourceId).locator('.custom-node').boundingBox();
+      const tgtBox = await nodeLocator(page, targetId).locator('.custom-node').boundingBox();
+      expect(srcBox).not.toBeNull();
+      expect(tgtBox).not.toBeNull();
+
+      // Pick the outer rim side of source closest to target
+      const srcCenterX = srcBox!.x + srcBox!.width / 2;
+      const tgtCenterX = tgtBox!.x + tgtBox!.width / 2;
+      const startX = tgtCenterX >= srcCenterX ? srcBox!.x + srcBox!.width + 4 : srcBox!.x - 4;
+      const startY = srcBox!.y + srcBox!.height / 2;
+      const endX = tgtBox!.x + tgtBox!.width / 2;
+      const endY = tgtBox!.y + tgtBox!.height / 2;
+
+      const postEdgePromise = page.waitForResponse(
+        res => res.url().includes('/api/edges') && res.request().method() === 'POST'
+      );
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(endX, endY, { steps: 12 });
+      await page.mouse.up();
+
+      const postRes = await postEdgePromise;
+      expect(postRes.ok()).toBeTruthy();
+      return (await postRes.json()) as string;
+    };
+
+    // Select Component 1 (ids.settings) first -> Component 2 (ids.child) and sibling Component 3 (comp3Id) are initially de-emphasized
+    await selectNode(page, ids.settings);
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bde-emphasized\b/);
+    await expect(nodeLocator(page, comp3Id)).toHaveClass(/\bde-emphasized\b/);
+
+    // 2. Scenario 1: Connect Component 1 (ids.settings) -> Component 2 (ids.child) WITHOUT reload
+    const edgeC1ToC2 = await dragConnectNodes(ids.settings, ids.child);
+    const edge1El = page.locator(`.react-flow__edge[data-id="${edgeC1ToC2}"]`);
+    await expect(edge1El).toBeVisible();
+    await expect(edge1El).toHaveClass(/\bstatus-untested\b/);
+    await expect(edge1El).toHaveClass(/\bactive\b/);
+    await expect(edge1El).toHaveClass(/\bhighlight-edge\b/);
+    await expect(edge1El).not.toHaveClass(/\bde-emphasized\b/);
+    const d1 = await edge1El.locator('path.react-flow__edge-path').getAttribute('d');
+    expect(d1).toBeTruthy();
+    // Component 2 (ids.child) must immediately transition from .de-emphasized to .active.highlight-outgoing without reload
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bhighlight-outgoing\b/);
+    await expect(nodeLocator(page, ids.child)).not.toHaveClass(/\bde-emphasized\b/);
+
+    // 3. Scenario 2: Reverse direction Component 2 (ids.child) -> Component 1 (ids.settings) WITHOUT reload
+    const edgeC2ToC1 = await dragConnectNodes(ids.child, ids.settings);
+    const edge2El = page.locator(`.react-flow__edge[data-id="${edgeC2ToC1}"]`);
+    await expect(edge2El).toBeVisible();
+    await expect(edge2El).toHaveClass(/\bstatus-untested\b/);
+    await expect(edge2El).toHaveClass(/\bactive\b/);
+    await expect(edge2El).toHaveClass(/\bhighlight-edge\b/);
+    await expect(edge2El).not.toHaveClass(/\bde-emphasized\b/);
+    const d2 = await edge2El.locator('path.react-flow__edge-path').getAttribute('d');
+    expect(d2).toBeTruthy();
+    // Bidirectional bundling must curve both paths ('Q') immediately
+    expect(d2).toContain('Q');
+
+    // Select Component 2 (ids.child) and verify Component 1 + parent Screen are active and highlighted
+    await selectNode(page, ids.child);
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
+    await expect(edge1El).toHaveClass(/\bactive\b/);
+    await expect(edge2El).toHaveClass(/\bactive\b/);
+
+    // 4. Scenario 3: Sibling connection Component 1 (ids.settings) -> Component 3 (comp3Id) inside same parent Screen WITHOUT reload
+    await selectNode(page, ids.settings);
+    await expect(nodeLocator(page, comp3Id)).toHaveClass(/\bde-emphasized\b/);
+
+    const edgeC1ToC3 = await dragConnectNodes(ids.settings, comp3Id);
+    const edge3El = page.locator(`.react-flow__edge[data-id="${edgeC1ToC3}"]`);
+    await expect(edge3El).toBeVisible();
+    await expect(edge3El).toHaveClass(/\bstatus-untested\b/);
+    await expect(edge3El).toHaveClass(/\bactive\b/);
+    await expect(edge3El).toHaveClass(/\bhighlight-edge\b/);
+    await expect(edge3El).not.toHaveClass(/\bde-emphasized\b/);
+    const d3 = await edge3El.locator('path.react-flow__edge-path').getAttribute('d');
+    expect(d3).toBeTruthy();
+
+    // Sibling Component 3 must immediately become .active.highlight-outgoing while shared parent Screen stays .active without directional border pollution
+    await expect(nodeLocator(page, comp3Id)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, comp3Id)).toHaveClass(/\bhighlight-outgoing\b/);
+    await expect(nodeLocator(page, comp3Id)).not.toHaveClass(/\bde-emphasized\b/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.root)).not.toHaveClass(/\bhighlight-outgoing\b/);
+    await expect(nodeLocator(page, ids.root)).not.toHaveClass(/\bhighlight-incoming\b/);
+
+    // 5. Scenario 4: Drag connection with NO prior node selection (selectedNode === null, cursor hovers target on drop)
+    await page.locator('.react-flow__pane').click({ position: { x: 10, y: 300 } });
+    await expect(page.locator('.details-panel .node-id')).toHaveCount(0);
+
+    const edgeC3ToC2 = await dragConnectNodes(comp3Id, ids.child);
+    const edge4El = page.locator(`.react-flow__edge[data-id="${edgeC3ToC2}"]`);
+    await expect(edge4El).toBeVisible();
+    await expect(edge4El).toHaveClass(/\bstatus-untested\b/);
+    await expect(edge4El).not.toHaveClass(/\bde-emphasized\b/);
+    await expect(nodeLocator(page, comp3Id)).not.toHaveClass(/\bde-emphasized\b/);
+    await expect(nodeLocator(page, ids.child)).not.toHaveClass(/\bde-emphasized\b/);
+  });
 });
-
-
-

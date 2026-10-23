@@ -468,6 +468,7 @@ export default function App() {
         const newEdgeId = await res.json();
         const eType = String(action.edgeData.type || '').toLowerCase();
         const isContains = eType === 'contains' || eType === 'has';
+        const restoredStatusCls = `status-${String(action.edgeData.test_status || 'untested').toLowerCase()}`;
         // Add edge back to local state with floating type
         setEdges(eds => calculateEdgeBundling([...eds, {
           id: newEdgeId,
@@ -475,7 +476,7 @@ export default function App() {
           target: action.edgeData.target,
           label: action.edgeData.type,
           type: 'floating',
-          className: isContains ? 'edge-contains' : undefined,
+          className: isContains ? `edge-contains ${restoredStatusCls}` : restoredStatusCls,
           data: action.edgeData,
           style: { strokeWidth: 2 },
         }]));
@@ -488,7 +489,7 @@ export default function App() {
               return { ...n, data: { ...n.data, hasChildren: true } };
             }
             return n;
-          }));
+          }).sort((a, b) => (a.parentId && !b.parentId ? 1 : (!a.parentId && b.parentId ? -1 : 0))));
           setSelectedNode(prev => prev && prev.id === action.edgeData.target ? { ...prev, parentId: action.edgeData.source, extent: 'parent' as const } : prev);
           triggerRefresh();
         }
@@ -686,13 +687,13 @@ export default function App() {
     if (filterText === '' && prevFilterRef.current === '' && refreshKey === prevRefreshRef.current && nodes.length > 0) {
       return;
     }
-    prevFilterRef.current = filterText;
-    prevRefreshRef.current = refreshKey;
 
     const controller = new AbortController();
     const currentDebounceId = Date.now().toString();
 
     const fetchGraph = async () => {
+      prevFilterRef.current = filterText;
+      prevRefreshRef.current = refreshKey;
       try {
         setLoading(true);
         const params = new URLSearchParams();
@@ -826,6 +827,8 @@ export default function App() {
           initialEdges
         );
 
+        setHoveredNode(null);
+        setHoveredEdge(null);
         setNodes(layoutedNodes);
         setEdges(layoutedEdges);
         if (selectedNodeRef.current?.id) {
@@ -840,8 +843,8 @@ export default function App() {
         
         // Auto-fit view when the graph is loaded to center all elements nicely
         setTimeout(() => {
-          if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 600 });
-        }, 150);
+          if (rfInstance) rfInstance.fitView({ padding: 0.2 });
+        }, 50);
       } catch (err: any) {
         if (err instanceof Error) {
           setError(err.message);
@@ -1088,7 +1091,7 @@ export default function App() {
 
       const isContainsEdge = defaultType.toLowerCase() === 'contains' || defaultType.toLowerCase() === 'has';
 
-      // CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC 5.1-2:
+      // CONTAINS_EDGE_DISAPPEARANCE_SPEC 5.1-2:
       // Contains/Has 연결 시에도 조기 리턴하지 않고 캔버스에 newEdge(.edge-contains)를 즉시 등록합니다.
       const newEdge: Edge = {
         id: newEdgeId,
@@ -1096,7 +1099,7 @@ export default function App() {
         target: connection.target!,
         label: defaultType,
         type: 'floating',
-        className: isContainsEdge ? 'edge-contains' : undefined,
+        className: isContainsEdge ? 'edge-contains status-untested' : 'status-untested',
         data: { type: defaultType, test_status: 'Untested', properties: (connection as any).properties || {}, markerColor: '#64748b' },
         style: { stroke: 'gray', strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
@@ -1150,7 +1153,7 @@ export default function App() {
       ));
       const remainingNodes = nodesRef.current.filter(n => n.id !== deletedNodeId);
       const changes = recalcTargetAndPropagate(remainingNodes, remainingEdges, affectedTargets);
-      setNodes(applyStatusChanges(remainingNodes, changes));
+      setNodes(nds => applyStatusChanges(nds.filter(n => n.id !== deletedNodeId), changes));
       setEdges(remainingEdges);
       setPinnedFocusNodeId(prev => (prev === deletedNodeId ? null : prev));
       syncStatusesFromServer();
@@ -1321,7 +1324,7 @@ export default function App() {
                 ...(b.properties || {}),
                 ...cleanProps,
                 ...(description !== undefined ? { description } : {}),
-                ...(issue_link !== undefined ? { issue_link } : {}),
+                ...(issue_link !== undefined ? { issue_link: issue_link } : {}),
               }
             };
           }
@@ -1354,7 +1357,12 @@ export default function App() {
       });
       // 2) 하류(Depends_On / Tests) 연쇄 전파 — 방금 마킹한 노드는 exclude 되어 덮어쓰지 않음
       const changes = propagateToDependents(updatedNodes, edgesRef.current, editFormData.id);
-      setNodes(applyStatusChanges(updatedNodes, changes));
+      const finalUpdatedNodes = applyStatusChanges(updatedNodes, changes);
+      const finalById = new Map(finalUpdatedNodes.map(n => [n.id, n]));
+      setNodes(nds => nds.map(n => {
+        const updated = finalById.get(n.id);
+        return updated ? { ...updated, measured: n.measured ?? updated.measured } : n;
+      }));
       setEditFormData({ ...editFormData, status: newStatus, properties: formProps });
 
       // 3) 저장 (백엔드 update_node가 동일 규칙으로 연쇄 전파) → 서버 결과로 재동기화
@@ -1372,6 +1380,9 @@ export default function App() {
       const prevStatus = (edge.data as any)?.test_status || 'Untested';
       const prevProps = (edge.data as any)?.properties || {};
       const typeChanged = Boolean(editFormData.edgeType && editFormData.edgeType !== prevType);
+      const nextEdgeTypeStr = typeChanged ? String(editFormData.edgeType) : prevType;
+      const wasContains = prevType.toLowerCase() === 'contains' || prevType.toLowerCase() === 'has';
+      const isNowContains = nextEdgeTypeStr.toLowerCase() === 'contains' || nextEdgeTypeStr.toLowerCase() === 'has';
       const payload: Record<string, any> = {
         test_status: newStatus,
         properties: editFormData.properties || {}
@@ -1379,11 +1390,24 @@ export default function App() {
       if (typeChanged) {
         payload.type = editFormData.edgeType;
       }
-      // 1) 낙관적 업데이트: 엣지 상태 반영 + 타겟 노드 재계산/하류 전파
+      // 1) 낙관적 업데이트: 엣지 상태 및 타입 반영 + 타겟 노드 재계산/하류 전파
       const nextEds = edgesRef.current.map(e => {
         if (e.id !== editFormData.id) return e;
-        const cls = (e.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newStatus.toLowerCase();
-        return { ...e, data: { ...(e.data || {}), test_status: newStatus, markerColor: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, className: cls.trim(), style: { ...(e.style || {}), stroke: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }, markerEnd: { type: MarkerType.ArrowClosed, color: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') } };
+        let cls = (e.className || '').replace(/\b(status-[a-z]+|edge-contains)\b/g, '').trim() + ' status-' + newStatus.toLowerCase();
+        if (isNowContains) cls += ' edge-contains';
+        return {
+          ...e,
+          label: nextEdgeTypeStr || e.label,
+          data: {
+            ...(e.data || {}),
+            type: nextEdgeTypeStr || (e.data as any)?.type,
+            test_status: newStatus,
+            markerColor: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray')
+          },
+          className: cls.trim(),
+          style: { ...(e.style || {}), stroke: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') },
+          markerEnd: { type: MarkerType.ArrowClosed, color: newStatus === 'Passed' ? 'green' : (newStatus === 'Failed' ? 'red' : 'gray') }
+        };
       });
       setEdges(nextEds);
       applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [edge.target]));
@@ -1415,6 +1439,13 @@ export default function App() {
         }
       });
       syncStatusesFromServer();
+      if (wasContains && !isNowContains) {
+        unparentNodesOnContainsDelete([edge], nextEds);
+      }
+      if (wasContains !== isNowContains) {
+        setSelectedEdge(null);
+        triggerRefresh();
+      }
     }
   };
 
@@ -1695,7 +1726,12 @@ export default function App() {
     }
     // 3) 하류(Depends_On / Tests) 연쇄 전파
     const changes = propagateToDependents(updatedNodes, edgesRef.current, node.id);
-    setNodes(applyStatusChanges(updatedNodes, changes));
+    const finalChecklistNodes = applyStatusChanges(updatedNodes, changes);
+    const checklistById = new Map(finalChecklistNodes.map(n => [n.id, n]));
+    setNodes(nds => nds.map(n => {
+      const updated = checklistById.get(n.id);
+      return updated ? { ...updated, measured: n.measured ?? updated.measured } : n;
+    }));
     if (!nodesRef.current.some(n => n.id === node.id)) {
       setSelectedNode(prev => prev && prev.id === node.id ? {
         ...prev,
@@ -1808,6 +1844,12 @@ export default function App() {
   const collapsedKey = useMemo(
     () => nodes.filter(n => (n.data as any)?.isCollapsed).map(n => n.id).sort().join(','),
     [nodes]
+  );
+
+  // 엣지 추가/삭제/타입 변경 키 — 엣지 연결 즉시 Focus+Context 하이라이트(active, incoming/outgoing, highlight-edge) 재계산 트리거
+  const edgesKey = useMemo(
+    () => edges.map(e => `${e.id}:${e.source}:${e.target}:${(e.data as any)?.type || e.label || ''}`).sort().join('|'),
+    [edges]
   );
 
   /**
@@ -1931,6 +1973,7 @@ export default function App() {
     const outgoing = new Set<string>();
     const edgeHighlights = new Set<string>();
     const seedUnitIds = new Set<string>();
+    const seedParentIds = new Set<string>();
 
     const isContainsEdge = (e: Edge) => {
       const et = String((e.data as any)?.type || e.label || '').toLowerCase();
@@ -1965,6 +2008,7 @@ export default function App() {
       // 자식 컴포넌트 단독 선택 시 해당 부모 컨테이너도 activeNodes에 포함 (방향성 테두리 오염 없이 컨테이너 가시성 유지)
       const seedParentId = getParentId(seedId);
       if (seedParentId) {
+        seedParentIds.add(seedParentId);
         activeNodes.add(seedParentId);
         currentEdges.forEach(ce => {
           if (isContainsEdge(ce) && ce.source === seedParentId && ce.target === seedId) {
@@ -2029,15 +2073,15 @@ export default function App() {
               edgeHighlights.add(ce.id);
             }
           });
-          if (!seedUnitIds.has(parentId) && (depth === 0 || !visited.has(parentId))) {
+          if (!seedUnitIds.has(parentId) && !seedParentIds.has(parentId) && (depth === 0 || !visited.has(parentId))) {
             if (isOutgoing) {
               outgoing.add(parentId);
             } else {
               incoming.add(parentId);
             }
           }
-          // 다중 홉(nextDepth < depthLimit)에서 부모 컨테이너(특히 접힌 부모)를 경유하는 연쇄 탐색 지원
-          if (nextDepth < depthLimit) {
+          // 다중 홉(nextDepth < depthLimit)에서 부모 컨테이너(특히 접힌 부모)를 경유하는 연쇄 탐색 지원 (단, 시드의 부모 컨테이너는 형제 오염 방지를 위해 제외)
+          if (nextDepth < depthLimit && !seedParentIds.has(parentId)) {
             enqueueAtDepth(parentId, nextDepth);
             const parentObj = currentNodes.find(n => n.id === parentId);
             if ((parentObj?.data as any)?.isCollapsed) {
@@ -2070,6 +2114,12 @@ export default function App() {
 
     return { activeNodes, incoming, outgoing, edgeHighlights, seedUnitIds };
   }, []);
+
+  // React Flow ResizeObserver가 가시 노드의 초기 측정(measured)을 완료했는지 확인 (미측정 상태에서 setNodes로 노드 참조 교체 시 handleBounds가 초기화되는 경합 방지)
+  const allNodesMeasured = useMemo(
+    () => nodes.length > 0 && nodes.every(n => n.hidden || Boolean(n.measured?.width && n.measured?.height)),
+    [nodes]
+  );
 
   useEffect(() => {
     const activeNodes = new Set<string>();
@@ -2160,10 +2210,19 @@ export default function App() {
       }
     }
     
-    // Add hovered elements to active set
+    // Add hovered elements to active set (호버 시 또는 드래그 연결 직후 커서가 타겟 노드에 머물 때 연결 엣지 및 1-홉 이웃 노드가 즉시 활성 표시되도록 포함)
     if (hoveredNode && !selectedNode) {
-      // Just highlight the node itself, or we could add its immediate edges
-      // but keeping it simple: just the node is active.
+      if (!selectedEdge && !hasPinnedFocus && searchSeeds.length === 0 && !scopedAuditRootId) {
+        const hoverScope = computeContentFocusScope([hoveredNode], nodes, edges, 1);
+        hoverScope.activeNodes.forEach(id => activeNodes.add(id));
+        hoverScope.incoming.forEach(id => incoming.add(id));
+        hoverScope.outgoing.forEach(id => outgoing.add(id));
+        hoverScope.edgeHighlights.forEach(eid => edgeHighlights.add(eid));
+      } else {
+        activeNodes.add(hoveredNode);
+        const hovParent = nodes.find(n => n.id === hoveredNode)?.parentId;
+        if (hovParent) activeNodes.add(hovParent);
+      }
     }
     if (hoveredEdge) {
       const edge = edges.find(e => e.id === hoveredEdge);
@@ -2174,6 +2233,9 @@ export default function App() {
     }
 
     setNodes(nds => {
+      if (nds.some(n => !n.hidden && (!n.measured?.width || !n.measured?.height))) {
+        return nds;
+      }
       let changed = false;
       const next = nds.map(n => {
         let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z-]+|status-[a-z-]+)\b/g, '').trim();
@@ -2275,7 +2337,7 @@ export default function App() {
       });
       return changed ? next : eds;
     });
-  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, pinnedFocusNodeId, computeContentFocusScope, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, collapsedKey, graphVersion]);
+  }, [selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery, pinnedFocusNodeId, computeContentFocusScope, impactMode, affectedScope.key, rootCauseScope.key, scopedAuditScope.key, scopedAuditRootId, collapsedKey, edgesKey, allNodesMeasured, graphVersion]);
 
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, Edge>();
