@@ -131,7 +131,7 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 - **선-후행 의존성 (`Depends_On`)**: 선행 TC가 `Failed` 또는 `Blocked`로 전이되면 후행 TC는 자동으로 `Blocked(🟡)`로 전파됩니다.
 - **컴포넌트 자동 롤업**: 타겟 컴포넌트에 연결된 모든 `Tests` 관계의 TC가 `Passed`이면 컴포넌트는 `Passed(🟢)`로 자동 승격됩니다.
 - **수동 차단(Manual Blocked) 지원**: 외부 요인으로 인한 차단 시 Edit Node 패널에서 수동으로 `Blocked` 지정이 가능하며 필수 사유(`override_reason`)를 기록합니다.
-- **인지 부하 완화를 위한 B안(노드 내부 체크리스트) 권장 및 외부 테이블 문서 조합 원칙**: 화면 내 수십 개 TC로 인한 그래프 폭발(Graph Clutter)을 방지하기 위해, 단순 UI 검증 항목은 캔버스 노드로 분기하지 않고 노드 내부 `properties.checklist` 속성으로 관리하며, 체크리스트 종합 결과에 따라 노드 상태가 자동 판정됩니다. 단, 확인할 검증 항목이 길어지거나 복잡한 경우에는 노드 내부 체크리스트에 무리하게 우겨넣지 않고, `issue_link` 등을 통해 전통적인 테이블(스프레드시트) 형태의 테스트 문서와 조합하여 사용하는 것이 권장됩니다.
+- **인지 부하 완화를 위한 B안(노드 내부 체크리스트) 일원화 및 외부 문서 링크(`issue_link`) 조합 원칙**: 화면 내 수십 개 TC로 인한 그래프 폭발(Graph Clutter)과 중복 입력란 혼선을 방지하기 위해, 기존 Edit 패널의 `'Verification Guide (Description)'` 자유 텍스트 입력란은 제거하고 노드 내부 `properties.checklist`(**세부 체크리스트**)와 `issue_link`로 일원화합니다(글로벌 배지 `.badge-tooltip` 호버 시에도 `checklist` 항목들과 상태 아이콘 `⚪`/`🟢`/`🔴`/`🟡`, `issue_link`를 우선 표시하며, 레거시 데이터 호환을 위해 `checklist`가 없을 때만 기존 `description`을 폴백 표시하고 저장 시 보존). 확인할 검증 항목이 길어지거나 복잡한 경우에는 `issue_link`를 통해 전통적인 테이블(스프레드시트) 형태의 테스트 문서와 조합하여 사용하는 것이 권장됩니다.
 
 ### 3.6. 상태 합성 및 전파 엔진 세부 규칙
 - **백엔드/프론트엔드 동기화**: 백엔드(`backend/graph_service.py`의 `compute_synthesized_status` 및 `_run_propagation`)와 프론트엔드(`frontend/src/statusPropagation.ts`)가 동일한 합성 규칙을 공유합니다. 프론트엔드는 낙관적 업데이트 후 경량 엔드포인트 `GET /api/node-statuses`(`{elementId: test_status}`)로 서버 결과와 재동기화하여 레이아웃 점프와 줌 초기화를 방지합니다(Rule 3).
@@ -152,7 +152,10 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 - **평소 (Collapsed)**: `isCollapsed: true` 상태에서는 하위 자식 노드들이 캔버스에서 숨겨지며, 부모 헤더에 `[ 🟢 통과: 12 / 🔴 결함: 2 (85%) ]` 형태의 프로그레스 요약 뱃지만 표시됩니다.
   - **접힌 부모로의 영향도 상향 롤업 (Parent Impact Rollup)**: 접힌 부모 `Screen`(`isCollapsed: true`)의 하위 자식 컴포넌트가 글로벌 영향도(`impactMode`) 또는 스펙 변경 영향권(`affectedScope`)에 1개 이상 포함될 때, 부모 카드에도 `.impact-highlighted` / `.highlight-affected` 클래스를 상향 롤업하여 딤(Dim) 처리에서 보호하고 `.parent-collapse-impact-summary`(`⚡ 영향 하위 컴포넌트 N개`) 요약 배지를 표시합니다.
 - **검증 시 (Expanded)**: 우측 상단의 `+` 버튼을 누르면 자식 노드들이 ELK.js 그리드 배치로 부모 컨테이너 내부에 펼쳐집니다.
-- **`Contains`/`Has` 일급 도메인 엣지 렌더링**: `Contains`(또는 `Has`) 관계는 자식 노드의 `parentId` 설정에만 소비하고 드롭해서는 안 되며, 반드시 `.edge-contains` 은은한 점선 플로팅 엣지로 캔버스에 일급 렌더링(부모-자식 중첩 시 부모 상단 헤더 최대 120px 박스 기준 교차점 계산)하여 선택·상태 마킹·삭제가 가능해야 합니다. 해당 엣지가 삭제되거나 다른 타입으로 변경되면 자식 노드의 `parentId`와 `extent`를 즉시 해제합니다.
+- **`Contains`/`Has` 일급 도메인 엣지 렌더링 및 선택 시 노출 (On-Demand Visibility)**:
+  - `Contains`(또는 `Has`) 관계는 자식 노드의 `parentId` 설정에만 소비하고 드롭해서는 안 되며, 반드시 `.edge-contains` 플로팅 엣지로 캔버스에 일급 렌더링(부모-자식 중첩 시 부모 상단 헤더 최대 120px 박스 기준 교차점 계산)하여 선택·상태 마킹·삭제가 가능해야 합니다.
+  - 부모 컨테이너 내부의 시각적 번잡함을 방지하기 위해 `"Contains"` 텍스트 라벨(`EdgeLabelRenderer`)은 렌더링하지 않으며, 평상시(`.edge-contains:not(.active):not(:hover)`)에는 선과 화살표 마커를 `opacity: 0`으로 숨기되 투명 히트 영역(`.react-flow__edge-interaction`)은 유지합니다. 부모/자식 노드가 선택되거나 해당 엣지가 선택·호버(`.active`, `:hover`)되었을 때만 `opacity: 0.85`, `stroke-dasharray: 4 4` 점선 화살표로 은은하게 드러납니다.
+  - 또한 자식 노드 선택 시 우측 Edit 패널 상단에 **`📦 소속 부모: [화면명]`** 안내 박스(`.parent-relation-box`)를 표시하여, **`[🔗 관계 변경]`**(즉시 해당 `Contains` 엣지 편집으로 전환) 및 **`[⏏ 분리]`**(즉시 `Contains` 엣지 삭제 및 부모 귀속 해제) 원클릭 액션을 제공합니다. 해당 엣지가 삭제되거나 다른 타입으로 변경되면 자식 노드의 `parentId`와 `extent`를 즉시 해제합니다.
 
 ### 4.2. 관점별 동적 결함 칩 (Dynamic Issue Chips)
 - 현지화(LangKey), 사운드, 네트워크 지연 등 무한히 확장되는 서브카테고리는 노드 카드에 고정 테이블로 나열하지 않습니다.

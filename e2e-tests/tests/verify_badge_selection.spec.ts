@@ -35,8 +35,8 @@ test.describe('Badge Selection API and Focus Verification', () => {
       expect(style).toContain('165'); // Part of rgb for #60a5fa
       
       // Verify the right panel shifted to Edit tab for this node
-      // The panel should show "Name:" etc.
-      await expect(page.locator('label', { hasText: 'Verification Guide (Description)' })).toBeVisible();
+      // The panel should show "Issue Link" and Checklist section (Verification Guide (Description) was unified into Checklist)
+      await expect(page.locator('label', { hasText: 'Issue Link' })).toBeVisible();
     }
   });
 });

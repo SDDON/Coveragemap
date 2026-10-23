@@ -226,7 +226,11 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
         name: 'Localization',
         aliases: ['i18n'],
         test_status: 'Untested',
-        properties: { is_global: 'true', description: '다국어 말줄임 확인' },
+        properties: {
+          is_global: 'true',
+          description: '다국어 말줄임 확인',
+          checklist: [{ id: 'i18n_1', text: '독일어 말줄임(...) 처리 확인', status: 'Passed' }],
+        },
       },
     });
     expect(gRes.ok()).toBeTruthy();
@@ -246,15 +250,18 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await page.reload();
     await responsePromise;
 
-    // 2. Hover over the Localization badge on ids.settings -> global node must remain hidden (no teleportation to center)
+    // 2. Hover over the Localization badge on ids.settings -> global node must remain hidden, and tooltip renders checklist item
     const settingsNode = nodeLocator(page, ids.settings);
     const badgePill = settingsNode.locator('.badge-pill').first();
     await expect(badgePill).toBeVisible();
     await badgePill.hover({ force: true });
     await expect(nodeLocator(page, globalId)).toBeHidden();
+    await expect(badgePill.locator('.badge-tooltip')).toContainText('🟢');
+    await expect(badgePill.locator('.badge-tooltip')).toContainText('독일어 말줄임(...) 처리 확인');
 
-    // 3. Select parent container (ids.root) and click [🌐 이 화면 다국어 검증 모드]
+    // 3. Select parent container (ids.root) -> Edit panel has unified Checklist + Issue Link (no Verification Guide textarea)
     await selectNode(page, ids.root);
+    await expect(page.locator('.details-panel label', { hasText: 'Verification Guide (Description)' })).toHaveCount(0);
     const scopedBtn = page.locator('.scoped-audit-btn');
     await expect(scopedBtn).toBeVisible();
     const auditPromise = page.waitForResponse(res => res.url().includes('/api/qa/audit-cross-cutting') && res.url().includes('scope_root_id='));
@@ -337,13 +344,18 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await graphRefresh;
     await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible();
 
-    // 1. Contains edge must be rendered on canvas with .edge-contains class and dashed stroke-dasharray
+    // 1. Contains edge must be rendered on canvas with .edge-contains class, dashed stroke-dasharray, idle opacity 0, and no "Contains" text label noise
     const containsEdge = page.locator('.react-flow__edge.edge-contains').first();
     await expect(containsEdge).toBeVisible();
     const dashArray = await containsEdge.locator('path.react-flow__edge-path').evaluate(
       el => window.getComputedStyle(el).strokeDasharray
     );
     expect(dashArray).not.toBe('none');
+    const idleOpacity = await containsEdge.locator('path.react-flow__edge-path').evaluate(
+      el => window.getComputedStyle(el).opacity
+    );
+    expect(idleOpacity).toBe('0');
+    await expect(page.locator('.react-flow__edgelabel-renderer', { hasText: 'Contains' })).toHaveCount(0);
 
     // 2. Collapsing parent hides child and Contains edge; expanding parent restores Contains edge (Spec 5.3)
     const collapseBtn = nodeLocator(page, ids.root).locator('.collapse-btn');
@@ -367,16 +379,52 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await statusPutPromise;
     await expect(containsEdge).toHaveClass(/\bstatus-failed\b/);
 
-    // 5. Deleting the Contains edge via Inspector removes the edge and unparents the child (collapse button disappears)
+    // 5. Selecting the child node reveals the dashed Contains edge (opacity 0.85) and shows the parent relation box in Inspector
+    await selectNode(page, ids.settings);
+    await expect(containsEdge).toHaveClass(/\bactive\b/);
+    const activeOpacity = await containsEdge.locator('path.react-flow__edge-path').evaluate(
+      el => window.getComputedStyle(el).opacity
+    );
+    expect(activeOpacity).toBe('0.85');
+
+    const parentBox = page.locator('.details-panel .parent-relation-box');
+    await expect(parentBox).toBeVisible();
+    await expect(parentBox).toContainText('Game Testing Root');
+
+    // [🔗 관계 변경] immediately selects the Contains edge in the Inspector
+    await parentBox.locator('.parent-relation-btn', { hasText: '관계 변경' }).click();
+    await expect(page.locator('#edgeType')).toHaveValue(/Contains/i);
+
+    // Re-selecting child node and clicking [⏏ 분리] deletes the Contains edge and unparents the child (persisted across /api/graph refresh)
+    await selectNode(page, ids.settings);
+    await expect(parentBox).toBeVisible();
     const delResponsePromise = page.waitForResponse(
       res => res.url().includes('/api/edges/') && res.request().method() === 'DELETE'
     );
-    await page.locator('.details-panel button.danger', { hasText: 'Delete' }).click();
+    const refreshAfterDetach = page.waitForResponse(
+      res => res.url().includes('/api/graph') && res.status() === 200
+    );
+    await parentBox.locator('.parent-relation-btn.detach').click();
     await delResponsePromise;
+    await refreshAfterDetach;
 
     await expect(page.locator('.react-flow__edge.edge-contains')).toHaveCount(0);
     await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toHaveCount(0);
     await expect(nodeLocator(page, ids.settings)).toBeVisible();
+
+    // 6. Pressing Ctrl+Z (Undo) immediately restores the Contains edge and re-parents the child node
+    const undoPostPromise = page.waitForResponse(
+      res => res.url().includes('/api/edges') && res.request().method() === 'POST'
+    );
+    const refreshAfterUndo = page.waitForResponse(
+      res => res.url().includes('/api/graph') && res.status() === 200
+    );
+    await page.keyboard.press('Control+z');
+    await undoPostPromise;
+    await expect(parentBox).toBeVisible();
+    await refreshAfterUndo;
+    await expect(page.locator('.react-flow__edge.edge-contains')).toHaveCount(1);
+    await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible();
   });
 
   test('K. Collapsed parent Screen rolls up child Change Impact (.highlight-affected) and Global Impact (.impact-highlighted) with summary badge', async ({ page, request }) => {

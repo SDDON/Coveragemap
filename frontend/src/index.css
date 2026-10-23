@@ -270,7 +270,10 @@ body {
   padding: 12px;
   border-radius: 8px;
   width: max-content;
-  max-width: 250px;
+  max-width: 260px;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
   color: #f1f5f9;
   font-size: 0.8rem;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
@@ -412,13 +415,21 @@ body {
   fill: rgba(148, 163, 184, 0.8);
 }
 
-/* Contains / Subflow 엣지 스타일 (CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC 5.2) */
+/* Contains / Subflow 엣지 스타일 (CONTAINS_EDGE_DISAPPEARANCE_BUG_SPEC 5.2)
+   - 평상시(.edge-contains:not(.active):not(:hover))에는 path와 화살표 마커를 opacity: 0으로 숨겨
+     부모 컨테이너 내부가 점선들로 지저분해지지 않도록 정리 (투명 히트 영역 .react-flow__edge-interaction은 유지)
+   - 부모/자식 노드가 선택되거나 엣지가 선택·호버(.active, :hover)되었을 때만 opacity: 0.85, stroke-dasharray: 4 4로 표시 */
 .react-flow__edge[data-type="contains"] path.react-flow__edge-path,
 .react-flow__edge[data-type="has"] path.react-flow__edge-path,
 .react-flow__edge.edge-contains path.react-flow__edge-path {
   stroke: #94a3b8 !important;
   stroke-dasharray: 4 4 !important;
   stroke-width: 1.5px !important;
+}
+
+.react-flow__edge.edge-contains:not(.active):not(:hover) path.react-flow__edge-path,
+.react-flow__edge.edge-contains:not(.active):not(:hover) .custom-marker-path {
+  opacity: 0 !important;
 }
 
 .react-flow__edge.status-passed path.react-flow__edge-path,
@@ -428,16 +439,23 @@ body {
 .react-flow__edge.edge-contains.status-failed path.react-flow__edge-path { stroke: var(--status-failed-border) !important; }
 .react-flow__edge.status-failed .custom-marker-path { fill: var(--status-failed-border) !important; }
 
+.react-flow__edge.active path.react-flow__edge-path { stroke-width: 3.5 !important; stroke: #2563eb !important; }
+.react-flow__edge.active .custom-marker-path { transform: scale(1.2); fill: #2563eb !important; }
+
 .react-flow__edge[data-type="contains"]:hover path.react-flow__edge-path,
 .react-flow__edge[data-type="contains"].active path.react-flow__edge-path,
 .react-flow__edge.edge-contains:hover path.react-flow__edge-path,
 .react-flow__edge.edge-contains.active path.react-flow__edge-path {
+  opacity: 0.85 !important;
   stroke: #3b82f6 !important;
+  stroke-dasharray: 4 4 !important;
   stroke-width: 2px !important;
 }
-
-.react-flow__edge.active path.react-flow__edge-path { stroke-width: 3.5 !important; stroke: #2563eb !important; }
-.react-flow__edge.active .custom-marker-path { transform: scale(1.2); fill: #2563eb !important; }
+.react-flow__edge.edge-contains:hover .custom-marker-path,
+.react-flow__edge.edge-contains.active .custom-marker-path {
+  opacity: 0.85 !important;
+  fill: #3b82f6 !important;
+}
 
 /* Focus + Context Dimming (Pure CSS) */
 .has-selection .react-flow__node:not(.active):not(.related):not(.hovered-global-neighbor),
@@ -681,8 +699,49 @@ button.warning:hover { background: #d97706; }
 button.warning:disabled { background: #fcd34d; cursor: not-allowed; }
 
 /* ============================================
-   Inspector: 📌 Override / ☑ Checklist / 🟣 Modified 섹션
+   Inspector: 📦 소속 부모 / 📌 Override / ☑ Checklist / 🟣 Modified 섹션
    ============================================ */
+.parent-relation-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #bfdbfe;
+  background-color: #eff6ff;
+}
+.parent-relation-label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #1e3a8a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.parent-relation-actions {
+  display: flex;
+  gap: 6px;
+}
+.parent-relation-btn {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #93c5fd;
+  background: #ffffff;
+  color: #1d4ed8;
+}
+.parent-relation-btn:hover {
+  background: #dbeafe;
+}
+.parent-relation-btn.detach {
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+.parent-relation-btn.detach:hover {
+  background: #fee2e2;
+}
 .inspector-hint {
   font-size: 0.75rem;
   color: var(--text-muted);

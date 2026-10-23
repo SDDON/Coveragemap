@@ -90,6 +90,8 @@ export default function FloatingEdge({
 
   const markerId = `marker-${id}`;
   const markerColor = (data as any)?.markerColor || '#64748b';
+  const edgeTypeLower = String((data as any)?.type || label || '').toLowerCase();
+  const isContainsEdge = edgeTypeLower === 'contains' || edgeTypeLower === 'has';
 
   return (
     <>
@@ -103,11 +105,11 @@ export default function FloatingEdge({
           markerHeight="6"
           orient="auto-start-reverse"
         >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill={markerColor} />
+          <path className="custom-marker-path" d="M 0 0 L 10 5 L 0 10 z" fill={markerColor} />
         </marker>
       </defs>
       <BaseEdge id={id} path={edgePath} markerEnd={`url(#${markerId})`} style={style} />
-      {label && (
+      {label && !isContainsEdge && (
         <EdgeLabelRenderer>
           <div
             style={{

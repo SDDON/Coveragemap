@@ -77,7 +77,7 @@ classDiagram
   - 선택된 노드와 관계가 없는 나머지 모든 노드와 엣지는 자동으로 투명도 35%~40% 적용 및 흑백(Grayscale) 필터가 씌워져 **흐릿하게(Dimmed)** 처리됩니다.
   - 이를 통해 사용자는 수백 개의 노드 중에서도 현재 검토 중인 기능의 의존성 흐름만 집중해서 볼 수 있습니다.
 - **특수 도메인 엣지 및 파급 효과 클래스**:
-  - `.edge-contains`: 부모(`Screen`)와 자식(`Component`)을 잇는 `Contains`/`Has` 일급 도메인 엣지 스타일 (은은한 슬레이트 점선 `#94a3b8`, `stroke-dasharray: 4 4`).
+  - `.edge-contains`: 부모(`Screen`)와 자식(`Component`)을 잇는 `Contains`/`Has` 일급 도메인 엣지 스타일. 부모 컨테이너 내부의 시각적 노이즈를 없애기 위해 `"Contains"` 라벨을 생략하고 평상시(`:not(.active):not(:hover)`)에는 `opacity: 0`으로 숨기며, 부모/자식 노드 선택 또는 엣지 선택·호버(`.active`, `:hover`) 시에만 점선 화살표(`opacity: 0.85`, `stroke-dasharray: 4 4`)로 노출됩니다. 자식 노드 선택 시 Inspector 상단의 `.parent-relation-box`(`📦 소속 부모`)에서 `[🔗 관계 변경]` 및 `[⏏ 분리]`를 즉시 실행할 수 있습니다.
   - `.node-modified-pulse` & `.highlight-affected`: 기획/스펙 변경 노드(바이올렛 맥동 테두리 `#8b5cf6`) 및 1~2홉 하류 재검증 영향권 강조.
   - `.parent-collapse-impact-summary`: 접힌 부모 `Screen`(`isCollapsed: true`) 내부의 자식 컴포넌트가 글로벌 영향도(`.impact-highlighted`) 또는 변경 영향권(`.highlight-affected`)에 포함될 때 부모 카드에 상향 롤업되어 노출되는 `⚡ 영향 하위 컴포넌트 N개` 요약 배지.
   - `.highlight-root-cause`: 차단(`Blocked`) 또는 실패(`Failed`) 노드의 최초 결함 원흉까지 이어지는 붉은색 펄스 애니메이션 경로.

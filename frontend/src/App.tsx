@@ -268,8 +268,10 @@ export default function App() {
   // 최신 nodes/edges 참조 (useCallback 핸들러의 stale closure 방지 — 전파 계산은 항상 최신 그래프 기준)
   const nodesRef = useRef<Node[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
+  const selectedNodeRef = useRef<Node | null>(selectedNode);
   nodesRef.current = nodes;
   edgesRef.current = edges;
+  selectedNodeRef.current = selectedNode;
 
   // 서버 재동기화 순번: 늦게 도착한 이전 응답이 최신 낙관적 상태를 덮어쓰지 않도록 마지막 요청만 반영
   const statusSyncSeq = useRef(0);
@@ -313,8 +315,48 @@ export default function App() {
     if (Object.keys(changes).length === 0) return;
     setNodes(nds => applyStatusChanges(nds, changes));
   }, [setNodes]);
-
-
+  /**
+   * Contains/Has 엣지가 삭제되거나 다른 타입으로 바뀌었을 때 자식 노드의 parentId/extent를 해제하고,
+   * 부모 상대 좌표를 절대 캔버스 좌표로 복원하며, 남은 자식이 없는 부모 컨테이너의 스타일/hasChildren을 초기화합니다.
+   */
+  const unparentNodesOnContainsDelete = useCallback((deletedContains: Edge[], remainingEdges: Edge[]) => {
+    if (deletedContains.length === 0) return;
+    const unparentedTargets = new Set(deletedContains.map(e => e.target));
+    const parentsWithRemaining = new Set(
+      remainingEdges
+        .filter(rem => {
+          const rt = String((rem.data as any)?.type || rem.label || '').toLowerCase();
+          return rt === 'contains' || rt === 'has';
+        })
+        .map(rem => rem.source)
+    );
+    const affectedParents = new Set(deletedContains.map(e => e.source));
+    setNodes(nds => {
+      const parentPosMap = new Map<string, { x: number; y: number }>();
+      nds.forEach(p => {
+        if (affectedParents.has(p.id)) {
+          parentPosMap.set(p.id, { x: p.position?.x || 0, y: p.position?.y || 0 });
+        }
+      });
+      return nds.map(n => {
+        if (unparentedTargets.has(n.id)) {
+          const type = (n.data as any)?.label || 'Data';
+          const isGlobal = (n.data as any)?.properties?.is_global === 'true';
+          const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypesRef.current.has(type));
+          const parentPos = n.parentId ? parentPosMap.get(n.parentId) : undefined;
+          const absPosition = parentPos
+            ? { x: parentPos.x + (n.position?.x || 0), y: parentPos.y + (n.position?.y || 0) }
+            : n.position;
+          return { ...n, position: absPosition, parentId: undefined, extent: undefined, hidden: isHiddenByFilter };
+        }
+        if (affectedParents.has(n.id) && !parentsWithRemaining.has(n.id)) {
+          const { width, height, minHeight, ...restStyle } = (n.style || {}) as any;
+          return { ...n, style: restStyle, data: { ...n.data, hasChildren: false, isCollapsed: false, expandedStyle: undefined, childSummary: undefined, impactedChildCount: 0 } };
+        }
+        return n;
+      });
+    });
+  }, [setNodes, FILTERABLE_NODE_TYPES]);
 
   // Undo Stack
   const actionHistory = useRef<any[]>([]);
@@ -369,17 +411,47 @@ export default function App() {
         const targetEdge = edgesRef.current.find(e => e.id === action.id);
         const eType = String((targetEdge?.data as any)?.type || targetEdge?.label || '').toLowerCase();
         await fetch(`/api/edges/${action.id}`, { method: 'DELETE' });
-        setEdges(eds => eds.filter(e => e.id !== action.id));
-        if (eType === 'contains' || eType === 'has') {
+        const nextEds = edgesRef.current.filter(e => e.id !== action.id);
+        setEdges(nextEds);
+        if (targetEdge && (eType === 'contains' || eType === 'has')) {
+          unparentNodesOnContainsDelete([targetEdge], nextEds);
           triggerRefresh();
         }
       } else if (action.type === 'UPDATE_EDGE') {
-        await fetch(`/api/edges/${action.id}`, {
+        const currentEdge = edgesRef.current.find(e => e.id === action.id);
+        const prevType = String((currentEdge?.data as any)?.type || currentEdge?.label || '').toLowerCase();
+        const nextType = String(action.previousData?.type || prevType).toLowerCase();
+        const wasContains = prevType === 'contains' || prevType === 'has';
+        const isNowContains = nextType === 'contains' || nextType === 'has';
+        const res = await fetch(`/api/edges/${action.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(action.previousData)
         });
-        setEdges(eds => eds.map(e => e.id === action.id ? { ...e, data: { ...e.data, ...action.previousData } } : e));
+        let newId = action.id;
+        try {
+          const data = await res.json();
+          if (data?.new_id) newId = data.new_id;
+        } catch {}
+        const nextEds = edgesRef.current.map(e => {
+          if (e.id !== action.id) return e;
+          const baseCls = (e.className || '').replace(/\bedge-contains\b/g, '').trim();
+          const nextCls = isNowContains ? `${baseCls} edge-contains`.trim() : baseCls;
+          return {
+            ...e,
+            id: newId,
+            label: action.previousData?.type || e.label,
+            className: nextCls || undefined,
+            data: { ...e.data, ...action.previousData }
+          };
+        });
+        setEdges(nextEds);
+        if (currentEdge && wasContains && !isNowContains) {
+          unparentNodesOnContainsDelete([currentEdge], nextEds);
+        }
+        if (wasContains || isNowContains) {
+          triggerRefresh();
+        }
       } else if (action.type === 'DELETE_EDGE') {
         const res = await fetch('/api/edges', {
           method: 'POST',
@@ -401,6 +473,16 @@ export default function App() {
           style: { strokeWidth: 2 },
         }]));
         if (isContains) {
+          setNodes(nds => nds.map(n => {
+            if (n.id === action.edgeData.target) {
+              return { ...n, parentId: action.edgeData.source, extent: 'parent' as const };
+            }
+            if (n.id === action.edgeData.source) {
+              return { ...n, data: { ...n.data, hasChildren: true } };
+            }
+            return n;
+          }));
+          setSelectedNode(prev => prev && prev.id === action.edgeData.target ? { ...prev, parentId: action.edgeData.source, extent: 'parent' as const } : prev);
           triggerRefresh();
         }
       }
@@ -409,7 +491,7 @@ export default function App() {
     } catch (err) {
       console.error("Undo failed", err);
     }
-  }, [triggerRefresh, setNodes, setEdges, syncStatusesFromServer]);
+  }, [triggerRefresh, setNodes, setEdges, syncStatusesFromServer, unparentNodesOnContainsDelete]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -616,6 +698,7 @@ export default function App() {
           return {
             id: n.id,
             type: 'custom',
+            selected: selectedNodeRef.current?.id === n.id,
             data: { ...n, badges: [], isCollapsed: false },
             hidden: (FILTERABLE_NODE_TYPES.has(n.label) && !visibleTypesRef.current.has(n.label)) || isGlobal,
             position: { x: 0, y: 0 },
@@ -849,6 +932,32 @@ export default function App() {
     if (deletedIds.size > 0) syncStatusesFromServer();
   }, [pushUndo, edges, setEdges, applyLocalStatusChanges, syncStatusesFromServer]);
 
+  /**
+   * 자식 노드 Edit 패널의 [⏏ 분리] 버튼 핸들러:
+   * 해당 Contains 엣지를 삭제하고 부모 컨테이너에서 자식 노드를 즉시 분리합니다.
+   */
+  const handleDetachFromParent = useCallback(async (containsEdge: Edge) => {
+    pushUndo({
+      type: 'DELETE_EDGE',
+      id: containsEdge.id,
+      edgeData: {
+        source: containsEdge.source,
+        target: containsEdge.target,
+        type: containsEdge.label || (containsEdge.data as any)?.type || 'Contains',
+        test_status: (containsEdge.data as any)?.test_status || 'Untested',
+        properties: (containsEdge.data as any)?.properties || {}
+      }
+    });
+    await fetch(`/api/edges/${containsEdge.id}`, { method: 'DELETE' });
+    const nextEds = edgesRef.current.filter(e => e.id !== containsEdge.id);
+    setEdges(nextEds);
+    applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [containsEdge.target]));
+    syncStatusesFromServer();
+    unparentNodesOnContainsDelete([containsEdge], nextEds);
+    setSelectedNode(prev => prev && prev.id === containsEdge.target ? { ...prev, parentId: undefined, extent: undefined } : prev);
+    triggerRefresh();
+  }, [pushUndo, setEdges, applyLocalStatusChanges, syncStatusesFromServer, unparentNodesOnContainsDelete]);
+
   const onEdgesDelete = useCallback(async (deleted: Edge[]) => {
     for (const e of deleted) {
       pushUndo({
@@ -878,32 +987,10 @@ export default function App() {
       return eType === 'contains' || eType === 'has';
     });
     if (deletedContains.length > 0) {
-      const unparentedTargets = new Set(deletedContains.map(e => e.target));
-      const parentsWithRemaining = new Set(
-        remainingEdges
-          .filter(rem => {
-            const rt = String((rem.data as any)?.type || rem.label || '').toLowerCase();
-            return rt === 'contains' || rt === 'has';
-          })
-          .map(rem => rem.source)
-      );
-      const affectedParents = new Set(deletedContains.map(e => e.source));
-      setNodes(nds => nds.map(n => {
-        if (unparentedTargets.has(n.id)) {
-          const type = (n.data as any)?.label || 'Data';
-          const isGlobal = (n.data as any)?.properties?.is_global === 'true';
-          const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypesRef.current.has(type));
-          return { ...n, parentId: undefined, extent: undefined, hidden: isHiddenByFilter };
-        }
-        if (affectedParents.has(n.id) && !parentsWithRemaining.has(n.id)) {
-          const { width, height, minHeight, ...restStyle } = (n.style || {}) as any;
-          return { ...n, style: restStyle, data: { ...n.data, hasChildren: false, isCollapsed: false, expandedStyle: undefined, childSummary: undefined, impactedChildCount: 0 } };
-        }
-        return n;
-      }));
+      unparentNodesOnContainsDelete(deletedContains, remainingEdges);
       triggerRefresh();
     }
-  }, [pushUndo, applyLocalStatusChanges, syncStatusesFromServer, setNodes, FILTERABLE_NODE_TYPES]);
+  }, [pushUndo, applyLocalStatusChanges, syncStatusesFromServer, unparentNodesOnContainsDelete]);
 
   const onConnect = useCallback(async (connection: Connection) => {
     if (!connection.source || !connection.target || connection.source === connection.target) return;
@@ -1045,23 +1132,7 @@ export default function App() {
 
         const edgeTypeLower = String((edge.data as any)?.type || edge.label || '').toLowerCase();
         if (edgeTypeLower === 'contains' || edgeTypeLower === 'has') {
-          const stillHasChildren = nextEds.some(rem => {
-            const rt = String((rem.data as any)?.type || rem.label || '').toLowerCase();
-            return rem.source === edge.source && (rt === 'contains' || rt === 'has');
-          });
-          setNodes(nds => nds.map(n => {
-            if (n.id === edge.target && n.parentId === edge.source) {
-              const type = (n.data as any)?.label || 'Data';
-              const isGlobal = (n.data as any)?.properties?.is_global === 'true';
-              const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypesRef.current.has(type));
-              return { ...n, parentId: undefined, extent: undefined, hidden: isHiddenByFilter };
-            }
-            if (n.id === edge.source && !stillHasChildren) {
-              const { width, height, minHeight, ...restStyle } = (n.style || {}) as any;
-              return { ...n, style: restStyle, data: { ...n.data, hasChildren: false, isCollapsed: false, expandedStyle: undefined, childSummary: undefined, impactedChildCount: 0 } };
-            }
-            return n;
-          }));
+          unparentNodesOnContainsDelete([edge], nextEds);
           triggerRefresh();
         }
       }
@@ -1155,7 +1226,17 @@ export default function App() {
         newBadges = newBadges.map((b: any) => {
           if (b.id === editFormData.id) {
             badgesChanged = true;
-            return { ...b, test_status: newStatus };
+            return {
+              ...b,
+              name: editFormData.name || b.name,
+              test_status: newStatus,
+              properties: {
+                ...(b.properties || {}),
+                ...cleanProps,
+                ...(description !== undefined ? { description } : {}),
+                ...(issue_link !== undefined ? { issue_link } : {}),
+              }
+            };
           }
           return b;
         });
@@ -1200,19 +1281,17 @@ export default function App() {
       const edge = edges.find(e => e.id === editFormData.id);
       if (!edge) return;
       
-      pushUndo({
-        type: 'UPDATE_EDGE',
-        id: edge.id,
-        previousData: {
-          test_status: (edge.data as any)?.test_status || 'Untested',
-          properties: (edge.data as any)?.properties || {}
-        }
-      });
-      const payload = {
-        type: editFormData.edgeType,
+      const prevType = String((edge.data as any)?.type || edge.label || '');
+      const prevStatus = (edge.data as any)?.test_status || 'Untested';
+      const prevProps = (edge.data as any)?.properties || {};
+      const typeChanged = Boolean(editFormData.edgeType && editFormData.edgeType !== prevType);
+      const payload: Record<string, any> = {
         test_status: newStatus,
         properties: editFormData.properties || {}
       };
+      if (typeChanged) {
+        payload.type = editFormData.edgeType;
+      }
       // 1) 낙관적 업데이트: 엣지 상태 반영 + 타겟 노드 재계산/하류 전파
       const nextEds = edgesRef.current.map(e => {
         if (e.id !== editFormData.id) return e;
@@ -1224,10 +1303,29 @@ export default function App() {
       setEditFormData({ ...editFormData, status: newStatus });
 
       // 2) 저장 → 서버 결과로 재동기화
-      await persist(`/api/edges/${editFormData.id}`, {
+      const res = await persist(`/api/edges/${editFormData.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
+      });
+      let newId = editFormData.id;
+      try {
+        const resData = await res.json();
+        if (resData?.new_id) newId = resData.new_id;
+      } catch {}
+      if (newId !== editFormData.id) {
+        setEdges(eds => eds.map(e => e.id === editFormData.id ? { ...e, id: newId } : e));
+        setEditFormData((prev: any) => prev.id === editFormData.id ? { ...prev, id: newId } : prev);
+        setSelectedEdge(prev => prev && prev.id === editFormData.id ? { ...prev, id: newId } : prev);
+      }
+      pushUndo({
+        type: 'UPDATE_EDGE',
+        id: newId,
+        previousData: {
+          ...(typeChanged ? { type: prevType } : {}),
+          test_status: prevStatus,
+          properties: prevProps
+        }
       });
       syncStatusesFromServer();
     }
@@ -1333,21 +1431,44 @@ export default function App() {
         const mergedProps = (prevData: any) => ({
           ...((prevData as any)?.properties || {}),
           ...payload.properties,
-          description: payload.description,
-          issue_link: payload.issue_link
+          ...(payload.description !== undefined ? { description: payload.description } : {}),
+          ...(payload.issue_link !== undefined ? { issue_link: payload.issue_link } : {}),
         });
-        setNodes(nds => nds.map(n => n.id === editFormData.id ? { 
-          ...n, 
-          className: (n.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (liveStatus || 'untested').toLowerCase(),
-          data: { 
-            ...n.data, 
-            label: editFormData.label, 
-            name: editFormData.name, 
-            test_status: liveStatus, 
-            aliases: payload.aliases, 
-            properties: mergedProps(n.data)
-          } 
-        } : n));
+        setNodes(nds => nds.map(n => {
+          let nextN = n;
+          if (n.id === editFormData.id) {
+            nextN = { 
+              ...nextN, 
+              className: (nextN.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (liveStatus || 'untested').toLowerCase(),
+              data: { 
+                ...nextN.data, 
+                label: editFormData.label, 
+                name: editFormData.name, 
+                test_status: liveStatus, 
+                aliases: payload.aliases, 
+                properties: mergedProps(nextN.data)
+              } 
+            };
+          }
+          if (Array.isArray((nextN.data as any)?.badges) && (nextN.data as any).badges.some((b: any) => b.id === editFormData.id)) {
+            const nextBadges = (nextN.data as any).badges.map((b: any) =>
+              b.id === editFormData.id
+                ? {
+                    ...b,
+                    name: editFormData.name,
+                    properties: {
+                      ...(b.properties || {}),
+                      ...payload.properties,
+                      ...(payload.description !== undefined ? { description: payload.description } : {}),
+                      ...(payload.issue_link !== undefined ? { issue_link: payload.issue_link } : {}),
+                    }
+                  }
+                : b
+            );
+            nextN = { ...nextN, data: { ...nextN.data, badges: nextBadges } };
+          }
+          return nextN;
+        }));
         setSelectedNode(prev => prev && prev.id === editFormData.id ? {
           ...prev,
           className: (prev.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + (liveStatus || 'untested').toLowerCase(),
@@ -1369,14 +1490,10 @@ export default function App() {
       const edge = edges.find(e => e.id === editFormData.id);
       if (!edge) return;
       
-      pushUndo({
-        type: 'UPDATE_EDGE',
-        id: edge.id,
-        previousData: {
-          test_status: (edge.data as any)?.test_status || 'Untested',
-          properties: (edge.data as any)?.properties || {}
-        }
-      });
+      const prevEdgeTypeOrig = String((edge.data as any)?.type || edge.label || 'Transition');
+      const prevAction = (edge.data as any)?.action || '';
+      const prevStatus = (edge.data as any)?.test_status || 'Untested';
+      const prevProps = (edge.data as any)?.properties || {};
       const payload = {
         type: editFormData.edgeType,
         action: editFormData.action,
@@ -1390,7 +1507,17 @@ export default function App() {
       });
       const data = await response.json();
       const newId = data.new_id || editFormData.id;
-      const prevEdgeType = String((edge.data as any)?.type || edge.label || '').toLowerCase();
+      pushUndo({
+        type: 'UPDATE_EDGE',
+        id: newId,
+        previousData: {
+          type: prevEdgeTypeOrig,
+          action: prevAction,
+          test_status: prevStatus,
+          properties: prevProps
+        }
+      });
+      const prevEdgeType = prevEdgeTypeOrig.toLowerCase();
       const nextEdgeType = String(payload.type || prevEdgeType).toLowerCase();
       const wasContains = prevEdgeType === 'contains' || prevEdgeType === 'has';
       const isNowContains = nextEdgeType === 'contains' || nextEdgeType === 'has';
@@ -1405,7 +1532,7 @@ export default function App() {
           type: e.type,
           label: payload.type || e.label,
           className: nextCls || undefined,
-          data: { ...e.data as any, type: payload.type || (e.data as any)?.type, action: payload.action, test_status: payload.test_status }
+          data: { ...e.data as any, type: payload.type || (e.data as any)?.type, action: payload.action, test_status: payload.test_status, properties: payload.properties }
         };
       });
       setEdges(nextEds);
@@ -1417,23 +1544,7 @@ export default function App() {
         setSelectedEdge(prev => prev ? {...prev, id: newId} : null);
       }
       if (wasContains && !isNowContains) {
-        const stillHasChildren = nextEds.some(rem => {
-          const rt = String((rem.data as any)?.type || rem.label || '').toLowerCase();
-          return rem.source === edge.source && (rt === 'contains' || rt === 'has');
-        });
-        setNodes(nds => nds.map(n => {
-          if (n.id === edge.target && n.parentId === edge.source) {
-            const type = (n.data as any)?.label || 'Data';
-            const isGlobal = (n.data as any)?.properties?.is_global === 'true';
-            const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !visibleTypesRef.current.has(type));
-            return { ...n, parentId: undefined, extent: undefined, hidden: isHiddenByFilter };
-          }
-          if (n.id === edge.source && !stillHasChildren) {
-            const { width, height, minHeight, ...restStyle } = (n.style || {}) as any;
-            return { ...n, style: restStyle, data: { ...n.data, hasChildren: false, isCollapsed: false, expandedStyle: undefined, childSummary: undefined, impactedChildCount: 0 } };
-          }
-          return n;
-        }));
+        unparentNodesOnContainsDelete([edge], nextEds);
       }
       if (wasContains || isNowContains) {
         setSelectedEdge(null);
@@ -1446,8 +1557,8 @@ export default function App() {
 
   // Inspector에서 편집 중인 노드의 "최신" 객체 (selectedNode는 선택 시점 스냅샷이라 전파/체크리스트 반영이 늦을 수 있음)
   const liveEditNode = useMemo(
-    () => (editFormData.type === 'node' && editFormData.id) ? (nodes.find(n => n.id === editFormData.id) || null) : null,
-    [nodes, editFormData.type, editFormData.id]
+    () => (editFormData.type === 'node' && editFormData.id) ? (nodes.find(n => n.id === editFormData.id) || (selectedNode?.id === editFormData.id ? selectedNode : null)) : null,
+    [nodes, editFormData.type, editFormData.id, selectedNode]
   );
 
   /** UPDATE_NODE Undo 스냅샷 (체크리스트/변경 표시 등 properties 변경 전 상태 보관) */
@@ -1471,14 +1582,24 @@ export default function App() {
    * - 체크리스트를 모두 지우면(0개) 자동 판정을 멈추고 현재 상태를 유지합니다. (백엔드 update_node 와 동일)
    */
   const saveChecklist = async (nextChecklist: ChecklistItem[]) => {
-    const node = nodesRef.current.find(n => n.id === editFormData.id);
+    const node = nodesRef.current.find(n => n.id === editFormData.id) || (selectedNode?.id === editFormData.id ? selectedNode : undefined);
     if (!node) return;
     pushNodeUndoSnapshot(node);
 
-    // 1) properties.checklist 반영
-    let updatedNodes = nodesRef.current.map(n => n.id === node.id
-      ? { ...n, data: { ...n.data, properties: { ...((n.data as any)?.properties || {}), checklist: nextChecklist } } }
-      : n);
+    // 1) properties.checklist 반영 (전역 노드인 경우 다른 노드에 부착된 배지 객체의 properties.checklist도 함께 갱신)
+    let updatedNodes = nodesRef.current.map(n => {
+      let nextN = n;
+      if (n.id === node.id) {
+        nextN = { ...nextN, data: { ...nextN.data, properties: { ...((nextN.data as any)?.properties || {}), checklist: nextChecklist } } };
+      }
+      if (Array.isArray((nextN.data as any)?.badges) && (nextN.data as any).badges.some((b: any) => b.id === node.id)) {
+        const nextBadges = (nextN.data as any).badges.map((b: any) =>
+          b.id === node.id ? { ...b, properties: { ...(b.properties || {}), checklist: nextChecklist } } : b
+        );
+        nextN = { ...nextN, data: { ...nextN.data, badges: nextBadges } };
+      }
+      return nextN;
+    });
     // 2) 체크리스트 기반 자기 자신 상태 재합성
     if (nextChecklist.length > 0 && !isOverridden(node)) {
       const current = (node.data as any)?.test_status || 'Untested';
@@ -1488,6 +1609,12 @@ export default function App() {
     // 3) 하류(Depends_On / Tests) 연쇄 전파
     const changes = propagateToDependents(updatedNodes, edgesRef.current, node.id);
     setNodes(applyStatusChanges(updatedNodes, changes));
+    if (!nodesRef.current.some(n => n.id === node.id)) {
+      setSelectedNode(prev => prev && prev.id === node.id ? {
+        ...prev,
+        data: { ...prev.data, properties: { ...((prev.data as any)?.properties || {}), checklist: nextChecklist } }
+      } : prev);
+    }
 
     // 4) 저장 (상태는 백엔드가 같은 규칙으로 재계산) → 서버 결과로 재동기화
     await persist(`/api/nodes/${node.id}`, {
@@ -1907,8 +2034,8 @@ export default function App() {
         }
         edges.forEach(e => {
           if (
-            (e.source === selectedNode.id && scope.activeNodes.has(e.target)) ||
-            (e.target === selectedNode.id && scope.activeNodes.has(e.source))
+            (e.source === selectedNode.id && activeNodes.has(e.target)) ||
+            (e.target === selectedNode.id && activeNodes.has(e.source))
           ) {
             edgeHighlights.add(e.id);
           }
@@ -2500,6 +2627,48 @@ export default function App() {
                       ))}
                     </datalist>
                   </div>
+                  {!isCreatingNode && liveEditNode && (() => {
+                    const containsEdge = edges.find(e => {
+                      const et = String((e.data as any)?.type || e.label || '').toLowerCase();
+                      return e.target === liveEditNode.id && (et === 'contains' || et === 'has');
+                    });
+                    const parentId = liveEditNode.parentId || containsEdge?.source;
+                    if (!parentId) return null;
+                    const parentNode = nodes.find(n => n.id === parentId);
+                    const parentName = (parentNode?.data as any)?.name || parentId;
+                    return (
+                      <div className="form-group parent-relation-box">
+                        <div className="parent-relation-label" title={parentName}>
+                          {t.nodeForm.parentLabel(parentName)}
+                        </div>
+                        {containsEdge && (
+                          <div className="parent-relation-actions">
+                            <button
+                              type="button"
+                              className="parent-relation-btn"
+                              title={t.nodeForm.changeRelationTitle}
+                              onClick={() => {
+                                setNodes(nds => nds.map(n => n.selected ? { ...n, selected: false } : n));
+                                setEdges(eds => eds.map(e => (e.id === containsEdge.id ? { ...e, selected: true } : (e.selected ? { ...e, selected: false } : e))));
+                                setSelectedNode(null);
+                                setSelectedEdge(containsEdge);
+                              }}
+                            >
+                              {t.nodeForm.changeRelation}
+                            </button>
+                            <button
+                              type="button"
+                              className="parent-relation-btn detach"
+                              title={t.nodeForm.detachParentTitle}
+                              onClick={() => handleDetachFromParent(containsEdge)}
+                            >
+                              {t.nodeForm.detachParent}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="form-group" style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', border: '1.5px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                     {(() => {
                       const isGlobalAllowed = ['Component', 'Data', 'TestCase'].includes(editFormData.label);
@@ -2526,18 +2695,6 @@ export default function App() {
                       );
                     })()}
                     <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div className="form-group" style={{ margin: 0 }}>
-                        <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>Verification Guide (Description)</label>
-                        <textarea 
-                          value={editFormData.properties?.description || ''} 
-                          onChange={e => {
-                            const newProps = { ...(editFormData.properties || {}), description: e.target.value };
-                            setEditFormData({...editFormData, properties: newProps});
-                          }}
-                          placeholder="e.g. Verify that all language keys are translated properly."
-                          style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', minHeight: '60px', resize: 'vertical' }}
-                        />
-                      </div>
                       <div className="form-group" style={{ margin: 0 }}>
                         <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>{t.nodeForm.issueLink}</label>
                         <textarea 
@@ -2927,7 +3084,17 @@ export default function App() {
                                 const newEdgeId = await res.json();
                                 setNodes(nds => nds.map(n => {
                                   if (n.id !== selectedNode.id) return n;
-                                  const newBadges = [...((n.data as any).badges || []), { ...g, edgeId: newEdgeId, edgeType: 'Depends_On', test_status: 'Untested' }];
+                                  const liveGlobalData = (nodesRef.current.find(gn => gn.id === g.id)?.data as any) || {};
+                                  const mergedGlobalProps = {
+                                    ...(g.properties || {}),
+                                    ...(liveGlobalData.properties || {}),
+                                    ...(g.description !== undefined ? { description: g.description } : {}),
+                                    ...(g.issue_link !== undefined ? { issue_link: g.issue_link } : {}),
+                                  };
+                                  const newBadges = [
+                                    ...((n.data as any).badges || []),
+                                    { ...g, ...liveGlobalData, properties: mergedGlobalProps, edgeId: newEdgeId, edgeType: 'Depends_On', test_status: 'Untested' }
+                                  ];
                                   return { ...n, data: { ...n.data, badges: newBadges } };
                                 }));
                               } else {

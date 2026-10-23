@@ -76,6 +76,11 @@ export const koKR = {
   // 노드 편집 폼
   nodeForm: {
     issueLink: 'Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능',
+    parentLabel: (name: string) => `📦 소속 부모: ${name}`,
+    changeRelation: '🔗 관계 변경',
+    changeRelationTitle: '부모-자식 Contains 연결선을 선택하여 관계 타입(Transition 등)이나 상태를 변경합니다.',
+    detachParent: '⏏ 분리',
+    detachParentTitle: '부모 컨테이너에서 이 노드를 즉시 분리(Contains 엣지 삭제)합니다.',
   },
 
   // 📌 수동 차단 (Manual Override, TESTCASE 스펙 4.3)

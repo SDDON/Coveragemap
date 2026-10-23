@@ -95,7 +95,9 @@ def api_create_node(node: NodeCreate, session = Depends(get_db)):
 @app.get("/api/globals")
 def api_get_globals(session = Depends(get_db)):
     try:
-        res = session.run("MATCH (n) WHERE n.is_global = 'true' RETURN elementId(n) AS id, labels(n)[0] AS type, n.name AS name, n.aliases AS aliases, n.description AS description, n.issue_link AS issue_link, n.test_status AS test_status").data()
+        res = session.run("MATCH (n) WHERE n.is_global = 'true' RETURN elementId(n) AS id, labels(n)[0] AS type, n.name AS name, n.aliases AS aliases, n.description AS description, n.issue_link AS issue_link, n.test_status AS test_status, properties(n) AS properties").data()
+        for item in res:
+            item["properties"] = deserialize_props_from_neo4j(item.get("properties") or {})
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

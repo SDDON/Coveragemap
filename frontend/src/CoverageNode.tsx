@@ -122,11 +122,17 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
             {checklistBadge && (
               <span className={`checklist-badge checklist-badge-${checklistBadge.tone}`}>{checklistBadge.text}</span>
             )}
-            {failedBadges.map((fb: any, idx: number) => (
-              <span key={fb.edgeId || fb.id || idx} className="fault-chip" title={fb.properties?.description || fb.name}>
-                {t.scopedAudit.faultChip(fb.name)}
-              </span>
-            ))}
+            {failedBadges.map((fb: any, idx: number) => {
+              const fbChecklist: Array<{ text?: string }> = Array.isArray(fb.properties?.checklist) ? fb.properties.checklist : [];
+              const fbTitle = fbChecklist.length > 0
+                ? fbChecklist.map(c => c.text).filter(Boolean).join(' / ') || fb.name
+                : (fb.properties?.description || fb.name);
+              return (
+                <span key={fb.edgeId || fb.id || idx} className="fault-chip" title={fbTitle}>
+                  {t.scopedAudit.faultChip(fb.name)}
+                </span>
+              );
+            })}
           </div>
         )}
         
@@ -208,36 +214,54 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                         }}
                         style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0 2px', fontSize: '11px', display: 'flex', alignItems: 'center' }}>⊘</button>
                     </div>
-                    {(badge.properties?.description || badge.properties?.issue_link) && (
-                      <div className="badge-tooltip" onClick={e => e.stopPropagation()}>
-                        <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>{badge.name} Verification Guide</div>
-                        {badge.properties?.description && (
-                          <div style={{ marginBottom: badge.properties?.issue_link ? '8px' : '0', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>
-                            {badge.properties.description}
-                          </div>
-                        )}
-                        {badge.properties?.issue_link && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            {badge.properties.issue_link.split(/[,\n]+/).map((l: string) => l.trim()).filter((link: string) => link.length > 0).map((link: string, idx: number) => {
-                              let url = link;
-                              if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                                url = 'https://' + url;
-                              }
-                              let hostname = link;
-                              try {
-                                hostname = new URL(url).hostname;
-                              } catch(e) {}
-                              return (
-                                <a key={idx} href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                                  {hostname}
-                                </a>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const badgeChecklist: Array<{ id?: string; text?: string; status?: string }> = Array.isArray(badge.properties?.checklist)
+                        ? badge.properties.checklist.filter((item: any) => item && String(item.text || '').trim().length > 0)
+                        : [];
+                      const hasBadgeTooltip = badgeChecklist.length > 0 || Boolean(badge.properties?.description) || Boolean(badge.properties?.issue_link);
+                      if (!hasBadgeTooltip) return null;
+                      const badgeStatusIcon = (st?: string) =>
+                        st === 'Passed' ? '🟢' : st === 'Failed' ? '🔴' : st === 'Blocked' ? '🟡' : '⚪';
+                      return (
+                        <div className="badge-tooltip" onClick={e => e.stopPropagation()}>
+                          <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>{badge.name} Verification Guide</div>
+                          {badgeChecklist.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: badge.properties?.issue_link ? '8px' : '0', color: 'rgba(255,255,255,0.9)', lineHeight: '1.4' }}>
+                              {badgeChecklist.map((item: any, cIdx: number) => (
+                                <div key={item.id || cIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                                  <span style={{ flexShrink: 0 }}>{badgeStatusIcon(item.status)}</span>
+                                  <span>{item.text}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : badge.properties?.description ? (
+                            <div style={{ marginBottom: badge.properties?.issue_link ? '8px' : '0', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>
+                              {badge.properties.description}
+                            </div>
+                          ) : null}
+                          {badge.properties?.issue_link && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              {badge.properties.issue_link.split(/[,\n]+/).map((l: string) => l.trim()).filter((link: string) => link.length > 0).map((link: string, idx: number) => {
+                                let url = link;
+                                if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                                  url = 'https://' + url;
+                                }
+                                let hostname = link;
+                                try {
+                                  hostname = new URL(url).hostname;
+                                } catch(e) {}
+                                return (
+                                  <a key={idx} href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                    {hostname}
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
