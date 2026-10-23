@@ -764,8 +764,31 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     const edge4El = page.locator(`.react-flow__edge[data-id="${edgeC3ToC2}"]`);
     await expect(edge4El).toBeVisible();
     await expect(edge4El).toHaveClass(/\bstatus-untested\b/);
+    await expect(edge4El).toHaveClass(/\bactive\b/);
+    await expect(edge4El).toHaveClass(/\bhighlight-edge\b/);
     await expect(edge4El).not.toHaveClass(/\bde-emphasized\b/);
+    const edge4Opacity = await edge4El.evaluate(el => window.getComputedStyle(el).opacity);
+    expect(edge4Opacity).toBe('1');
     await expect(nodeLocator(page, comp3Id)).not.toHaveClass(/\bde-emphasized\b/);
     await expect(nodeLocator(page, ids.child)).not.toHaveClass(/\bde-emphasized\b/);
+
+    // 6. Scenario 5: Drag connection when an UNRELATED node (ids.tc1) was previously selected
+    await selectNode(page, ids.tc1);
+    await expect(nodeLocator(page, ids.tc1)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bde-emphasized\b/);
+    await expect(nodeLocator(page, comp3Id)).toHaveClass(/\bde-emphasized\b/);
+
+    const edgeC2ToC3 = await dragConnectNodes(ids.child, comp3Id);
+    const edge5El = page.locator(`.react-flow__edge[data-id="${edgeC2ToC3}"]`);
+    await expect(edge5El).toBeVisible();
+    await expect(edge5El).toHaveClass(/\bstatus-untested\b/);
+    await expect(edge5El).toHaveClass(/\bactive\b/);
+    await expect(edge5El).toHaveClass(/\bhighlight-edge\b/);
+    await expect(edge5El).not.toHaveClass(/\bde-emphasized\b/);
+    const edge5Opacity = await edge5El.evaluate(el => window.getComputedStyle(el).opacity);
+    expect(edge5Opacity).toBe('1');
+    const d5 = await edge5El.locator('path.react-flow__edge-path').getAttribute('d');
+    expect(d5).toBeTruthy();
+    expect(d5).toContain('Q');
   });
 });

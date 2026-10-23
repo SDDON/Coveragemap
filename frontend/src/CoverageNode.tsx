@@ -1,5 +1,5 @@
 import { memo, useState, useEffect } from 'react';
-import { Handle, Position } from '@xyflow/react';
+import { Handle, Position, useInternalNode, useUpdateNodeInternals } from '@xyflow/react';
 import { t } from './locales/koKR';
 
 /**
@@ -14,6 +14,17 @@ import { t } from './locales/koKR';
  */
 function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean; [key: string]: any }) {
   const [selectedBadgeId, setSelectedBadgeId] = useState<string | null>(null);
+  const internalNode = useInternalNode(id);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const hasMeasured = Boolean(internalNode?.measured?.width && internalNode?.measured?.height);
+  const hasHandleBounds = Boolean(internalNode?.internals?.handleBounds);
+
+  // React Flow 내부에서 userNode.measured 커밋 전후로 setNodes가 겹치면 handleBounds만 undefined로 유실되는 경합을 자가 복구합니다.
+  useEffect(() => {
+    if (hasMeasured && !hasHandleBounds) {
+      updateNodeInternals(id);
+    }
+  }, [id, hasMeasured, hasHandleBounds, updateNodeInternals]);
 
   useEffect(() => {
     const handleSelection = (e: Event) => {

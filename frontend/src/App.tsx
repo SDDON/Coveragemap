@@ -869,6 +869,9 @@ export default function App() {
   // 부모 노드의 하위 자식 상태 요약(childSummary)을 자식 상태 변경 시 자동 동기화 (Spec 4.1)
   useEffect(() => {
     setNodes(nds => {
+      if (nds.some(n => !n.hidden && (!n.measured?.width || !n.measured?.height))) {
+        return nds;
+      }
       let changed = false;
       const next = nds.map(n => {
         if (!(n.data as any)?.hasChildren) return n;
@@ -1104,15 +1107,27 @@ export default function App() {
         style: { stroke: 'gray', strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: 'gray' },
       };
-      const bundledEds = calculateEdgeBundling([...edgesRef.current, newEdge]);
+      // 이전 선택된 엣지나 무관한 노드의 Focus+Context 선택 상태로 인해 방금 연결한 새 엣지가 .de-emphasized(투명도 0.1)로 가려지지 않도록 정리합니다.
+      const clearedPrevEdges = edgesRef.current.map(e => (e.selected ? { ...e, selected: false } : e));
+      const bundledEds = calculateEdgeBundling([...clearedPrevEdges, newEdge]);
       setEdges(bundledEds);
+      setSelectedEdge(null);
+      const relatedEndpointIds = new Set<string>([
+        connection.source!,
+        connection.target!,
+        ...(sourceNode?.parentId ? [sourceNode.parentId] : []),
+        ...(targetNode?.parentId ? [targetNode.parentId] : []),
+      ]);
+      if (selectedNodeRef.current && !relatedEndpointIds.has(selectedNodeRef.current.id)) {
+        setSelectedNode(null);
+        setNodes(nds => (nds.some(n => n.selected) ? nds.map(n => (n.selected ? { ...n, selected: false } : n)) : nds));
+      }
       // 새 입력 엣지가 생긴 타겟을 재계산하고, 바뀌면 하류(Depends_On/Tests)로 연쇄 전파 (낙관적)
       applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, bundledEds, [connection.target!]));
       syncStatusesFromServer();
 
       if (isContainsEdge) {
         // 부모 컨테이너 크기(style.width/height)와 자식 상대 좌표를 ELK 레이아웃으로 재계산 (Contains 엣지는 fetchGraph에서도 유지됨)
-        setSelectedEdge(null);
         triggerRefresh();
       }
     } catch (err) {
@@ -1397,6 +1412,7 @@ export default function App() {
         if (isNowContains) cls += ' edge-contains';
         return {
           ...e,
+          selected: (wasContains !== isNowContains) ? false : e.selected,
           label: nextEdgeTypeStr || e.label,
           data: {
             ...(e.data || {}),
@@ -1425,9 +1441,11 @@ export default function App() {
         if (resData?.new_id) newId = resData.new_id;
       } catch {}
       if (newId !== editFormData.id) {
-        setEdges(eds => eds.map(e => e.id === editFormData.id ? { ...e, id: newId } : e));
+        setEdges(eds => eds.map(e => e.id === editFormData.id ? { ...e, id: newId, selected: (wasContains !== isNowContains) ? false : e.selected } : e));
         setEditFormData((prev: any) => prev.id === editFormData.id ? { ...prev, id: newId } : prev);
-        setSelectedEdge(prev => prev && prev.id === editFormData.id ? { ...prev, id: newId } : prev);
+        if (wasContains === isNowContains) {
+          setSelectedEdge(prev => prev && prev.id === editFormData.id ? { ...prev, id: newId } : prev);
+        }
       }
       pushUndo({
         type: 'UPDATE_EDGE',
@@ -1647,6 +1665,7 @@ export default function App() {
         return {
           ...e,
           id: newId,
+          selected: (wasContains || isNowContains) ? false : e.selected,
           type: e.type,
           label: payload.type || e.label,
           className: nextCls || undefined,
@@ -1659,7 +1678,9 @@ export default function App() {
       syncStatusesFromServer();
       if (newId !== editFormData.id) {
         setEditFormData({...editFormData, id: newId});
-        setSelectedEdge(prev => prev ? {...prev, id: newId} : null);
+        if (!wasContains && !isNowContains) {
+          setSelectedEdge(prev => prev ? {...prev, id: newId} : null);
+        }
       }
       if (wasContains && !isNowContains) {
         unparentNodesOnContainsDelete([edge], nextEds);
