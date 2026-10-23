@@ -168,6 +168,7 @@ export default function App() {
     x: number;
     y: number;
     edgeType: string;
+    edgeTypeManuallySet?: boolean;
     search: string;
   } | null>(null);
   const connectDragRef = useRef<{
@@ -179,7 +180,9 @@ export default function App() {
   const quickConnectOpenedAtRef = useRef<number>(0);
   const [pendingConnectSource, setPendingConnectSource] = useState<{
     nodeId: string;
+    nodeName?: string;
     edgeType: string;
+    edgeTypeManuallySet?: boolean;
   } | null>(null);
 
   const toggleImpact = useCallback(async (globalNodeId: string, globalNodeName: string) => {
@@ -198,16 +201,14 @@ export default function App() {
         if (prev.some(item => item.globalNodeId === globalNodeId)) {
           return prev.filter(item => item.globalNodeId !== globalNodeId);
         }
-        const usedSlots = new Set(prev.map(item => item.slotIndex));
+        const base = prev.length >= 5 ? prev.slice(1) : prev;
+        const usedSlots = new Set(base.map(item => item.slotIndex));
         let slotIndex = 0;
         while (usedSlots.has(slotIndex) && slotIndex < 4) {
           slotIndex += 1;
         }
-        if (usedSlots.has(slotIndex)) {
-          slotIndex = prev.length % 5;
-        }
         return [
-          ...prev,
+          ...base,
           {
             globalNodeId,
             globalNodeName,
@@ -472,7 +473,6 @@ export default function App() {
         setEdges(nextEds);
         if (targetEdge && (eType === 'contains' || eType === 'has')) {
           unparentNodesOnContainsDelete([targetEdge], nextEds);
-          triggerRefresh();
         }
       } else if (action.type === 'UPDATE_EDGE') {
         const currentEdge = edgesRef.current.find(e => e.id === action.id);
@@ -506,7 +506,7 @@ export default function App() {
         if (currentEdge && wasContains && !isNowContains) {
           unparentNodesOnContainsDelete([currentEdge], nextEds);
         }
-        if (wasContains || isNowContains) {
+        if (!wasContains && isNowContains) {
           triggerRefresh();
         }
       } else if (action.type === 'DELETE_EDGE') {
@@ -760,7 +760,6 @@ export default function App() {
 
     const fetchGraph = async () => {
       const shouldFitView = !hasInitialFitRef.current || prevFilterForFitRef.current !== filterText;
-      prevFilterForFitRef.current = filterText;
       prevFilterRef.current = filterText;
       prevRefreshRef.current = refreshKey;
       try {
@@ -945,10 +944,11 @@ export default function App() {
         setError(null);
         
         // 초기 로드 또는 필터 변경 시에만 fitView를 실행하고, 백그라운드 재조회(triggerRefresh)에서는 현재 뷰포트를 보존합니다.
+        hasInitialFitRef.current = true;
+        prevFilterForFitRef.current = filterText;
         if (shouldFitView) {
-          hasInitialFitRef.current = true;
           setTimeout(() => {
-            if (rfInstance) rfInstance.fitView({ padding: 0.2 });
+            if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 600 });
           }, 50);
         }
       } catch (err: any) {
@@ -1114,7 +1114,6 @@ export default function App() {
     syncStatusesFromServer();
     unparentNodesOnContainsDelete([containsEdge], nextEds);
     setSelectedNode(prev => prev && prev.id === containsEdge.target ? { ...prev, parentId: undefined, extent: undefined } : prev);
-    triggerRefresh();
   }, [pushUndo, setEdges, applyLocalStatusChanges, syncStatusesFromServer, unparentNodesOnContainsDelete]);
 
   const onEdgesDelete = useCallback(async (deleted: Edge[]) => {
@@ -1272,7 +1271,8 @@ export default function App() {
         setError(err.detail || 'Failed to delete node');
         return;
       }
-      const node = nodes.find(n => n.id === editFormData.id);
+      const node = nodes.find(n => n.id === editFormData.id) || (selectedNode?.id === editFormData.id ? selectedNode : undefined);
+      const wasGlobal = (node?.data as any)?.properties?.is_global === 'true' || editFormData.properties?.is_global === 'true';
       if (node) {
         const connectedEdges = edges.filter(e => e.source === node.id || e.target === node.id);
         pushUndo({
@@ -1296,9 +1296,21 @@ export default function App() {
       ));
       const remainingNodes = nodesRef.current.filter(n => n.id !== deletedNodeId);
       const changes = recalcTargetAndPropagate(remainingNodes, remainingEdges, affectedTargets);
-      setNodes(nds => applyStatusChanges(nds.filter(n => n.id !== deletedNodeId), changes));
+      setNodes(nds => applyStatusChanges(
+        nds.filter(n => n.id !== deletedNodeId).map(n => {
+          const badges = (n.data as any)?.badges;
+          if (!Array.isArray(badges) || !badges.some((b: any) => b.id === deletedNodeId)) return n;
+          return { ...n, data: { ...n.data, badges: badges.filter((b: any) => b.id !== deletedNodeId) } };
+        }),
+        changes
+      ));
       setEdges(remainingEdges);
       setPinnedFocusNodeId(prev => (prev === deletedNodeId ? null : prev));
+      setActiveImpacts(prev => prev.filter(item => item.globalNodeId !== deletedNodeId));
+      if (wasGlobal) {
+        window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: null }));
+        fetchGlobals();
+      }
       syncStatusesFromServer();
     } else if (editFormData.type === "edge") { 
       const edge = edges.find(e => e.id === editFormData.id);
@@ -1398,7 +1410,8 @@ export default function App() {
    */
   const handleSaveStatus = async (newStatus: string, override?: { reason: string }) => {
     if (editFormData.type === 'node') {
-      const node = nodes.find(n => n.id === editFormData.id);
+      const node = nodes.find(n => n.id === editFormData.id) || (selectedNode?.id === editFormData.id ? selectedNode : undefined);
+      const prevIsGlobal = String((node?.data as any)?.properties?.is_global || 'false');
       const formProps = { ...(editFormData.properties || {}) };
       const description = formProps.description;
       const issue_link = formProps.issue_link;
@@ -1408,6 +1421,7 @@ export default function App() {
       if (isGlobalVal !== undefined) {
         cleanProps.is_global = String(isGlobalVal);
       }
+      const nextIsGlobal = String(cleanProps.is_global ?? prevIsGlobal);
       const isManual = !!override;
       const overrideReason = override?.reason ?? '';
       const payload = {
@@ -1505,6 +1519,22 @@ export default function App() {
         const updated = finalById.get(n.id);
         return updated ? { ...updated, measured: n.measured ?? updated.measured } : n;
       }));
+      setSelectedNode(prev => prev && prev.id === editFormData.id ? {
+        ...prev,
+        className: (prev.className || '').replace(/\bstatus-[a-z]+\b/g, '').trim() + ' status-' + newStatus.toLowerCase(),
+        data: {
+          ...(prev.data || {}),
+          test_status: newStatus,
+          properties: {
+            ...((prev.data as any)?.properties || {}),
+            ...(description !== undefined ? { description } : {}),
+            ...(issue_link !== undefined ? { issue_link } : {}),
+            ...(isGlobalVal !== undefined ? { is_global: String(isGlobalVal) } : {}),
+            is_manual_override: isManual,
+            override_reason: overrideReason,
+          },
+        },
+      } : prev);
       setEditFormData({ ...editFormData, status: newStatus, properties: formProps });
 
       // 3) 저장 (백엔드 update_node가 동일 규칙으로 연쇄 전파) → 서버 결과로 재동기화
@@ -1513,6 +1543,15 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, is_manual_override: isManual, override_reason: overrideReason })
       });
+      if (prevIsGlobal !== nextIsGlobal) {
+        if (nextIsGlobal !== 'true') {
+          window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: null }));
+        }
+        fetchGlobals();
+        triggerRefresh();
+      } else if (nextIsGlobal === 'true') {
+        fetchGlobals();
+      }
       syncStatusesFromServer();
     } else if (editFormData.type === 'edge') {
       const edge = edges.find(e => e.id === editFormData.id);
@@ -2476,6 +2515,9 @@ export default function App() {
               cls += ' impact-source';
             }
           }
+          if (selectedNode?.id === n.id || hoveredNode === n.id) {
+            cls += ' active';
+          }
           if (selectedNode?.id === n.id) {
             cls += ' highlight-selected';
           }
@@ -2750,7 +2792,11 @@ export default function App() {
           setQuickConnectPopover(null);
           if (pendingConnectSource) {
             if (node.id !== pendingConnectSource.nodeId) {
-              createEdgeBetweenNodes(pendingConnectSource.nodeId, node.id, pendingConnectSource.edgeType);
+              createEdgeBetweenNodes(
+                pendingConnectSource.nodeId,
+                node.id,
+                pendingConnectSource.edgeTypeManuallySet ? pendingConnectSource.edgeType : undefined
+              );
               setPendingConnectSource(null);
             }
           }
@@ -3586,10 +3632,11 @@ export default function App() {
                           </button>
                           <button
                             type="button"
-                            className={`impact-toggle-btn${activeImpactItem ? ` active slot-${activeImpactItem.slotIndex}` : ''}`}
+                            className={`impact-toggle-btn${activeImpactItem ? ` active impact-slot-${activeImpactItem.slotIndex}` : ''}`}
                             onClick={() => toggleImpact(g.id, g.name)}
                             title={`Show impact: which nodes are affected by ${g.name}`}
                           >
+                            {activeImpactItem && <span className={`impact-slot-dot slot-${activeImpactItem.slotIndex}`} />}
                             {activeImpactItem ? '🔍 ON' : '🔍 Impact'}
                           </button>
                           <button 
@@ -3742,14 +3789,19 @@ export default function App() {
         const srcNode = nodes.find(n => n.id === quickConnectPopover.sourceNodeId);
         const srcName = (srcNode?.data as any)?.name || quickConnectPopover.sourceNodeId;
         const q = quickConnectPopover.search.trim().toLowerCase();
+        const qClean = q.replace(/^#+/, '');
         const candidates = nodes.filter(n => {
           if (n.hidden || n.id === quickConnectPopover.sourceNodeId) return false;
           if (srcNode?.parentId && srcNode.parentId === n.id) return false;
-          if (!q) return true;
+          if (!qClean) return true;
           const name = String((n.data as any)?.name || '').toLowerCase();
           const label = String((n.data as any)?.label || '').toLowerCase();
           const nodeAliases: string[] = Array.isArray((n.data as any)?.aliases) ? (n.data as any).aliases : [];
-          return name.includes(q) || label.includes(q) || nodeAliases.some(a => String(a).toLowerCase().includes(q));
+          return (
+            name.includes(qClean) ||
+            label.includes(qClean) ||
+            nodeAliases.some(a => String(a).replace(/^#+/, '').toLowerCase().includes(qClean))
+          );
         });
         const edgeTypes = ['Transition', 'Contains', 'Depends_On', 'Tests', 'Return'];
         return (
@@ -3763,19 +3815,19 @@ export default function App() {
               <span className="quick-connect-title" title={srcName}>{t.quickConnect.title(srcName)}</span>
               <button
                 type="button"
-                className="quick-connect-close"
+                className="quick-connect-close-btn"
                 onClick={() => setQuickConnectPopover(null)}
               >
                 ✕
               </button>
             </div>
-            <div className="quick-connect-edge-types" aria-label={t.quickConnect.edgeTypeLabel}>
+            <div className="quick-connect-type-pills" aria-label={t.quickConnect.edgeTypeLabel}>
               {edgeTypes.map(et => (
                 <button
                   key={et}
                   type="button"
                   className={`quick-connect-type-pill${quickConnectPopover.edgeType === et ? ' active' : ''}`}
-                  onClick={() => setQuickConnectPopover(prev => prev ? { ...prev, edgeType: et } : null)}
+                  onClick={() => setQuickConnectPopover(prev => prev ? { ...prev, edgeType: et, edgeTypeManuallySet: true } : null)}
                 >
                   {et}
                 </button>
@@ -3797,7 +3849,11 @@ export default function App() {
                   const target = candidates[0];
                   const popoverSnap = quickConnectPopover;
                   setQuickConnectPopover(null);
-                  createEdgeBetweenNodes(popoverSnap.sourceNodeId, target.id, popoverSnap.edgeType);
+                  createEdgeBetweenNodes(
+                    popoverSnap.sourceNodeId,
+                    target.id,
+                    popoverSnap.edgeTypeManuallySet ? popoverSnap.edgeType : undefined
+                  );
                 }
               }}
             />
@@ -3805,7 +3861,7 @@ export default function App() {
               {candidates.length === 0 ? (
                 <div className="quick-connect-empty">{t.quickConnect.emptyResult}</div>
               ) : (
-                candidates.slice(0, 30).map(cand => {
+                candidates.slice(0, 10).map(cand => {
                   const candName = (cand.data as any)?.name || cand.id;
                   const candLabel = (cand.data as any)?.label || 'Node';
                   return (
@@ -3816,11 +3872,15 @@ export default function App() {
                       onClick={() => {
                         const popoverSnap = quickConnectPopover;
                         setQuickConnectPopover(null);
-                        createEdgeBetweenNodes(popoverSnap.sourceNodeId, cand.id, popoverSnap.edgeType);
+                        createEdgeBetweenNodes(
+                          popoverSnap.sourceNodeId,
+                          cand.id,
+                          popoverSnap.edgeTypeManuallySet ? popoverSnap.edgeType : undefined
+                        );
                       }}
                     >
                       <span className="quick-connect-item-name" title={candName}>{candName}</span>
-                      <span className="quick-connect-item-meta">{candLabel}</span>
+                      <span className="quick-connect-item-label">{candLabel}</span>
                     </button>
                   );
                 })
@@ -3833,6 +3893,7 @@ export default function App() {
                 setPendingConnectSource({
                   nodeId: quickConnectPopover.sourceNodeId,
                   edgeType: quickConnectPopover.edgeType,
+                  edgeTypeManuallySet: quickConnectPopover.edgeTypeManuallySet,
                 });
                 setQuickConnectPopover(null);
               }}
@@ -3938,8 +3999,8 @@ export default function App() {
               <span style={{ fontSize: '1.1rem' }}>🔍</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 {activeImpacts.map(item => (
-                  <span key={item.globalNodeId} className={`impact-chip impact-chip-slot-${item.slotIndex}`}>
-                    <span className="impact-chip-dot" />
+                  <span key={item.globalNodeId} className={`impact-chip impact-slot-${item.slotIndex}`}>
+                    <span className={`impact-slot-dot slot-${item.slotIndex}`} />
                     <span>{item.globalNodeName}</span>
                     <button
                       type="button"

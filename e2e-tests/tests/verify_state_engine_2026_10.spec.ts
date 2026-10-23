@@ -395,18 +395,14 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await parentBox.locator('.parent-relation-btn', { hasText: '관계 변경' }).click();
     await expect(page.locator('#edgeType')).toHaveValue(/Contains/i);
 
-    // Re-selecting child node and clicking [⏏ 분리] deletes the Contains edge and unparents the child (persisted across /api/graph refresh)
+    // Re-selecting child node and clicking [⏏ 분리] deletes the Contains edge and unparents the child immediately without /api/graph reload
     await selectNode(page, ids.settings);
     await expect(parentBox).toBeVisible();
     const delResponsePromise = page.waitForResponse(
       res => res.url().includes('/api/edges/') && res.request().method() === 'DELETE'
     );
-    const refreshAfterDetach = page.waitForResponse(
-      res => res.url().includes('/api/graph') && res.status() === 200
-    );
     await parentBox.locator('.parent-relation-btn.detach').click();
     await delResponsePromise;
-    await refreshAfterDetach;
 
     await expect(page.locator('.react-flow__edge.edge-contains')).toHaveCount(0);
     await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toHaveCount(0);
@@ -416,13 +412,9 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     const undoPostPromise = page.waitForResponse(
       res => res.url().includes('/api/edges') && res.request().method() === 'POST'
     );
-    const refreshAfterUndo = page.waitForResponse(
-      res => res.url().includes('/api/graph') && res.status() === 200
-    );
     await page.keyboard.press('Control+z');
     await undoPostPromise;
     await expect(parentBox).toBeVisible();
-    await refreshAfterUndo;
     await expect(page.locator('.react-flow__edge.edge-contains')).toHaveCount(1);
     await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible();
   });
@@ -840,6 +832,13 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
 
     const popover = page.locator('.quick-connect-popover');
     await expect(popover).toBeVisible();
+    await expect(popover.locator('.quick-connect-type-pills')).toBeVisible();
+    await expect(popover.locator('.quick-connect-close-btn')).toBeVisible();
+
+    // Verify #alias search works (strip leading # when matching node aliases) and candidate item label is rendered
+    await popover.locator('.quick-connect-search-input').fill('#sub');
+    await expect(popover.locator('.quick-connect-item', { hasText: 'Game Testing Child' })).toBeVisible();
+    await expect(popover.locator('.quick-connect-item-label').first()).toBeVisible();
 
     // Choose Depends_On pill, search for 'Game Settings', and click candidate
     await popover.locator('.quick-connect-type-pill', { hasText: 'Depends_On' }).click();
@@ -976,18 +975,28 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
 
     // 4. Activate BOTH Global_Alpha and Global_Beta in Globals tab
     await page.getByRole('button', { name: 'Globals' }).click();
-    await page.locator('button[title="Show impact: which nodes are affected by Global_Alpha"]').click();
-    await page.locator('button[title="Show impact: which nodes are affected by Global_Beta"]').click();
+    const alphaToggleBtn = page.locator('button[title="Show impact: which nodes are affected by Global_Alpha"]');
+    const betaToggleBtn = page.locator('button[title="Show impact: which nodes are affected by Global_Beta"]');
+    await alphaToggleBtn.click();
+    await betaToggleBtn.click();
+
+    await expect(alphaToggleBtn).toHaveClass(/\bimpact-slot-0\b/);
+    await expect(betaToggleBtn).toHaveClass(/\bimpact-slot-1\b/);
 
     const statsBar = page.locator('.impact-stats-bar');
     await expect(statsBar).toBeVisible();
-    await expect(statsBar.locator('.impact-chip')).toHaveCount(2);
+    await expect(statsBar.locator('.impact-chip.impact-slot-0')).toBeVisible();
+    await expect(statsBar.locator('.impact-chip.impact-slot-1')).toBeVisible();
+    await expect(statsBar.locator('.impact-slot-dot.slot-0')).toBeVisible();
+    await expect(statsBar.locator('.impact-slot-dot.slot-1')).toBeVisible();
     await expect(statsBar).toContainText('영향 받는 노드 3개');
 
-    // In OR mode: ids.root has impact-slot-0, ids.settings has impact-slot-1, and overlapping ids.child has impact-multi-overlap
+    // In OR mode: ids.root has impact-slot-0, ids.settings has impact-slot-1, and overlapping ids.child has impact-multi-overlap + badge-impact-slot-0 & badge-impact-slot-1
     await expect(nodeLocator(page, ids.root)).toHaveClass(/\bimpact-slot-0\b/);
     await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bimpact-slot-1\b/);
     await expect(nodeLocator(page, ids.child)).toHaveClass(/\bimpact-multi-overlap\b/);
+    await expect(nodeLocator(page, ids.child).locator('.badge-pill.badge-impact-slot-0')).toBeVisible();
+    await expect(nodeLocator(page, ids.child).locator('.badge-pill.badge-impact-slot-1')).toBeVisible();
 
     // 5. Switch to AND (교집합) filter -> only ids.child (affected by both) stays .impact-highlighted
     await statsBar.locator('.impact-operator-btn', { hasText: '교집합 (AND)' }).click();

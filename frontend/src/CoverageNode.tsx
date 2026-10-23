@@ -29,7 +29,8 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
   useEffect(() => {
     const handleSelection = (e: Event) => {
       const customEvent = e as CustomEvent;
-      setSelectedBadgeId(customEvent.detail); // detail is the badge id
+      const nextId = typeof customEvent.detail === 'string' && customEvent.detail ? customEvent.detail : null;
+      setSelectedBadgeId(nextId);
     };
     window.addEventListener('selectBadgeNode', handleSelection);
     return () => window.removeEventListener('selectBadgeNode', handleSelection);
@@ -194,6 +195,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                        data-badge-id={badge.id}
                        onClick={(e) => {
                          e.stopPropagation();
+                         if (!badge.id) return;
                          window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: badge.id }));
                        }}
                        onMouseEnter={() => {
