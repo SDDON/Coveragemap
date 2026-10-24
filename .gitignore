@@ -45,3 +45,6 @@ scratch/
 
 # 파괴적 작업 전 자동 생성되는 백업 프리셋 (로컬 전용)
 backend/presets/_autobackup_*
+
+# Multi-agent orchestration working directory
+.agents/teamwork/

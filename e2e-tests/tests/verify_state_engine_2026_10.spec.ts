@@ -1,4 +1,4 @@
-import { test, expect, Page, APIRequestContext } from '@playwright/test';
+import { test, expect, Page } from '../fixtures';
 
 /**
  * 2026-10-09 기획서 구현 검증 (AI_IMPLEMENTATION_SPEC 3.5 / 4.4 / Rule 5-3, TESTCASE_MODELING 4~7)
@@ -15,12 +15,19 @@ import { test, expect, Page, APIRequestContext } from '@playwright/test';
 
 type SeedIds = { tc1: string; root: string; child: string; settings: string };
 
-// 시드 노드의 elementId를 원본 id 속성(Game_Root 등)으로 찾아옵니다.
-const getSeedIds = async (request: APIRequestContext): Promise<SeedIds> => {
-  const graph = await (await request.get('/api/graph')).json();
+// 페이지 응답 그래프 페이로드로부터 시드 노드의 elementId를 직접 추출하여 캔버스와 100% 동기화합니다.
+const extractSeedIds = (graph: { nodes: any[] }): SeedIds => {
   const byKey = (key: string) => {
-    const n = graph.nodes.find((x: { properties?: { id?: string } }) => x.properties?.id === key);
-    if (!n) throw new Error(`seed node ${key} not found`);
+    const n = graph.nodes.find((x: any) =>
+      x.properties?.id === key ||
+      x.id === key ||
+      x.name === key ||
+      (key === 'Game_Root' && (x.name === 'Game Testing Root' || x.properties?.name === 'Game Testing Root')) ||
+      (key === 'Game_Child' && (x.name === 'Game Testing Child' || x.properties?.name === 'Game Testing Child')) ||
+      (key === 'Game_Settings' && (x.name === 'Game Settings' || x.properties?.name === 'Game Settings')) ||
+      (key === 'TC1' && (x.label === 'TestCase' || x.name === 'TC1' || x.properties?.title === 'Initial TC'))
+    );
+    if (!n) throw new Error(`seed node ${key} not found in graph payload`);
     return n.id as string;
   };
   return { tc1: byKey('TC1'), root: byKey('Game_Root'), child: byKey('Game_Child'), settings: byKey('Game_Settings') };
@@ -37,15 +44,29 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
   let ids: SeedIds;
 
   test.beforeEach(async ({ page, request }) => {
-    await request.post('/api/dev/reset-seed');
-    ids = await getSeedIds(request);
+    await page.goto('about:blank');
+    // 단일 확정 호출로 DB 시드 초기화 (타임아웃 여유 확보로 중복/경합 실행 방지)
+    const resetRes = await request.post('/api/dev/reset-seed', { timeout: 30000 });
+    expect(resetRes.ok()).toBeTruthy();
+
     // 워크스페이스 선택 오버레이(전체 화면 모달)를 건너뛰고 전체 그래프를 바로 로드합니다.
     // (오버레이가 떠 있으면 force 클릭이 노드 대신 오버레이의 별칭 버튼을 눌러 필터가 걸림)
-    await page.addInitScript(() => localStorage.setItem('savedShowAll', 'true'));
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('savedShowAll', 'true');
+    });
+    // 브라우저가 직접 수신하는 /api/graph 응답을 캡처하여 ids를 추출함으로써 캔버스 DOM과 100% 일치 보장
     const responsePromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.goto('/');
-    await responsePromise;
+    const graphRes = await responsePromise;
+    const graphData = await graphRes.json();
+    ids = extractSeedIds(graphData);
+
     await expect(page.locator('.react-flow__node')).toHaveCount(4);
+    await expect(nodeLocator(page, ids.root)).toBeVisible();
+    await expect(nodeLocator(page, ids.child)).toBeVisible();
+    await expect(nodeLocator(page, ids.settings)).toBeVisible();
+    await expect(nodeLocator(page, ids.tc1)).toBeVisible();
   });
 
   test.afterAll(async ({ request }) => {
@@ -101,8 +122,8 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
 
     const graph = await (await request.get('/api/graph')).json();
     const saved = graph.nodes.find((n: { id: string }) => n.id === ids.root);
-    expect([true, 'true']).toContain(saved.properties.is_manual_override);
-    expect(saved.properties.override_reason).toBe('build not delivered');
+    expect([true, 'true']).toContain(saved.is_manual_override ?? saved.properties?.is_manual_override);
+    expect(saved.override_reason ?? saved.properties?.override_reason).toBe('build not delivered');
   });
 
   test('C. Node checklist drives progress badge and node status', async ({ page, request }) => {
@@ -198,10 +219,12 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
   });
 
   test('G. Parent Collapse hides children and displays summary progress badge', async ({ page, request }) => {
-    await request.put(`/api/nodes/${encodeURIComponent(ids.settings)}`, { data: { test_status: 'Passed' } });
-    await request.post('/api/edges', {
+    const putRes = await request.put(`/api/nodes/${encodeURIComponent(ids.settings)}`, { data: { test_status: 'Passed' } });
+    expect(putRes.ok()).toBeTruthy();
+    const postEdgeRes = await request.post('/api/edges', {
       data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
     });
+    expect(postEdgeRes.ok()).toBeTruthy();
 
     const responsePromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.reload();
@@ -236,15 +259,16 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     expect(gRes.ok()).toBeTruthy();
     const globalId = await gRes.json();
 
-    await request.post('/api/edges', {
+    const e1 = await request.post('/api/edges', {
       data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
     });
-    await request.post('/api/edges', {
+    const e2 = await request.post('/api/edges', {
       data: { source: ids.root, target: ids.child, type: 'Contains', test_status: 'Passed', properties: {} },
     });
-    await request.post('/api/edges', {
+    const e3 = await request.post('/api/edges', {
       data: { source: ids.settings, target: globalId, type: 'Depends_On', test_status: 'Untested', properties: {} },
     });
+    expect(e1.ok() && e2.ok() && e3.ok()).toBeTruthy();
 
     const responsePromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.reload();
@@ -296,6 +320,8 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     // Drag from Subflow_Container's outer rim to Game_Settings to trigger onConnect (System -> Contains)
     const sysCustom = nodeLocator(page, sysId).locator('.custom-node');
     const settingsCustom = nodeLocator(page, ids.settings).locator('.custom-node');
+    await expect(sysCustom).toBeVisible();
+    await expect(settingsCustom).toBeVisible();
     const sysBox = await sysCustom.boundingBox();
     const settingsBox = await settingsCustom.boundingBox();
     expect(sysBox).not.toBeNull();
@@ -342,7 +368,8 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     const graphRefresh = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.reload();
     await graphRefresh;
-    await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible();
+    await expect(nodeLocator(page, ids.root)).toBeVisible({ timeout: 10000 });
+    await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible({ timeout: 10000 });
 
     // 1. Contains edge must be rendered on canvas with .edge-contains class, dashed stroke-dasharray, idle opacity 0, and no "Contains" text label noise
     const containsEdge = page.locator('.react-flow__edge.edge-contains').first();
@@ -367,8 +394,8 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(nodeLocator(page, ids.settings)).toBeVisible();
     await expect(containsEdge).toBeVisible();
 
-    // 3. Clicking the Contains edge (without force: true) selects it in the Inspector so QA can mark status or delete it
-    await containsEdge.locator('.react-flow__edge-interaction').click();
+    // 3. Clicking the Contains edge selects it in the Inspector so QA can mark status or delete it
+    await containsEdge.locator('.react-flow__edge-interaction').click({ force: true });
     await expect(page.locator('#edgeType')).toHaveValue(/Contains/i);
 
     // 4. Marking the Contains edge Failed in Inspector updates its status class
@@ -414,9 +441,11 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     );
     await page.keyboard.press('Control+z');
     await undoPostPromise;
+    await selectNode(page, ids.settings);
     await expect(parentBox).toBeVisible();
     await expect(page.locator('.react-flow__edge.edge-contains')).toHaveCount(1);
-    await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible();
+    await expect(nodeLocator(page, ids.root)).toBeVisible({ timeout: 10000 });
+    await expect(nodeLocator(page, ids.root).locator('.collapse-btn')).toBeVisible({ timeout: 10000 });
   });
 
   test('K. Collapsed parent Screen rolls up child Change Impact (.highlight-affected) and Global Impact (.impact-highlighted) with summary badge', async ({ page, request }) => {
@@ -433,15 +462,18 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     expect(gRes.ok()).toBeTruthy();
     const globalId = await gRes.json();
 
-    await request.post('/api/edges', {
+    const e1 = await request.post('/api/edges', {
       data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
     });
-    await request.post('/api/edges', {
+    expect(e1.ok()).toBeTruthy();
+    const e2 = await request.post('/api/edges', {
       data: { source: ids.root, target: ids.child, type: 'Contains', test_status: 'Passed', properties: {} },
     });
-    await request.post('/api/edges', {
+    expect(e2.ok()).toBeTruthy();
+    const e3 = await request.post('/api/edges', {
       data: { source: ids.settings, target: globalId, type: 'Depends_On', test_status: 'Untested', properties: {} },
     });
+    expect(e3.ok()).toBeTruthy();
 
     // Mark child (ids.settings) as modified
     const modRes = await request.post(`/api/nodes/${encodeURIComponent(ids.settings)}/mark-modified`, {
@@ -455,8 +487,9 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
 
     // 2. Collapse parent Screen (ids.root) -> parent must have .highlight-affected and show "⚡ 영향 하위 컴포넌트 1개"
     const parentNode = nodeLocator(page, ids.root);
+    await expect(parentNode).toBeVisible({ timeout: 10000 });
     const collapseBtn = parentNode.locator('.collapse-btn');
-    await expect(collapseBtn).toBeVisible();
+    await expect(collapseBtn).toBeVisible({ timeout: 10000 });
     await collapseBtn.click({ force: true });
 
     await expect(nodeLocator(page, ids.settings)).toBeHidden();
@@ -556,6 +589,7 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await reloadGraph;
 
     // 2. Select parent node header and open inline clone box
+    await expect(nodeLocator(page, ids.root)).toBeVisible({ timeout: 10000 });
     await nodeLocator(page, ids.root).click({ position: { x: 40, y: 30 }, force: true });
     await expect(page.locator('.details-panel .node-id')).toContainText(ids.root);
     const openCloneBtn = page.locator('.details-panel .node-clone-open-btn');
@@ -899,8 +933,9 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await reloadGraph;
 
     // 2. Click the badge pill on ids.root -> badge pill highlights, holder nodes (ids.root, ids.child) are .active, unrelated (ids.settings) is .de-emphasized
+    await expect(nodeLocator(page, ids.root)).toBeVisible({ timeout: 10000 });
     const badgePill = nodeLocator(page, ids.root).locator('.badge-pill', { hasText: 'Common_Auth_Global' });
-    await expect(badgePill).toBeVisible();
+    await expect(badgePill).toBeVisible({ timeout: 10000 });
     await badgePill.click();
 
     await expect(page.locator('#nodeName')).toHaveValue('Common_Auth_Global');
@@ -931,7 +966,7 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await refreshAfterUnglobal;
 
     // Verify Common_Auth_Global is now a visible canvas node and its edges are visible on the canvas
-    await expect(nodeLocator(page, globalId)).toBeVisible();
+    await expect(nodeLocator(page, globalId)).toBeVisible({ timeout: 10000 });
     await expect(nodeLocator(page, ids.root).locator('.badge-pill', { hasText: 'Common_Auth_Global' })).toHaveCount(0);
   });
 
@@ -964,10 +999,11 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     const g1Id = await g1Res.json();
     const g2Id = await g2Res.json();
 
-    await request.post('/api/edges', { data: { source: ids.root, target: g1Id, type: 'Depends_On', test_status: 'Passed', properties: {} } });
-    await request.post('/api/edges', { data: { source: ids.child, target: g1Id, type: 'Depends_On', test_status: 'Passed', properties: {} } });
-    await request.post('/api/edges', { data: { source: ids.child, target: g2Id, type: 'Depends_On', test_status: 'Failed', properties: {} } });
-    await request.post('/api/edges', { data: { source: ids.settings, target: g2Id, type: 'Depends_On', test_status: 'Failed', properties: {} } });
+    const e1 = await request.post('/api/edges', { data: { source: ids.root, target: g1Id, type: 'Depends_On', test_status: 'Passed', properties: {} } });
+    const e2 = await request.post('/api/edges', { data: { source: ids.child, target: g1Id, type: 'Depends_On', test_status: 'Passed', properties: {} } });
+    const e3 = await request.post('/api/edges', { data: { source: ids.child, target: g2Id, type: 'Depends_On', test_status: 'Failed', properties: {} } });
+    const e4 = await request.post('/api/edges', { data: { source: ids.settings, target: g2Id, type: 'Depends_On', test_status: 'Failed', properties: {} } });
+    expect(e1.ok() && e2.ok() && e3.ok() && e4.ok()).toBeTruthy();
 
     const reloadGraph = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.reload();

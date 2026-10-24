@@ -26,7 +26,9 @@ def make_recalc_aware_session(primary_record):
 
     def _run(query, *args, **kwargs):
         result = MagicMock()
-        if RECALC_QUERY_MARKER in query:
+        if "has_cycle" in query:
+            result.single.return_value = {"has_cycle": False}
+        elif RECALC_QUERY_MARKER in query:
             result.single.return_value = {
                 "current_status": "Untested",
                 "is_override": None,

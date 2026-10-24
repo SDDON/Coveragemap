@@ -37,15 +37,64 @@ def list_presets() -> List[Dict[str, Any]]:
                 
     return presets
 
-def get_preset(preset_id: str) -> Dict[str, Any]:
-    """Retrieve the full content of a specific preset."""
+def _resolve_preset_path(preset_id: str) -> str:
+    """
+    프리셋 ID의 경로 탐색(Path Traversal) 공격을 검증하고, PRESETS_DIR 내부의 절대 경로를 반환합니다.
+    - .., /, \\, \\0 포함 또는 허용되지 않는 문자열 패턴 시 HTTP 400 Bad Request
+    - 정규화된 경로가 PRESETS_DIR 범위를 벗어날 경우 HTTP 400 Bad Request
+    - 안전한 ID이지만 파일이 존재하지 않는 경우 HTTP 404 Not Found
+    """
     ensure_presets_dir()
-    filepath = os.path.join(PRESETS_DIR, f"{preset_id}.json")
-    if not os.path.exists(filepath):
-        # Check without .json in case it was included
-        filepath = os.path.join(PRESETS_DIR, preset_id)
-        if not os.path.exists(filepath):
-            raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found.")
+
+    if not isinstance(preset_id, str) or not preset_id.strip():
+        raise HTTPException(status_code=400, detail="프리셋 ID가 올바르지 않습니다.")
+
+    # 1. 경로 순회 및 디렉터리 구분자 차단
+    if ".." in preset_id or "/" in preset_id or "\\" in preset_id or "\0" in preset_id:
+        raise HTTPException(status_code=400, detail="경로 순회(Path Traversal) 문자가 포함되어 있습니다.")
+
+    # 2. 영문/숫자/언더스코어/하이픈 및 선택적 .json 확장자만 허용
+    if not re.fullmatch(r"^[A-Za-z0-9_\-]+(?:\.json)?$", preset_id):
+        raise HTTPException(status_code=400, detail="프리셋 ID 규격이 올바르지 않습니다.")
+
+    # 기본 .json 접미사 결합
+    filename = preset_id if preset_id.endswith(".json") else f"{preset_id}.json"
+    target_path = os.path.join(PRESETS_DIR, filename)
+
+    real_dir = os.path.realpath(PRESETS_DIR)
+    real_file = os.path.realpath(target_path)
+
+    # 3. 디렉터리 경계 탈출 여부 엄격 검증
+    try:
+        if os.path.commonpath([real_dir, real_file]) != real_dir or real_file == real_dir:
+            raise HTTPException(status_code=400, detail="허용되지 않는 프리셋 경로입니다.")
+    except ValueError:
+        # 윈도우 드라이브가 다른 경우 ValueError 발생
+        raise HTTPException(status_code=400, detail="허용되지 않는 프리셋 경로입니다.")
+
+    if not os.path.exists(real_file):
+        # .json 없이 저장된 프리셋 파일 대체 탐색
+        alt_path = os.path.join(PRESETS_DIR, preset_id)
+        real_alt = os.path.realpath(alt_path)
+        try:
+            if os.path.commonpath([real_dir, real_alt]) != real_dir or real_alt == real_dir:
+                raise HTTPException(status_code=400, detail="허용되지 않는 프리셋 경로입니다.")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="허용되지 않는 프리셋 경로입니다.")
+
+        if os.path.exists(real_alt) and not os.path.isdir(real_alt):
+            return real_alt
+
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found.")
+
+    if os.path.isdir(real_file):
+        raise HTTPException(status_code=400, detail="프리셋 경로는 파일이어야 합니다.")
+
+    return real_file
+
+def get_preset(preset_id: str) -> Dict[str, Any]:
+    """Retrieve the full content of a specific preset safely."""
+    filepath = _resolve_preset_path(preset_id)
             
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -111,7 +160,6 @@ def load_preset_to_neo4j(session, preset_id: str, clean: bool = False) -> Dict[s
             if record:
                 elem_id = record["elem_id"]
                 id_to_elem_id[n_id] = elem_id
-                id_to_elem_id[elem_id] = elem_id
 
         # 2. Create Edges
         created_edges_count = 0
@@ -222,7 +270,12 @@ def save_current_graph_as_preset(session, preset_id: str, name: str, description
     }
     
     filepath = os.path.join(PRESETS_DIR, f"{safe_id}.json")
-    with open(filepath, "w", encoding="utf-8") as f:
+    real_dir = os.path.realpath(PRESETS_DIR)
+    real_file = os.path.realpath(filepath)
+    if os.path.commonpath([real_dir, real_file]) != real_dir or real_file == real_dir:
+        raise HTTPException(status_code=400, detail="유효하지 않은 프리셋 저장 경로입니다.")
+
+    with open(real_file, "w", encoding="utf-8") as f:
         json.dump(preset_data, f, ensure_ascii=False, indent=2)
         
     return {

@@ -75,6 +75,80 @@ def test_normalize_string():
     assert _normalize_string(123) == 123
     assert _normalize_string(None) is None
 
+def test_alias_casing_preservation_and_normalization():
+    """
+    GAP-10: 사용자 정의 별칭의 원래 대소문자(iOS, PvP, gRPC)가 보존되고,
+    사전식 동의어는 표준형으로 매핑되며 중복은 대소문자 무시로 제거되는지 검증합니다.
+    """
+    from graph_service import _normalize_aliases
+    aliases = ["iOS", "PvP", "front-end", "DB", "ios", "gRPC", "  mcUI  "]
+    normalized = _normalize_aliases(aliases)
+    assert normalized == ["iOS", "PvP", "frontend", "database", "gRPC", "mcUI"]
+
+
+def test_alias_delete_and_rename_case_insensitive():
+    """
+    GAP-10: delete_alias 및 rename_alias가 toLower를 사용해 대소문자 무관하게 매칭하는지 검증합니다.
+    """
+    from graph_service import delete_alias, rename_alias
+    from unittest.mock import Mock
+
+    mock_session = Mock()
+    delete_alias(mock_session, "ios")
+    delete_query = mock_session.run.call_args[0][0]
+    assert "toLower" in delete_query
+
+    rename_alias(mock_session, "ios", "iOS_Renamed")
+    rename_query = mock_session.run.call_args[0][0]
+    assert "toLower" in rename_query
+
+
+def test_deterministic_bfs_root_cause_tracing_distinguishes_flow_and_dep():
+    """
+    GAP-9: Flow 엣지는 엣지 자체 상태로 판정하고, Dependency 엣지는 출발 노드로 판정하여
+    결정론적 최단 결함 경로를 올바르게 찾아내는지 검증합니다.
+    """
+    from graph_service import find_root_cause_bfs
+    from unittest.mock import MagicMock
+
+    session = MagicMock()
+
+    # 시나리오: ScreenA (Untested) --Transition(Passed)--> ScreenB (Untested) --Depends_On--> TC_Fail (Failed)
+    # Target: ScreenB
+    # ScreenB에 들어오는 엣지:
+    # 1. Flow Transition from ScreenA (edge_status='Passed') -> 비인과적
+    # 2. Depends_On from TC_Fail (src_status='Failed') -> 인과적 root cause!
+    def mock_run(query, **kw):
+        res = MagicMock()
+        if kw.get("curr_id") == "screen_b":
+            res.__iter__.return_value = iter([
+                {
+                    "src_id": "screen_a", "src_name": "ScreenA", "src_status": "Untested",
+                    "edge_id": "e_trans", "edge_type": "TRANSITION", "edge_status": "Passed",
+                    "edge_action": "화면 전환"
+                },
+                {
+                    "src_id": "tc_fail", "src_name": "TC_Fail", "src_status": "Failed",
+                    "edge_id": "e_dep", "edge_type": "DEPENDS_ON", "edge_status": "Untested",
+                    "edge_action": None
+                }
+            ])
+        elif kw.get("curr_id") == "tc_fail":
+            res.__iter__.return_value = iter([])  # 더 이상 상류 원인 없음
+        else:
+            res.__iter__.return_value = iter([])
+        return res
+
+    session.run.side_effect = mock_run
+
+    info = find_root_cause_bfs(session, "screen_b", "ScreenB")
+    assert info is not None
+    assert info.origin_node_id == "tc_fail"
+    assert info.origin_node_name == "TC_Fail"
+    assert info.path == ["TC_Fail", "ScreenB"]
+    assert "TC_Fail" in info.reason
+
+
 if __name__ == '__main__':
     test_process_graph_no_filter()
     test_process_graph_with_filter()

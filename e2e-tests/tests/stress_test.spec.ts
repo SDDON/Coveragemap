@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 
 test.describe('Adversarial Frontend Tests', () => {
   test('R1: Parent node stretches dynamically', async ({ page }) => {
@@ -20,7 +20,7 @@ test.describe('Adversarial Frontend Tests', () => {
       });
     });
 
-    await page.goto('http://localhost:5173');
+    await page.goto('/');
     await page.waitForSelector('.react-flow__node');
     
     // Check if nodes are in DOM

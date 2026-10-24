@@ -252,6 +252,8 @@ body {
   color: var(--text-main);
   transition: transform 0.1s, box-shadow 0.1s;
   backdrop-filter: blur(4px);
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .badge-pill:hover {
   transform: translateY(-1px);
@@ -369,6 +371,42 @@ body {
 .react-flow--connecting .react-flow__node[style*="width"] .react-flow__handle.target-drop-handle {
   max-height: 150px !important;
 }
+/* 엣지 드래그 시작(.react-flow--connecting) 즉시 펼쳐진 부모 컨테이너 상단 헤더(150px)에 점선 드롭존 및 안내 배지 표시 (자기자신 출발 제외) */
+.react-flow--connecting .react-flow__node[style*="width"] .react-flow__handle.target-drop-handle[data-drop-hint]:not(:has(+ .halo-handle.connectingfrom)) {
+  background-color: rgba(37, 99, 235, 0.04) !important;
+  outline: 2px dashed rgba(37, 99, 235, 0.42);
+  outline-offset: -4px;
+  border-radius: 14px 14px 10px 10px !important;
+}
+.react-flow--connecting .react-flow__node[style*="width"] .react-flow__handle.target-drop-handle[data-drop-hint]:not(:has(+ .halo-handle.connectingfrom))::after {
+  content: attr(data-drop-hint);
+  position: absolute;
+  top: 14px;
+  right: 52px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: rgba(239, 246, 255, 0.96);
+  border: 1px dashed rgba(37, 99, 235, 0.55);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
+  pointer-events: none;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.react-flow--connecting .react-flow__node[style*="width"] .react-flow__handle.target-drop-handle.connectingto.valid[data-drop-hint] {
+  background-color: rgba(37, 99, 235, 0.11) !important;
+  outline: 2.5px dashed #2563eb;
+  outline-offset: -4px;
+}
+.react-flow--connecting .react-flow__node[style*="width"] .react-flow__handle.target-drop-handle.connectingto.valid[data-drop-hint]::after {
+  background: #2563eb;
+  color: #ffffff;
+  border-style: solid;
+  border-color: #1d4ed8;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+}
 /* 드롭 대상 위에 있을 때 시각 피드백 (React Flow가 .connectingto / .valid 클래스를 부여) */
 .react-flow--connecting .react-flow__handle.target-drop-handle.connectingto.valid {
   background-color: rgba(37, 99, 235, 0.08) !important;
@@ -438,6 +476,9 @@ body {
 .react-flow__edge.status-failed path.react-flow__edge-path,
 .react-flow__edge.edge-contains.status-failed path.react-flow__edge-path { stroke: var(--status-failed-border) !important; }
 .react-flow__edge.status-failed .custom-marker-path { fill: var(--status-failed-border) !important; }
+.react-flow__edge.status-blocked path.react-flow__edge-path,
+.react-flow__edge.edge-contains.status-blocked path.react-flow__edge-path { stroke: var(--status-blocked-border) !important; }
+.react-flow__edge.status-blocked .custom-marker-path { fill: var(--status-blocked-border) !important; }
 
 .react-flow__edge.active path.react-flow__edge-path { stroke-width: 3.5 !important; stroke: #2563eb !important; }
 .react-flow__edge.active .custom-marker-path { transform: scale(1.2); fill: #2563eb !important; }
@@ -460,7 +501,7 @@ body {
 /* Focus + Context Dimming (Pure CSS) */
 .has-selection:not(.has-impact) .react-flow__node:not(.active):not(.related):not(.hovered-global-neighbor),
 .has-selection:not(.has-impact) .react-flow__edge:not(.active):not(.related):not(.hovered-global-neighbor) {
-  opacity: 0.35;
+  opacity: 0.4;
   filter: grayscale(80%) contrast(0.9);
 }
 .react-flow__node.active, .react-flow__edge.active,
@@ -518,6 +559,12 @@ body {
   border-width: 2px !important;
   border-color: #ef4444 !important;
 }
+@keyframes dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
 .react-flow__edge.highlight-root-cause path.react-flow__edge-path {
   stroke: #ef4444 !important;
   stroke-width: 4 !important;
@@ -1532,4 +1579,31 @@ select option {
   box-shadow: 0 0 12px rgba(96, 165, 250, 0.25) !important;
   background-color: rgba(96, 165, 250, 0.08) !important;
   transform: none !important;
+}
+
+/* Badge Selection & Pure CSS Tokens */
+.badge-pill.badge-selected {
+  box-shadow: 0 0 0 2px #2563eb, 0 0 10px rgba(96, 165, 250, 0.5) !important;
+}
+
+.panel-tab-btn.active {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.health-dot.ok {
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+.health-dot.error {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+.health-dot.checking {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
+.attach-global-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

@@ -1,14 +1,36 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
 const elk = new ELK();
-import { Node, Edge, Position } from '@xyflow/react';
+import { Position } from '@xyflow/react';
+import type { CoverageNode, CoverageEdge, CoverageNodeData } from './types/graph';
+
+interface ElkNodeChild {
+  id: string;
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+}
+
+interface ElkEdgeItem {
+  id: string;
+  sources: string[];
+  targets: string[];
+}
+
+interface ElkGraphData {
+  id: string;
+  layoutOptions: Record<string, string>;
+  children: ElkNodeChild[];
+  edges: ElkEdgeItem[];
+}
 
 // Base dimensions for a single node (matches .custom-node min-width + padding)
 const nodeWidth = 280;
 const nodeHeight = 120;
 
 // Helper to estimate dynamic node width based on label text length
-const estimateNodeWidth = (node: Node): number => {
-  const name = (node.data as any)?.name || '';
+const estimateNodeWidth = (node: CoverageNode): number => {
+  const name = node.data?.name || '';
   const textLen = name.length;
   // Estimate ~16px per character for Korean/English mixed text + padding
   const calculated = Math.max(280, textLen * 16 + 70);
@@ -25,9 +47,9 @@ const estimateNodeWidth = (node: Node): number => {
  * 4. Feed only root-level nodes into Dagre for global positioning.
  * 5. Apply Dagre positions to root nodes; children keep their relative positions.
  */
-export const getLayoutedElements = async (nodes: Node[], edges: Edge[], direction = 'TB') => {
+export const getLayoutedElements = async (nodes: CoverageNode[], edges: CoverageEdge[], direction = 'TB') => {
   const isHorizontal = direction === 'LR';
-  const elkGraph: any = {
+  const elkGraph: ElkGraphData = {
     id: "root",
     layoutOptions: {
       'elk.algorithm': 'layered',
@@ -40,7 +62,7 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
   };
 
   // -- Step 1: Group children by parent --
-  const parentToChildren: Record<string, Node[]> = {};
+  const parentToChildren: Record<string, CoverageNode[]> = {};
   nodes.forEach(n => {
     if (n.parentId) {
       if (!parentToChildren[n.parentId]) parentToChildren[n.parentId] = [];
@@ -49,7 +71,10 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
   });
 
   // -- Step 2: Lay out children inside each parent and compute parent dimensions --
-  const newNodes = nodes.map(n => ({ ...n }));
+  const newNodes = nodes.map(n => ({
+    ...n,
+    style: n.style ? { ...n.style } : undefined,
+  }));
   const nodeDimensions: Record<string, { w: number; h: number }> = {};
 
   // Grid layout parameters for children inside a parent
@@ -68,7 +93,8 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
       const numRows = Math.ceil(children.length / COLS);
       const numCols = Math.min(children.length, COLS);
       
-      const badgesCount = (n.data as any)?.badges?.length || 0;
+      const nodeData = n.data as CoverageNodeData | undefined;
+      const badgesCount = nodeData?.badges?.length || 0;
       // Generous top padding so child nodes never encroach on parent title, type, and tags
       const PAD_TOP = badgesCount > 0 ? 170 + (badgesCount * 36) : 160;
 
@@ -76,7 +102,8 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
       const rowHeights: number[] = Array(numRows).fill(180);
       children.forEach((child, i) => {
         const row = Math.floor(i / COLS);
-        const childBadgesCount = (child.data as any)?.badges?.length || 0;
+        const childData = child.data as CoverageNodeData | undefined;
+        const childBadgesCount = childData?.badges?.length || 0;
         // 140px base + ~40px per badge
         const childH = 140 + (childBadgesCount * 40);
         if (childH > rowHeights[row]) {
@@ -114,15 +141,17 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
 
       nodeDimensions[n.id] = { w: parentW, h: parentH };
 
-      // Apply Clean Light theme visual styling to the parent node
-      if (!n.style) n.style = {};
-      n.style.width = parentW;
-      n.style.height = parentH;
-      n.style.padding = '0px';
-      n.style.backgroundColor = '#f8fafc';
-      n.style.border = '1.5px solid #cbd5e1';
-      n.style.borderRadius = '16px';
-      n.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)';
+      // Apply Clean Light theme visual styling to the parent node with cloned style
+      n.style = {
+        ...(n.style || {}),
+        width: parentW,
+        height: parentH,
+        padding: '0px',
+        backgroundColor: '#f8fafc',
+        border: '1.5px solid #cbd5e1',
+        borderRadius: '16px',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)',
+      };
     } else if (!n.parentId) {
       // Regular root node (e.g. TestCase)
       const estimatedW = estimateNodeWidth(n);
@@ -146,8 +175,8 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
     const effectiveTarget = targetNode?.parentId || edge.target;
     
     if (effectiveSource !== effectiveTarget && 
-        elkGraph.children.some((c: any) => c.id === effectiveSource) && 
-        elkGraph.children.some((c: any) => c.id === effectiveTarget)) {
+        elkGraph.children.some(c => c.id === effectiveSource) && 
+        elkGraph.children.some(c => c.id === effectiveTarget)) {
       elkGraph.edges.push({
         id: edge.id,
         sources: [effectiveSource],
@@ -156,7 +185,7 @@ export const getLayoutedElements = async (nodes: Node[], edges: Edge[], directio
     }
   });
 
-  const layoutedGraph = await elk.layout(elkGraph);
+  const layoutedGraph = await elk.layout(elkGraph as unknown as Parameters<typeof elk.layout>[0]);
 
   // -- Step 5: Apply ELK positions to root nodes --
   const finalNodes = newNodes.map(node => {

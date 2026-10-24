@@ -1,22 +1,62 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
+
+const getSeedId = (graph: any, key: string): string => {
+  const n = graph.nodes.find((x: any) =>
+    x.properties?.id === key ||
+    x.id === key ||
+    x.name === key ||
+    (key === 'Game_Root' && (x.name === 'Game Testing Root' || x.aliases?.includes('Root'))) ||
+    (key === 'Game_Child' && (x.name === 'Game Testing Child' || x.aliases?.includes('Sub'))) ||
+    (key === 'Game_Settings' && (x.name === 'Game Settings' || x.aliases?.includes('Settings'))) ||
+    (key === 'TC1' && (x.label === 'TestCase' || x.name === 'Initial TC' || x.properties?.title === 'Initial TC'))
+  );
+  if (!n) throw new Error(`seed node ${key} not found in graph`);
+  return n.id as string;
+};
+
+const ensureAllTypesVisible = async (page: any) => {
+  const compBox = page.getByLabel('Component');
+  if (await compBox.isVisible().catch(() => false)) {
+    if (!(await compBox.isChecked())) await compBox.check();
+  }
+  const tcBox = page.getByLabel('TestCase');
+  if (await tcBox.isVisible().catch(() => false)) {
+    if (!(await tcBox.isChecked())) await tcBox.check();
+  }
+};
 
 test.describe('Context Menu & Content Focus Pinning Tests', () => {
   test.beforeEach(async ({ request }) => {
     await request.post('/api/dev/reset-seed');
   });
 
-  test('should display context menu on right click and not show removed Workspace Manager button', async ({ page }) => {
-    await page.goto('http://localhost:5173/');
-    
-    // Select workspace or bypass
-    if (await page.locator('text=Select Workspace').isVisible()) {
-      await expect(page.locator('button:has-text("Workspace 관리자")')).toHaveCount(0);
-      await page.locator('button:has-text("전체 그래프 로드")').click();
-    }
+  test('should not show removed Workspace Manager button in workspace selection modal', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.clear();
+    });
+    await page.goto('/');
+
+    // Modal must be visible when localStorage is cleared
+    await expect(page.locator('text=Select Workspace')).toBeVisible();
+    // Strictly assert removed button does not exist
+    await expect(page.locator('button:has-text("Workspace 관리자")')).toHaveCount(0);
+
+    // Dismiss modal by loading all
+    await page.locator('button:has-text("전체 그래프 로드")').click();
+    await expect(page.locator('text=Select Workspace')).not.toBeVisible();
+  });
+
+  test('should display context menu on right click', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('savedShowAll', 'true');
+    });
+    const graphLoaded = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.goto('/');
+    await graphLoaded;
 
     // Right click on the pane at empty coordinates to avoid hitting centered nodes
     await page.locator('.react-flow__pane').click({ button: 'right', position: { x: 50, y: 150 } });
-    
+
     // Context menu should be visible
     await expect(page.locator('.context-menu')).toBeVisible();
     await expect(page.locator('text=새 노드 추가')).toBeVisible();
@@ -27,7 +67,7 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
   test('should expand Parent+Children as Depth-0 Content Unit and retain Pinned Content Focus across status marking and pane clicks', async ({ page, request }) => {
     // Seed graph: TC1 --TESTS--> Game_Root --DEPENDS_ON--> Game_Child, Game_Settings (isolated)
     const graph = await (await request.get('/api/graph')).json();
-    const byKey = (key: string) => graph.nodes.find((x: any) => x.properties?.id === key).id as string;
+    const byKey = (key: string) => getSeedId(graph, key);
     const rootId = byKey('Game_Root');
     const childId = byKey('Game_Child');
     const settingsId = byKey('Game_Settings');
@@ -49,8 +89,9 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
 
     await page.addInitScript(() => localStorage.setItem('savedShowAll', 'true'));
     const graphLoaded = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
-    await page.goto('http://localhost:5173/');
+    await page.goto('/');
     await graphLoaded;
+    await ensureAllTypesVisible(page);
 
     const nodeLoc = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
     await expect(nodeLoc(rootId)).toBeVisible();
@@ -69,6 +110,7 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
     await expect(nodeLoc(extraId)).toHaveClass(/\bde-emphasized\b/);
 
     // 2) Pin Content Focus on Game_Root
+    await page.getByRole('button', { name: 'Edit' }).click();
     const pinBtn = page.locator('.pin-focus-btn');
     await expect(pinBtn).toBeVisible();
     await pinBtn.click();
@@ -105,7 +147,7 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
 
   test('should roll up collapsed parent when child is an outgoing neighbor and retain Search Highlight during status marking', async ({ page, request }) => {
     const graph = await (await request.get('/api/graph')).json();
-    const byKey = (key: string) => graph.nodes.find((x: any) => x.properties?.id === key).id as string;
+    const byKey = (key: string) => getSeedId(graph, key);
     const rootId = byKey('Game_Root');
     const childId = byKey('Game_Child');
     const settingsId = byKey('Game_Settings');
@@ -126,8 +168,9 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
 
     await page.addInitScript(() => localStorage.setItem('savedShowAll', 'true'));
     const graphLoaded = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
-    await page.goto('http://localhost:5173/');
+    await page.goto('/');
     await graphLoaded;
+    await ensureAllTypesVisible(page);
 
     const nodeLoc = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
 
@@ -152,6 +195,7 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
 
     // Click Game_Child and mark it Passed -> TC1 (connected to Game_Root, not Game_Child) remains .active because Search Highlight seed is retained!
     await nodeLoc(childId).click({ force: true });
+    await page.getByRole('button', { name: 'Edit' }).click();
     const putPromise = page.waitForResponse(res => res.url().includes('/api/nodes/') && res.request().method() === 'PUT');
     await page.getByRole('button', { name: /mark passed/i }).click();
     await putPromise;
@@ -160,7 +204,7 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
 
   test('should preserve incoming/outgoing direction across Contains edges at Max Depth >= 2 and traverse multi-hop collapsed parent chains', async ({ page, request }) => {
     const graph = await (await request.get('/api/graph')).json();
-    const byKey = (key: string) => graph.nodes.find((x: any) => x.properties?.id === key).id as string;
+    const byKey = (key: string) => getSeedId(graph, key);
     const rootId = byKey('Game_Root');
     const childId = byKey('Game_Child');
     const settingsId = byKey('Game_Settings');
@@ -210,8 +254,9 @@ test.describe('Context Menu & Content Focus Pinning Tests', () => {
 
     await page.addInitScript(() => localStorage.setItem('savedShowAll', 'true'));
     const graphLoaded = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
-    await page.goto('http://localhost:5173/');
+    await page.goto('/');
     await graphLoaded;
+    await ensureAllTypesVisible(page);
 
     const nodeLoc = (id: string) => page.locator(`.react-flow__node[data-id="${id}"]`);
 

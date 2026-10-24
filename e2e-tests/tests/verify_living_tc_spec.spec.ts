@@ -1,8 +1,9 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 
 test.describe('Living TC & Specification Integrity Verification (Tier 2-B)', () => {
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, request }) => {
+    await request.post('/api/dev/reset-seed');
     // Suppress workspace selection modal for automated test runs
     await page.addInitScript(() => {
       window.localStorage.setItem('savedShowAll', 'true');
@@ -66,62 +67,71 @@ test.describe('Living TC & Specification Integrity Verification (Tier 2-B)', () 
     expect(statusColors.untestedText).toBe('#475569');
   });
 
-  test('3. Inner Content vs Outer Rim Isolation (Halo Handle Click Stealing Prevention)', async ({ page }) => {
+  test('3. Inner Content vs Outer Rim Isolation (Halo Handle Click Stealing Prevention)', async ({ page, request }) => {
+    // Deterministic fixture: attach a global badge to Game_Root
+    const graph = await (await request.get('/api/graph')).json();
+    const rootNode = graph.nodes.find((n: any) => n.properties?.id === 'Game_Root' || n.name === 'Game Testing Root');
+    const gRes = await request.post('/api/nodes', {
+      data: {
+        label: 'Component',
+        name: 'Halo_Isolation_Badge',
+        test_status: 'Untested',
+        properties: { is_global: 'true', description: 'Testing isolation' },
+      },
+    });
+    const gId = await gRes.json();
+    await request.post('/api/edges', {
+      data: { source: rootNode.id, target: gId, type: 'Depends_On', test_status: 'Untested', properties: {} },
+    });
+
+    const graphPromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.goto('/');
+    await graphPromise;
     await page.waitForSelector('.react-flow__node', { timeout: 10000 });
 
-    const firstNode = page.locator('.react-flow__node').first();
-    const haloHandle = firstNode.locator('.halo-handle');
+    const targetNode = page.locator(`.react-flow__node[data-id="${rootNode.id}"]`);
+    const haloHandle = targetNode.locator('.halo-handle');
 
-    if (await haloHandle.count() > 0) {
-      // 1) Verify halo-handle z-index is strictly <= 0 (var(--z-canvas-bg))
-      const zIndex = await haloHandle.evaluate(el => window.getComputedStyle(el).zIndex);
-      expect(Number(zIndex) || 0).toBeLessThanOrEqual(0);
+    // 1) Verify halo-handle exists and z-index is strictly <= 0 (var(--z-canvas-bg))
+    await expect(haloHandle).toHaveCount(1);
+    const zIndex = await haloHandle.evaluate(el => window.getComputedStyle(el).zIndex);
+    expect(Number(zIndex) || 0).toBeLessThanOrEqual(0);
 
-      // 2) Verify node content or badge receives direct clicks without handle interception
-      const badge = firstNode.locator('.badge-pill').first();
-      if (await badge.count() > 0) {
-        // Click the badge directly
-        await badge.click({ force: false }); // force: false ensures no overlying element intercepts the click
+    // 2) Verify node content or badge receives direct clicks without handle interception
+    const badge = targetNode.locator('.badge-pill').first();
+    await expect(badge).toBeVisible();
 
-        // Ensure badge click was processed and highlighted or opened in panel
-        await page.waitForTimeout(500);
-        const style = await badge.getAttribute('style');
-        const isBoxShadowApplied = style && style.includes('box-shadow');
-        expect(isBoxShadowApplied).toBeTruthy();
-      }
-    }
+    // Click the badge directly (force: false ensures no overlying element intercepts the click)
+    await badge.click({ force: false });
+
+    // Ensure badge click was processed and highlighted or opened in panel
+    await expect(badge).toHaveClass(/badge-selected/);
+    await expect(page.locator('.details-panel')).toBeVisible();
   });
 
   test('4. Focus+Context Pure CSS Rule (Class-based Dimming)', async ({ page }) => {
+    const graphPromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
     await page.goto('/');
+    await graphPromise;
     await page.waitForSelector('.react-flow__node', { timeout: 10000 });
 
-    const btn = page.locator('button:has-text("전체 그래프 로드")');
-    if (await btn.count() > 0) {
-      await btn.first().click();
-      await page.waitForTimeout(500);
-    }
-
     const nodes = page.locator('.react-flow__node');
-    const count = await nodes.count();
-    if (count >= 2) {
-      const targetNode = nodes.last();
-      await targetNode.click({ force: true });
+    await expect(nodes).toHaveCount(4);
 
-      // Active node gets .active class
-      await expect(targetNode).toHaveClass(/active/);
+    const targetNode = nodes.first();
+    await targetNode.click({ force: true });
 
-      // Surrounding unrelated nodes get .de-emphasized class via pure CSS
-      const otherNodes = page.locator('.react-flow__node:not(.active)');
-      if (await otherNodes.count() > 0) {
-        await expect(otherNodes.first()).toHaveClass(/de-emphasized/);
+    // Active node gets .active class
+    await expect(targetNode).toHaveClass(/active/);
 
-        // Verify no inline opacity style was injected directly on node container
-        const inlineStyle = await otherNodes.first().getAttribute('style') || '';
-        expect(inlineStyle).not.toMatch(/opacity:\s*0\./);
-      }
-    }
+    // Surrounding unrelated nodes get .de-emphasized class via pure CSS
+    const otherNodes = page.locator('.react-flow__node:not(.active)');
+    await expect(otherNodes.first()).toBeVisible();
+    await expect(otherNodes.first()).toHaveClass(/de-emphasized/);
+
+    // Verify no inline opacity style was injected directly on node container
+    const inlineStyle = await otherNodes.first().getAttribute('style') || '';
+    expect(inlineStyle).not.toMatch(/opacity:\s*0\./);
   });
 
   test('5. Root Cause Tracing CSS Animation Definition', async ({ page }) => {

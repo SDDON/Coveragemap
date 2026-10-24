@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 
 test.describe('Multiple Issue Links on Badge Tooltip', () => {
 
@@ -7,6 +7,10 @@ test.describe('Multiple Issue Links on Badge Tooltip', () => {
     await page.addInitScript(() => {
       window.localStorage.setItem('savedShowAll', 'true');
     });
+  });
+
+  test.afterEach(async ({ page }) => {
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
   });
 
   test('Renders multiple links when issue_link contains comma and space separated URLs', async ({ page }) => {
@@ -42,7 +46,7 @@ test.describe('Multiple Issue Links on Badge Tooltip', () => {
     });
 
     // Navigate to frontend
-    await page.goto('http://localhost:5173');
+    await page.goto('/');
     
     // Wait for the graph to load
     await expect(page.locator('.react-flow__node').first()).toBeVisible();

@@ -99,9 +99,10 @@ def test_create_edge():
     edge_id = create_edge(mock_session, edge_data)
     
     assert edge_id == "mock_edge_id"
-    # Called twice: once to create edge, once to recalc status
-    assert mock_session.run.call_count == 2
+    # Called 3 times: once for dependency cycle check, once to create edge, once to recalc status
+    assert mock_session.run.call_count == 3
     called_queries = [args[0][0] for args in mock_session.run.call_args_list]
+    assert any("has_cycle" in q for q in called_queries)
     assert any("CREATE (source)-[r:`DEPENDS_ON`]->(target)" in q for q in called_queries)
     assert any("OPTIONAL MATCH (src)-[in_r]->(target)" in q for q in called_queries)
 
@@ -910,6 +911,133 @@ def test_update_edge_same_type_skips_recreate_and_diff_type_recreates():
     assert diff_id == "5:abc:99"
     diff_queries = [c[0][0] for c in mock_session_diff.run.call_args_list]
     assert any("CREATE (a)-[r2:`Transition`]->(b)" in q and "DELETE r" in q for q in diff_queries)
+
+
+def test_update_edge_properties_cannot_overwrite_status_or_action():
+    """
+    EdgeUpdate(test_status="Passed", properties={"test_status": "Blocked", "action": "stale"}) 호출 시
+    Cypher 매개변수에 전달되는 test_status는 'Passed'여야 하며, properties 딕셔너리에서 test_status, action,
+    id, source, target, type 등 예약어가 제거되어 명시적 필드를 덮어쓰지 않아야 합니다.
+    """
+    mock_session = make_recalc_aware_session({"new_id": "e1", "target_id": "n2"})
+    
+    edge_data = EdgeUpdate(
+        test_status="Passed",
+        action="새 액션",
+        properties={
+            "test_status": "Blocked",   # 오래된 캐시값
+            "action": "옛 액션",        # 오래된 캐시값
+            "source": "n1",             # 예약어
+            "target": "n2",             # 예약어
+            "custom_note": "정상 사용자 속성"
+        }
+    )
+
+    update_edge(mock_session, "e1", edge_data)
+
+    query = mock_session.run.call_args_list[0][0][0]
+    kwargs = mock_session.run.call_args_list[0][1]
+
+    # Cypher에서 += $properties가 명시적 SET 앞에 오는지 검증
+    prop_idx = query.find("r += $properties")
+    status_idx = query.find("r.test_status = $test_status")
+    action_idx = query.find("r.action = $action")
+    assert prop_idx != -1 and status_idx != -1 and action_idx != -1
+    assert prop_idx < status_idx, "r += $properties must precede r.test_status in Cypher query"
+    assert prop_idx < action_idx, "r += $properties must precede r.action in Cypher query"
+
+    # kwargs에 전달된 값 검증
+    assert kwargs["test_status"] == "Passed"
+    assert kwargs["action"] == "새 액션"
+    assert "test_status" not in kwargs["properties"]
+    assert "action" not in kwargs["properties"]
+    assert kwargs["properties"].get("custom_note") == "정상 사용자 속성"
+
+
+def test_update_node_properties_cannot_overwrite_reserved_fields():
+    """
+    NodeUpdate(name="NewName", test_status="Passed", properties={"name": "StaleName", "test_status": "Failed"})
+    호출 시 name과 test_status는 명시적 값으로 유지되어야 하며, properties 내부에서 예약어가 제거되어야 합니다.
+    """
+    mock_session = make_recalc_aware_session(None)
+
+    node_data = NodeUpdate(
+        name="NewName",
+        test_status="Passed",
+        properties={
+            "name": "StaleName",
+            "test_status": "Failed",
+            "label": "StaleLabel",
+            "id": "stale_id",
+            "is_manual_override": True,
+            "custom_tag": "v1.2"
+        }
+    )
+
+    update_node(mock_session, "mock_node_id", node_data)
+
+    query = mock_session.run.call_args_list[0][0][0]
+    kwargs = mock_session.run.call_args_list[0][1]
+
+    prop_idx = query.find("n += $properties")
+    name_idx = query.find("n.name = $name")
+    status_idx = query.find("n.test_status = $test_status")
+
+    assert prop_idx != -1 and name_idx != -1 and status_idx != -1
+    assert prop_idx < name_idx, "n += $properties must precede n.name"
+    assert prop_idx < status_idx, "n += $properties must precede n.test_status"
+
+    assert kwargs["name"] == "NewName"
+    assert kwargs["test_status"] == "Passed"
+    assert "name" not in kwargs["properties"]
+    assert "test_status" not in kwargs["properties"]
+    assert kwargs["properties"].get("custom_tag") == "v1.2"
+
+
+def test_create_edge_dependency_cycle_and_self_loop_rejected():
+    """
+    Depends_On 또는 Tests 엣지 생성 시:
+    1) source == target 셀프루프는 ValueError("Self-loop dependency is not allowed.") 발생
+    2) target -> source 경로가 이미 존재하는 순환의 경우 ValueError("Dependency cycle detected.") 발생
+    """
+    mock_session = Mock()
+
+    # 1. 셀프 루프
+    self_loop = EdgeCreate(source="node_a", target="node_a", type="Depends_On")
+    with pytest.raises(ValueError) as exc:
+        create_edge(mock_session, self_loop)
+    assert "Self-loop" in str(exc.value)
+
+    # 2. 순환 감지 (target -> source 경로 존재)
+    cycle_edge = EdgeCreate(source="node_a", target="node_b", type="Depends_On")
+    mock_cycle_res = Mock()
+    mock_cycle_res.single.return_value = {"has_cycle": True}
+    mock_session.run.return_value = mock_cycle_res
+
+    with pytest.raises(ValueError) as exc:
+        create_edge(mock_session, cycle_edge)
+    assert "Dependency cycle detected" in str(exc.value)
+
+
+def test_return_edge_weight_zero():
+    """Return 엣지 생성 시 weight 속성이 자동으로 0으로 설정되는지 검증합니다."""
+    mock_session = make_recalc_aware_session({"id": "mock_return_edge"})
+
+    edge_data = EdgeCreate(
+        source="node1",
+        target="node2",
+        type="Return",
+        properties={"custom_prop": "val"},
+        test_status="Untested"
+    )
+
+    edge_id = create_edge(mock_session, edge_data)
+    assert edge_id == "mock_return_edge"
+    # CREATE 쿼리의 properties 파라미터에 weight: 0이 포함되어 있는지 확인
+    create_call = [c for c in mock_session.run.call_args_list if "CREATE (source)-[r:`Return`]" in c[0][0]][0]
+    kwargs = create_call[1]
+    assert kwargs["properties"].get("weight") == 0
+
 
 
 

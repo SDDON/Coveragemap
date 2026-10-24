@@ -50,8 +50,9 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
       if (!res.ok) throw new Error(t.preset.listLoadFailed);
       const data = await res.json();
       setPresets(data);
-    } catch (err: any) {
-      setErrorMsg(err.message || t.preset.genericError);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(message || t.preset.genericError);
     } finally {
       setLoading(false);
     }
@@ -81,8 +82,9 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
       setTimeout(() => {
         onClose();
       }, 700);
-    } catch (err: any) {
-      setErrorMsg(err.message || t.preset.loadError);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(message || t.preset.loadError);
     } finally {
       setLoadingPresetId(null);
     }
@@ -118,8 +120,9 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
       setSaveDesc('');
       setShowSaveSection(false);
       fetchPresets();
-    } catch (err: any) {
-      setErrorMsg(err.message || t.preset.saveError);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(message || t.preset.saveError);
     } finally {
       setSaving(false);
     }

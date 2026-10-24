@@ -120,13 +120,17 @@ class FakeGraphSession:
         return r
 
     def run(self, query, **kw):
+        if "has_cycle" in query:
+            return self._result({"has_cycle": False})
         if RECALC_QUERY_MARKER in query:
             t = self.nodes.get(kw["target_id"])
             if t is None:
                 return self._result(None)
             inputs = [
                 {"edge_type": et, "edge_status": ep.get("test_status", "Untested"),
-                 "src_status": self.nodes[s].get("test_status", "Untested")}
+                 "src_status": self.nodes[s].get("test_status", "Untested"),
+                 "src_is_global": str(self.nodes[s].get("is_global", "")).lower() == "true",
+                 "is_badge_attachment": False}
                 for _, s, tg, et, ep in self.edges if tg == kw["target_id"] and et != "RETURN"
             ]
             return self._result({
@@ -137,7 +141,14 @@ class FakeGraphSession:
             self.nodes[kw["target_id"]]["test_status"] = kw["new_status"]
             return self._result(None)
         if "IN $dep_types" in query:
-            rows = sorted({tg for _, s, tg, et, _ in self.edges if s == kw["id"] and et in kw["dep_types"]})
+            rows = sorted({
+                tg for _, s, tg, et, _ in self.edges 
+                if s == kw["id"] and et in kw["dep_types"]
+                and str(self.nodes.get(s, {}).get("is_global", "")).lower() != "true"
+                and not self.nodes.get(s, {}).get("is_manual_override")
+                and str(self.nodes.get(tg, {}).get("is_global", "")).lower() != "true"
+                and not self.nodes.get(tg, {}).get("is_manual_override")
+            })
             return self._result(rows=[{"next_id": r} for r in rows])
         if query.strip().startswith("MATCH (n) WHERE elementId(n) = $id") and "SET" in query:
             n = self.nodes[kw["id"]]
@@ -286,5 +297,102 @@ def test_audit_cross_cutting_with_scope_root_id():
     assert res.total_screens_features == 3
     assert [n["id"] for n in res.covered_nodes] == ["child_i18n"]
     assert [n["id"] for n in res.missing_nodes] == ["scr_1", "child_other"]
+
+
+def test_global_node_never_propagates_blocked_or_failed_to_screens():
+    """
+    스펙 §4.3 & GAP-5: 전역 배지 노드(is_global: true)가 Failed/Blocked이더라도
+    연결된 화면/컴포넌트 노드로 결함이나 차단이 전파되지 않아야 합니다.
+    """
+    # 1. compute_synthesized_status 순수 함수 수준 검증
+    screen_inputs = [
+        {"edge_type": "TRANSITION", "edge_status": "Passed", "src_status": "Passed"},
+        {"edge_type": "DEPENDS_ON", "edge_status": "Failed", "src_status": "Failed", "src_is_global": True},
+        {"edge_type": "DEPENDS_ON", "edge_status": "Blocked", "src_status": "Blocked", "is_badge_attachment": True},
+    ]
+    # 전역 배지가 Failed/Blocked여도 화면 노드는 Transition에 의해 Passed여야 함 (Blocked로 오염되지 않음)
+    assert compute_synthesized_status("Untested", screen_inputs, is_global=False) == "Passed"
+
+    # 2. 인메모리 FakeGraphSession을 통한 전파 워크리스트 경계 검증
+    g = FakeGraphSession()
+    g.add_node("screen_lobby", name="Lobby", is_global="false")
+    g.add_node("global_i18n", name="Global_I18N", is_global="true")
+    g.add_node("downstream_sub", name="SubFeature", is_global="false")
+    
+    g.add_edge("global_i18n", "screen_lobby", "Depends_On")
+    g.add_edge("global_i18n", "downstream_sub", "Depends_On")
+
+    # 글로벌 노드를 Failed로 변경해도 downstream_sub나 screen_lobby로 전파되지 않아야 함
+    update_node(g, "global_i18n", NodeUpdate(test_status="Failed"))
+    assert g.nodes["downstream_sub"]["test_status"] == "Untested"
+    assert g.nodes["screen_lobby"]["test_status"] == "Untested"
+
+
+def test_worklist_halts_at_manual_override_and_global_nodes():
+    """
+    스펙 §4.4 & GAP-5: 워크리스트 전파는 is_manual_override 또는 is_global 노드에서 즉시 멈추어야 합니다.
+    """
+    g = FakeGraphSession()
+    g.add_node("tc1", test_status="Untested")
+    g.add_node("tc_pinned", test_status="Passed", is_manual_override=True, override_reason="외부 빌드 검증")
+    g.add_node("tc_leaf", test_status="Untested")
+
+    g.add_edge("tc1", "tc_pinned", "Depends_On")
+    g.add_edge("tc_pinned", "tc_leaf", "Depends_On")
+
+    # TC1이 Failed로 전이되어도 Pinned 노드는 Passed를 유지하고, 하류 tc_leaf로 전파를 전개하지 않음
+    update_node(g, "tc1", NodeUpdate(test_status="Failed"))
+    assert g.nodes["tc_pinned"]["test_status"] == "Passed"
+    assert g.nodes["tc_leaf"]["test_status"] == "Untested"
+
+
+def test_preserved_direct_failed_status_on_upstream_unblock():
+    """
+    스펙 §4.4 & GAP-6: 테스터가 직접 마킹한 Failed는 상류 차단이 발생해도 Blocked로 덮어쓰지 않고,
+    상류가 Passed로 복구되어도 Untested로 초기화되지 않고 Failed가 영구 보존되어야 합니다.
+    """
+    # 1. 순수 함수 수준 검증
+    # 선행이 Failed여도 자신의 직접 마킹 Failed는 보존
+    assert compute_synthesized_status("Failed", [_in("DEPENDS_ON", src_status="Failed")]) == "Failed"
+    # 선행이 Passed로 복구되어도 Failed는 유지
+    assert compute_synthesized_status("Failed", [_in("DEPENDS_ON", src_status="Passed")]) == "Failed"
+    # 반면 자동 Blocked였던 노드는 Untested로 해제됨
+    assert compute_synthesized_status("Blocked", [_in("DEPENDS_ON", src_status="Passed")]) == "Untested"
+
+    # 2. FakeGraphSession 시나리오 검증
+    g = FakeGraphSession()
+    g.add_node("tc_gate", test_status="Passed")
+    g.add_node("tc_defect", test_status="Failed")  # 테스터가 결함 직접 마킹
+    g.add_edge("tc_gate", "tc_defect", "Depends_On")
+
+    # 상류 게이트가 고장남
+    update_node(g, "tc_gate", NodeUpdate(test_status="Failed"))
+    assert g.nodes["tc_defect"]["test_status"] == "Failed"  # Blocked로 변질되지 않음
+
+    # 상류 게이트가 고쳐짐
+    update_node(g, "tc_gate", NodeUpdate(test_status="Passed"))
+    assert g.nodes["tc_defect"]["test_status"] == "Failed"  # Untested로 리셋되지 않음
+
+
+def test_propagation_worklist_visits_nodes_at_most_once():
+    """
+    다이아몬드(A -> B, A -> C, B -> D, C -> D)나 수렴 경로에서 단일 전파 패스 동안
+    동일 노드가 재큐잉되어 중복 계산되지 않고 processed set에 의해 1회만 계산되어야 합니다.
+    """
+    g = FakeGraphSession()
+    g.add_node("a")
+    g.add_node("b")
+    g.add_node("c")
+    g.add_node("d")
+    g.add_edge("a", "b", "Depends_On")
+    g.add_edge("a", "c", "Depends_On")
+    g.add_edge("b", "d", "Depends_On")
+    g.add_edge("c", "d", "Depends_On")
+
+    update_node(g, "a", NodeUpdate(test_status="Failed"))
+    assert g.nodes["b"]["test_status"] == "Blocked"
+    assert g.nodes["c"]["test_status"] == "Blocked"
+    assert g.nodes["d"]["test_status"] == "Blocked"
+
 
 

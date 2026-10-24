@@ -11,34 +11,58 @@ from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-BACKEND_PORT = os.getenv("PORT", "8190")
+BACKEND_PORT = os.getenv("BACKEND_PORT") or os.getenv("PORT") or "8190"
 BASE_URL = os.getenv("BACKEND_URL", f"http://localhost:{BACKEND_PORT}")
 
 server = Server("coveragemap")
 
 
-def _api(method: str, path: str, body: dict | None = None) -> dict | str:
-    """Helper to call the CoverageMap REST API."""
+def _is_error(res) -> bool:
+    """_api 응답이 에러 문자열인지 여부를 판별합니다."""
+    return isinstance(res, str) and res.startswith("Error")
+
+
+def _api(method: str, path: str, body: dict | None = None) -> dict | list | str:
+    """Helper to call the CoverageMap REST API with resilient error handling."""
     url = f"{BASE_URL}{path}"
-    with httpx.Client(timeout=10) as client:
-        if method == "GET":
-            r = client.get(url)
-        elif method == "POST":
-            r = client.post(url, json=body)
-        elif method == "PUT":
-            r = client.put(url, json=body)
-        elif method == "DELETE":
-            r = client.delete(url)
-        else:
-            return f"Unknown method: {method}"
-        
-        if r.status_code >= 400:
-            return f"Error {r.status_code}: {r.text}"
-        
-        try:
-            return r.json()
-        except Exception:
-            return r.text
+    try:
+        with httpx.Client(timeout=10) as client:
+            if method == "GET":
+                r = client.get(url)
+            elif method == "POST":
+                r = client.post(url, json=body)
+            elif method == "PUT":
+                r = client.put(url, json=body)
+            elif method == "DELETE":
+                r = client.delete(url)
+            else:
+                return f"Error: Unknown HTTP method: {method}"
+            
+            if r.status_code >= 400:
+                error_detail = r.text
+                try:
+                    err_json = r.json()
+                    if isinstance(err_json, dict) and "detail" in err_json:
+                        error_detail = err_json["detail"]
+                        if isinstance(error_detail, (dict, list)):
+                            error_detail = json.dumps(error_detail, ensure_ascii=False)
+                except Exception:
+                    pass
+                return f"Error {r.status_code}: {error_detail}"
+            
+            try:
+                return r.json()
+            except Exception:
+                return r.text
+    except httpx.ConnectError as e:
+        return f"Error: Failed to connect to backend server at {BASE_URL}: {e}"
+    except httpx.TimeoutException as e:
+        return f"Error: Request timed out contacting backend server at {BASE_URL}{path}: {e}"
+    except httpx.RequestError as e:
+        return f"Error: Network error contacting backend server at {BASE_URL}{path}: {e}"
+    except Exception as e:
+        return f"Error: Unexpected error calling {BASE_URL}{path}: {e}"
+
 
 
 def _normalize_checklist(raw_checklist: list) -> list[dict]:
@@ -422,10 +446,13 @@ async def call_tool(name: str, arguments: dict):
     if name == "list_nodes":
         params = ""
         if arguments.get("filter"):
-            params = f"?filter={arguments['filter']}"
+            encoded_filter = urllib.parse.quote(str(arguments["filter"]), safe="")
+            params = f"?filter={encoded_filter}"
         data = _api("GET", f"/api/graph{params}")
-        if isinstance(data, str):
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, dict):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
         
         # Format nodes for readability
         nodes = data.get("nodes", [])
@@ -481,6 +508,8 @@ async def call_tool(name: str, arguments: dict):
             body["issue_link"] = arguments["issue_link"]
 
         result = _api("POST", "/api/nodes", body)
+        if _is_error(result):
+            return [TextContent(type="text", text=result)]
         return [TextContent(type="text", text=f"노드 생성 완료. ID: {result}")]
     
     elif name == "create_edge":
@@ -495,6 +524,8 @@ async def call_tool(name: str, arguments: dict):
             body["action"] = arguments["action"]
 
         result = _api("POST", "/api/edges", body)
+        if _is_error(result):
+            return [TextContent(type="text", text=result)]
         return [TextContent(type="text", text=f"엣지 생성 완료. ID: {result}")]
     
     elif name == "create_path":
@@ -506,6 +537,8 @@ async def call_tool(name: str, arguments: dict):
         
         # Get node names for display
         data = _api("GET", "/api/graph")
+        if _is_error(data):
+            return [TextContent(type="text", text=data)]
         id_to_name = {}
         if isinstance(data, dict):
             id_to_name = {n["id"]: n["name"] for n in data.get("nodes", [])}
@@ -524,6 +557,11 @@ async def call_tool(name: str, arguments: dict):
             edge_id = _api("POST", "/api/edges", body)
             src_name = id_to_name.get(src, src[:12])
             tgt_name = id_to_name.get(tgt, tgt[:12])
+            if _is_error(edge_id):
+                results.append(f"  ❌ {src_name} ──{edge_type}──▶ {tgt_name} 실패: {edge_id}")
+                failed_display = " → ".join(id_to_name.get(nid, nid[:12]) for nid in node_ids)
+                header = f"Error: 경로 생성 중 오류 발생 ({failed_display}):\n"
+                return [TextContent(type="text", text=header + "\n".join(results))]
             results.append(f"  ✅ {src_name} ──{edge_type}──▶ {tgt_name} (edge: {edge_id})")
         
         path_display = " → ".join(id_to_name.get(nid, nid[:12]) for nid in node_ids)
@@ -532,7 +570,7 @@ async def call_tool(name: str, arguments: dict):
     
     elif name == "mark_status":
         target_type = arguments["target_type"]
-        target_id = arguments["target_id"]
+        target_id = str(arguments["target_id"])
         status = arguments["status"]
         is_override = arguments.get("is_manual_override")
         override_reason = arguments.get("override_reason")
@@ -543,10 +581,16 @@ async def call_tool(name: str, arguments: dict):
         if override_reason is not None:
             body["override_reason"] = override_reason
             
+        encoded_id = urllib.parse.quote(target_id, safe="")
         if target_type == "node":
-            result = _api("PUT", f"/api/nodes/{target_id}", body)
+            result = _api("PUT", f"/api/nodes/{encoded_id}", body)
+        elif target_type == "edge":
+            result = _api("PUT", f"/api/edges/{encoded_id}", body)
         else:
-            result = _api("PUT", f"/api/edges/{target_id}", body)
+            return [TextContent(type="text", text=f"Error: 지원되지 않는 target_type입니다: '{target_type}' (node 또는 edge여야 합니다.)")]
+        
+        if _is_error(result):
+            return [TextContent(type="text", text=result)]
         
         icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(status, "")
         override_msg = f" (📌 수동 고정: {override_reason})" if override_reason else ""
@@ -554,9 +598,11 @@ async def call_tool(name: str, arguments: dict):
 
     elif name == "ask_test_status":
         query = arguments["query"]
-        data = _api("GET", f"/api/qa/status-summary?q={urllib.parse.quote(query)}")
-        if isinstance(data, str):
+        data = _api("GET", f"/api/qa/status-summary?q={urllib.parse.quote(str(query), safe='')}")
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, dict):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
         
         status_icons = {
             "Passed": "✅ 검증 완료 (Passed)",
@@ -598,9 +644,11 @@ async def call_tool(name: str, arguments: dict):
 
     elif name == "get_impact_scope":
         query = arguments["query"]
-        data = _api("GET", f"/api/qa/impact-scope?q={urllib.parse.quote(query)}")
-        if isinstance(data, str):
+        data = _api("GET", f"/api/qa/impact-scope?q={urllib.parse.quote(str(query), safe='')}")
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, dict):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
             
         changed_name = data.get("changed_node_name", query)
         total_impacted = data.get("total_impacted_nodes", 0)
@@ -624,12 +672,14 @@ async def call_tool(name: str, arguments: dict):
     elif name == "audit_cross_cutting":
         aspect = arguments["aspect"]
         scope_root_id = (arguments.get("scope_root_id") or "").strip()
-        qs = f"aspect={urllib.parse.quote(aspect)}"
+        qs = f"aspect={urllib.parse.quote(str(aspect), safe='')}"
         if scope_root_id:
-            qs += f"&scope_root_id={urllib.parse.quote(scope_root_id)}"
+            qs += f"&scope_root_id={urllib.parse.quote(str(scope_root_id), safe='')}"
         data = _api("GET", f"/api/qa/audit-cross-cutting?{qs}")
-        if isinstance(data, str):
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, dict):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
             
         lines = [
             f"📋 횡단 관심사 전수 감사(Audit): '{data.get('aspect_queried')}'",
@@ -651,8 +701,10 @@ async def call_tool(name: str, arguments: dict):
 
     elif name == "get_next_test_targets":
         data = _api("GET", "/api/qa/next-targets")
-        if isinstance(data, str):
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, list):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
             
         ready_targets = [t for t in data if t.get("incoming_requirements_met")]
         waiting_targets = [t for t in data if not t.get("incoming_requirements_met")]
@@ -677,12 +729,18 @@ async def call_tool(name: str, arguments: dict):
         return [TextContent(type="text", text="\n".join(lines))]
 
     elif name == "delete_node":
-        result = _api("DELETE", f"/api/nodes/{arguments['node_id']}")
-        return [TextContent(type="text", text=f"노드 삭제 완료: {arguments['node_id']}")]
+        node_id = str(arguments["node_id"])
+        result = _api("DELETE", f"/api/nodes/{urllib.parse.quote(node_id, safe='')}")
+        if _is_error(result):
+            return [TextContent(type="text", text=result)]
+        return [TextContent(type="text", text=f"노드 삭제 완료: {node_id}")]
     
     elif name == "delete_edge":
-        result = _api("DELETE", f"/api/edges/{arguments['edge_id']}")
-        return [TextContent(type="text", text=f"엣지 삭제 완료: {arguments['edge_id']}")]
+        edge_id = str(arguments["edge_id"])
+        result = _api("DELETE", f"/api/edges/{urllib.parse.quote(edge_id, safe='')}")
+        if _is_error(result):
+            return [TextContent(type="text", text=result)]
+        return [TextContent(type="text", text=f"엣지 삭제 완료: {edge_id}")]
     
     elif name == "find_node":
         raw_search = (arguments.get("name") or "").lower().strip()
@@ -692,8 +750,10 @@ async def call_tool(name: str, arguments: dict):
         include_details = arguments.get("include_details", True)
 
         data = _api("GET", "/api/graph")
-        if isinstance(data, str):
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, dict):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
         
         matches = []
         for n in data.get("nodes", []):
@@ -740,10 +800,12 @@ async def call_tool(name: str, arguments: dict):
         return [TextContent(type="text", text="\n".join(lines))]
 
     elif name == "get_node_details":
-        query = arguments["query"]
+        query = str(arguments["query"])
         data = _api("GET", f"/api/nodes/{urllib.parse.quote(query, safe='')}/details")
-        if isinstance(data, str):
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, dict):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
 
         status_icon = {"Passed": "✅", "Failed": "❌", "Blocked": "🟡", "Untested": "⬜"}.get(data.get("test_status"), "⬜")
         is_global = bool(data.get("is_global"))
@@ -816,8 +878,10 @@ async def call_tool(name: str, arguments: dict):
     
     elif name == "get_coverage":
         data = _api("GET", "/api/graph")
-        if isinstance(data, str):
+        if _is_error(data):
             return [TextContent(type="text", text=data)]
+        if not isinstance(data, dict):
+            return [TextContent(type="text", text=f"Error: 백엔드 응답 형식이 올바르지 않습니다: {data}")]
         
         nodes = data.get("nodes", [])
         edges = data.get("edges", [])
@@ -853,16 +917,16 @@ async def call_tool(name: str, arguments: dict):
         return [TextContent(type="text", text="\n".join(lines))]
 
     elif name == "mark_node_modified":
-        node_id = arguments["node_id"]
-        result = _api("POST", f"/api/nodes/{urllib.parse.quote(node_id)}/mark-modified")
-        if isinstance(result, str) and result.startswith("Error"):
+        node_id = str(arguments["node_id"])
+        result = _api("POST", f"/api/nodes/{urllib.parse.quote(node_id, safe='')}/mark-modified")
+        if _is_error(result):
             return [TextContent(type="text", text=result)]
         return [TextContent(type="text", text=f"🟠 노드 ({node_id}) 스펙 변경(Modified) 마킹 완료. 하류 영향 범위가 활성화되었습니다.")]
 
     elif name == "acknowledge_node":
-        node_id = arguments["node_id"]
-        result = _api("POST", f"/api/nodes/{urllib.parse.quote(node_id)}/acknowledge")
-        if isinstance(result, str) and result.startswith("Error"):
+        node_id = str(arguments["node_id"])
+        result = _api("POST", f"/api/nodes/{urllib.parse.quote(node_id, safe='')}/acknowledge")
+        if _is_error(result):
             return [TextContent(type="text", text=result)]
         return [TextContent(type="text", text=f"✅ 노드 ({node_id}) 변경 확인 완료(Acknowledged). 영향 반경 하이라이트가 해제되었습니다.")]
     

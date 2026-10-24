@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Depends, Query, HTTPException
+import os
+import threading
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Depends, Query, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from database import get_db, close_driver
@@ -12,27 +15,48 @@ from graph_service import (
     create_edge, update_edge, delete_edge,
     get_impact_nodes, deserialize_props_from_neo4j,
     mark_node_modified, acknowledge_node_modification, get_node_statuses,
-    clone_node_with_children
+    clone_node_with_children, sanitize_node_properties
 )
 from preset_service import (
     list_presets, get_preset, load_preset_to_neo4j, save_current_graph_as_preset, create_auto_backup
 )
 import uvicorn
 
-app = FastAPI(title="Living Graph TC API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    close_driver()
 
-# Add CORS middleware
+app = FastAPI(title="Living Graph TC API", lifespan=lifespan)
+
+# 동시 reset-seed 요청 경합 방지를 위한 스레드 락
+_reset_seed_lock = threading.Lock()
+
+# CORS 설정: 와일드카드(*) + credentials=True 취약점을 제거하고 로컬 출처 및 환경 변수 우선 적용
+port_str = os.getenv("PORT", os.getenv("BACKEND_PORT", "8190"))
+try:
+    server_port = int(port_str)
+except ValueError:
+    server_port = 8190
+
+default_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    f"http://localhost:{server_port}",
+    f"http://127.0.0.1:{server_port}",
+]
+cors_env = os.getenv("CORS_ORIGINS", "").strip()
+allowed_origins = [o.strip() for o in cors_env.split(",") if o.strip()] if cors_env else default_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_event("shutdown")
-def shutdown_event():
-    close_driver()
 
 @app.get("/api/health")
 def api_health(session = Depends(get_db)):
@@ -44,11 +68,13 @@ def api_health(session = Depends(get_db)):
 
 @app.get("/api/graph", response_model=GraphResponse)
 def get_graph(
+    response: Response,
     max_depth: Optional[int] = Query(None, ge=0, description="Maximum depth for graph traversal"),
     filter: Optional[str] = Query(None, description="Filter string to search nodes"),
     debounce_id: Optional[str] = Query(None, description="Debounce ID for frontend syncing"),
     session = Depends(get_db)
 ):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     # Fetch from Neo4j
     full_graph = fetch_graph_from_neo4j(session)
     
@@ -99,9 +125,20 @@ def api_create_node(node: NodeCreate, session = Depends(get_db)):
 @app.get("/api/globals")
 def api_get_globals(session = Depends(get_db)):
     try:
-        res = session.run("MATCH (n) WHERE n.is_global = 'true' RETURN elementId(n) AS id, labels(n)[0] AS type, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, n.description AS description, n.issue_link AS issue_link, coalesce(n.test_status, 'Untested') AS test_status, properties(n) AS properties").data()
+        query = (
+            "MATCH (n) WHERE n.is_global = 'true' "
+            "RETURN elementId(n) AS id, labels(n)[0] AS type, labels(n)[0] AS label, "
+            "n.name AS name, coalesce(n.aliases, []) AS aliases, "
+            "n.description AS description, n.issue_link AS issue_link, "
+            "coalesce(n.test_status, 'Untested') AS test_status, "
+            "coalesce(n.is_manual_override, false) AS is_manual_override, "
+            "n.override_reason AS override_reason, "
+            "properties(n) AS properties"
+        )
+        res = session.run(query).data()
         for item in res:
-            item["properties"] = deserialize_props_from_neo4j(item.get("properties") or {})
+            raw_props = deserialize_props_from_neo4j(item.get("properties") or {})
+            item["properties"] = sanitize_node_properties(raw_props)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -118,11 +155,21 @@ def api_get_node_details(node_id: str, session = Depends(get_db)):
 @app.get("/api/nodes/{node_id}")
 def api_get_node(node_id: str, session = Depends(get_db)):
     try:
-        res = session.run("MATCH (n) WHERE elementId(n) = $id RETURN elementId(n) AS id, labels(n)[0] AS type, labels(n)[0] AS label, n.name AS name, n.aliases AS aliases, coalesce(n.test_status, 'Untested') AS test_status, properties(n) AS properties", id=node_id).single()
+        query = (
+            "MATCH (n) WHERE elementId(n) = $id "
+            "RETURN elementId(n) AS id, labels(n)[0] AS type, labels(n)[0] AS label, "
+            "n.name AS name, coalesce(n.aliases, []) AS aliases, "
+            "coalesce(n.test_status, 'Untested') AS test_status, "
+            "coalesce(n.is_manual_override, false) AS is_manual_override, "
+            "n.override_reason AS override_reason, "
+            "properties(n) AS properties"
+        )
+        res = session.run(query, id=node_id).single()
         if not res:
             raise HTTPException(status_code=404, detail="Node not found")
         data = res.data()
-        data["properties"] = deserialize_props_from_neo4j(data.get("properties") or {})
+        raw_props = deserialize_props_from_neo4j(data.get("properties") or {})
+        data["properties"] = sanitize_node_properties(raw_props)
         return data
     except HTTPException:
         raise
@@ -288,24 +335,40 @@ def api_qa_next_targets(session = Depends(get_db)):
     return get_next_test_targets(session)
 
 
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8190, reload=True)
+# ─── Dev / Testing Endpoints ────────────────────────────────────────
 
-# trigger reload
 @app.post("/api/dev/reset-seed")
 def api_reset_seed(session = Depends(get_db)):
-    import subprocess, sys, os
-    # E2E 테스트용 시드 리셋은 DB 전체를 지웁니다(MATCH (n) DETACH DELETE n).
-    # 사용자 실데이터 유실을 막기 위해, 현재 DB가 '시드 그래프'가 아닐 때만 자동 백업을 남깁니다.
-    # - 시드 마커(Game_Root)가 이미 있으면: 이전 E2E 리셋 결과이므로 백업 생략 (E2E 반복 호출 시 백업 10개 로테이션 소진 방지)
-    # - 빈 DB면: 백업할 내용이 없으므로 생략
-    backup = None
-    record = session.run(
-        "MATCH (n) RETURN count(n) AS total, "
-        "count(CASE WHEN n.id = 'Game_Root' THEN 1 END) AS seed_marker"
-    ).single()
-    if record and record["total"] > 0 and record["seed_marker"] == 0:
-        backup = create_auto_backup(session, "E2E reset-seed 직전 자동 백업")
-    subprocess.run([sys.executable, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts', 'seed.py'))], check=True)
-    return {"status": "success", "backup": backup}
+    """개발/테스트 전용 시드 리셋 엔드포인트. ENABLE_DEV_ENDPOINTS=1 설정 시에만 허용됩니다."""
+    if os.getenv("ENABLE_DEV_ENDPOINTS", "").strip().lower() not in ("true", "1", "yes"):
+        raise HTTPException(
+            status_code=403,
+            detail="Development endpoints are disabled. Set ENABLE_DEV_ENDPOINTS=1 to enable."
+        )
+
+    with _reset_seed_lock:
+        import subprocess, sys
+        # E2E 테스트용 시드 리셋은 DB 전체를 지웁니다(MATCH (n) DETACH DELETE n).
+        # 사용자 실데이터 유실을 막기 위해, 현재 DB가 '시드 그래프'가 아닐 때만 자동 백업을 남깁니다.
+        # - 시드 마커(Game_Root)가 이미 있으면: 이전 E2E 리셋 결과이므로 백업 생략 (E2E 반복 호출 시 백업 10개 로테이션 소진 방지)
+        # - 빈 DB면: 백업할 내용이 없으므로 생략
+        backup = None
+        record = session.run(
+            "MATCH (n) RETURN count(n) AS total, "
+            "count(CASE WHEN n.id = 'Game_Root' THEN 1 END) AS seed_marker"
+        ).single()
+        if record and record["total"] > 0 and record["seed_marker"] == 0:
+            backup = create_auto_backup(session, "E2E reset-seed 직전 자동 백업")
+        subprocess.run([sys.executable, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scripts', 'seed.py'))], check=True)
+        return {"status": "success", "backup": backup}
+
+
+if __name__ == "__main__":
+    host = os.getenv("BACKEND_HOST", os.getenv("HOST", "127.0.0.1"))
+    port_str = os.getenv("PORT", os.getenv("BACKEND_PORT", "8190"))
+    try:
+        port = int(port_str)
+    except ValueError:
+        port = 8190
+    uvicorn.run("main:app", host=host, port=port, reload=True)
 

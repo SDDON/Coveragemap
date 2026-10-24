@@ -1,6 +1,7 @@
 import { memo, useState, useEffect } from 'react';
 import { Handle, Position, useInternalNode, useUpdateNodeInternals } from '@xyflow/react';
 import { t } from './locales/koKR';
+import type { CoverageNodeData, BadgeData, ChecklistItem } from './types/graph';
 
 /**
  * CoverageNode: Custom React Flow node for the CoverageMap graph.
@@ -12,7 +13,7 @@ import { t } from './locales/koKR';
  * - Dependencies section with pill badges (for global/common nodes)
  * - Collapse/expand button for parent nodes with children
  */
-function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean; [key: string]: any }) {
+function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; selected?: boolean }) {
   const [selectedBadgeId, setSelectedBadgeId] = useState<string | null>(null);
   const internalNode = useInternalNode(id);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -46,13 +47,18 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
   };
 
   const customNodeStyle = isParent 
-    ? { position: 'relative' as const, zIndex: 1, width: '100%', height: '100%', padding: '16px', boxSizing: 'border-box' as const }
-    : { position: 'relative' as const, zIndex: 1, width: '100%', boxSizing: 'border-box' as const };
+    ? { position: 'relative' as const, zIndex: 'var(--z-parent-node)', width: '100%', height: '100%', padding: '16px', boxSizing: 'border-box' as const }
+    : { position: 'relative' as const, zIndex: 'var(--z-child-node)', width: '100%', boxSizing: 'border-box' as const };
 
   // ── 노드 내부 시스템 속성 (Spec 3.5 / 4.4 / Rule 5-3) ──
   const props = data.properties || {};
   // 📌 Manual Override: 합성 엔진이 덮어쓰지 않는 고정 상태 (Mark Blocked 사유 포함)
-  const isPinned = props.is_manual_override === true || props.is_manual_override === 'true';
+  const isPinned = Boolean(
+    props.is_manual_override === true ||
+    props.is_manual_override === 'true' ||
+    data.is_manual_override === true ||
+    String(data.is_manual_override) === 'true'
+  );
   // 🟣 Change Impact Ripple: 기능 변경 표시 (테스터가 Acknowledge 할 때까지 유지)
   const isModified = props.is_modified === true || props.is_modified === 'true';
   // ☑ 노드 내부 체크리스트 (B안: properties.checklist 배열) 진행률 배지 계산
@@ -77,14 +83,20 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
     isParent && data.isCollapsed && typeof data.impactedChildCount === 'number' ? data.impactedChildCount : 0;
   // Detail-on-Demand 동적 결함 칩 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.2): 실패한 전역 배지만 상단 붉은 결함 칩으로 노출
   const failedBadges = Array.isArray(data.badges)
-    ? data.badges.filter((b: any) => b?.test_status === 'Failed')
+    ? data.badges.filter((b: BadgeData) => b?.test_status === 'Failed')
     : [];
 
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>
       {/* Target Handle: 평소에는 노드 중앙의 1px 점(클릭 가로채기 없음).
           연결 드래그 중(.react-flow--connecting)에만 CSS로 노드 전체 크기의 드롭 히트박스로 확장됩니다. (AGENTS.md #9) */}
-      <Handle type="target" position={Position.Top} id="target" className="target-drop-handle" />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="target"
+        className="target-drop-handle"
+        data-drop-hint={isParent && !data.isCollapsed ? t.node.parentDropHint : undefined}
+      />
       <Handle type="source" position={Position.Bottom} id="source" className="halo-handle" />
       <div className={`custom-node${isModified ? ' node-modified-pulse' : ''}`} style={customNodeStyle}>
         {/* Collapse/Expand button for parent nodes */}
@@ -104,7 +116,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
           {data.label || 'Node'}
           {/* 📌 수동 고정 표시: 사유는 툴팁으로 노출 */}
           {isPinned && (
-            <span className="override-pin" title={t.override.pinTitle(props.override_reason || '')}>📌</span>
+            <span className="override-pin" title={t.override.pinTitle(props.override_reason || data.override_reason || '')}>📌</span>
           )}
         </div>
         
@@ -134,11 +146,11 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
             {checklistBadge && (
               <span className={`checklist-badge checklist-badge-${checklistBadge.tone}`}>{checklistBadge.text}</span>
             )}
-            {failedBadges.map((fb: any, idx: number) => {
+            {failedBadges.map((fb: BadgeData, idx: number) => {
               const fbChecklist: Array<{ text?: string }> = Array.isArray(fb.properties?.checklist) ? fb.properties.checklist : [];
               const fbTitle = fbChecklist.length > 0
                 ? fbChecklist.map(c => c.text).filter(Boolean).join(' / ') || fb.name
-                : (fb.properties?.description || fb.name);
+                : String(fb.properties?.description || fb.name);
               return (
                 <span key={fb.edgeId || fb.id || idx} className="fault-chip" title={fbTitle}>
                   {t.scopedAudit.faultChip(fb.name)}
@@ -160,9 +172,9 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
         {/* Dependencies section (Badge pills for global common nodes) */}
         {data.badges && data.badges.length > 0 && (
           <div className="node-badges-section" style={{ position: 'relative', zIndex: 'var(--z-node-badge)' }}>
-            <div className="node-badges-title">Dependencies</div>
+            <div className="node-badges-title">{t.node.dependencies}</div>
             <div className="node-badges">
-              {data.badges.map((badge: any, i: number) => {
+              {data.badges.map((badge: BadgeData, i: number) => {
                 // Badge border/background color based on test status
                 const isPassed = badge.test_status === 'Passed';
                 const isFailed = badge.test_status === 'Failed';
@@ -180,9 +192,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                                 : isBlocked ? 'var(--status-blocked-text)'
                                 : '#334155';
                 const isSelected = selectedBadgeId === badge.id;
-                const highlightStyle = isSelected 
-                  ? { boxShadow: '0 0 0 2px #2563eb, 0 0 10px rgba(96, 165, 250, 0.5)', borderColor: '#2563eb' } 
-                  : {};
+                const highlightStyle = isSelected ? { borderColor: '#2563eb' } : {};
                 const impactSlot = data.activeImpactSlots && typeof data.activeImpactSlots[badge.id] === 'number'
                   ? data.activeImpactSlots[badge.id]
                   : undefined;
@@ -191,8 +201,9 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                   : '';
 
                 return (
-                  <div key={i} className={`badge-pill${badgeSlotClass}`}
+                  <div key={i} className={`badge-pill nodrag nopan${badgeSlotClass}${isSelected ? ' badge-selected' : ''}`}
                        data-badge-id={badge.id}
+                       onPointerDown={(e) => e.stopPropagation()}
                        onClick={(e) => {
                          e.stopPropagation();
                          if (!badge.id) return;
@@ -207,8 +218,8 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                        style={{ border: `1px solid ${borderColor}`, backgroundColor: bgColor, color: textColor, ...highlightStyle }}>
                     {isPassed && <span style={{ color: 'var(--status-passed-text)', fontSize: '0.7rem' }}>✔</span>}
                     {isFailed && <span style={{ color: 'var(--status-failed-text)', fontSize: '0.7rem' }}>✖</span>}
-                    <span style={{flex: 1}}>{badge.name}</span>
-                    <div className="badge-actions" style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center' }}>
+                    <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>{badge.name}</span>
+                    <div className="badge-actions" style={{ display: 'flex', gap: '2px', marginLeft: '4px', alignItems: 'center', flexShrink: 0 }}>
                       <button 
                         title="Mark Passed"
                         onClick={(e) => {
@@ -225,7 +236,7 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                         style={{ background: 'transparent', border: 'none', color: 'var(--status-failed-text)', cursor: 'pointer', padding: '0 2px', fontSize: '11px', display: 'flex', alignItems: 'center' }}>✕</button>
                       <div style={{ width: '1px', height: '10px', background: 'rgba(0,0,0,0.15)', margin: '0 2px' }}></div>
                       <button 
-                        title="Disconnect Dependency (Edge only)"
+                        title={t.globalNode.disconnectEdge}
                         onClick={(e) => {
                            e.stopPropagation();
                            if (window.confirm(t.globalNode.unlinkConfirm)) {
@@ -235,8 +246,9 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                         style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '0 2px', fontSize: '11px', display: 'flex', alignItems: 'center' }}>⊘</button>
                     </div>
                     {(() => {
-                      const badgeChecklist: Array<{ id?: string; text?: string; status?: string }> = Array.isArray(badge.properties?.checklist)
-                        ? badge.properties.checklist.filter((item: any) => item && String(item.text || '').trim().length > 0)
+                      const rawChecklist = badge.properties?.checklist;
+                      const badgeChecklist: ChecklistItem[] = Array.isArray(rawChecklist)
+                        ? (rawChecklist as ChecklistItem[]).filter(item => item && String(item.text || '').trim().length > 0)
                         : [];
                       const hasBadgeTooltip = badgeChecklist.length > 0 || Boolean(badge.properties?.description) || Boolean(badge.properties?.issue_link);
                       if (!hasBadgeTooltip) return null;
@@ -244,10 +256,10 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                         st === 'Passed' ? '🟢' : st === 'Failed' ? '🔴' : st === 'Blocked' ? '🟡' : '⚪';
                       return (
                         <div className="badge-tooltip" onClick={e => e.stopPropagation()}>
-                          <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>{badge.name} Verification Guide</div>
+                          <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>{t.node.verificationGuide(badge.name)}</div>
                           {badgeChecklist.length > 0 ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: badge.properties?.issue_link ? '8px' : '0', color: 'rgba(255,255,255,0.9)', lineHeight: '1.4' }}>
-                              {badgeChecklist.map((item: any, cIdx: number) => (
+                              {badgeChecklist.map((item: ChecklistItem, cIdx: number) => (
                                 <div key={item.id || cIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
                                   <span style={{ flexShrink: 0 }}>{badgeStatusIcon(item.status)}</span>
                                   <span>{item.text}</span>
@@ -256,12 +268,12 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                             </div>
                           ) : badge.properties?.description ? (
                             <div style={{ marginBottom: badge.properties?.issue_link ? '8px' : '0', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>
-                              {badge.properties.description}
+                              {String(badge.properties.description)}
                             </div>
                           ) : null}
-                          {badge.properties?.issue_link && (
+                          {Boolean(badge.properties?.issue_link) && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              {badge.properties.issue_link.split(/[,\n]+/).map((l: string) => l.trim()).filter((link: string) => link.length > 0).map((link: string, idx: number) => {
+                              {String(badge.properties?.issue_link || '').split(/[,\n]+/).map((l: string) => l.trim()).filter((link: string) => link.length > 0).map((link: string, idx: number) => {
                                 let url = link;
                                 if (!url.startsWith('http://') && !url.startsWith('https://')) {
                                   url = 'https://' + url;
@@ -269,7 +281,9 @@ function CoverageNode({ id, data }: { id: string, data: any; selected?: boolean;
                                 let hostname = link;
                                 try {
                                   hostname = new URL(url).hostname;
-                                } catch(e) {}
+                                } catch {
+                                  // Gracefully fall back to original link text if URL parsing fails
+                                }
                                 return (
                                   <a key={idx} href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>

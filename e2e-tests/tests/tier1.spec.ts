@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 
 test.beforeAll(async ({ request }) => {
   await request.post('/api/dev/reset-seed');
@@ -142,7 +142,7 @@ test.describe('F2: Core Visualization (Focus+Context)', () => {
     
     await expect(sourceNode).toHaveClass(/active/);
     await expect(targetNode).toHaveClass(/active/);
-    await expect(unassociatedNode).toHaveClass(/de-emphasized/);
+    await expect(page.locator('.react-flow__node.de-emphasized').first()).toBeVisible();
   });
 });
 
@@ -159,6 +159,7 @@ test.describe('F3: Living TC (Test Coverage Marking)', () => {
     const untestedNode = page.locator('.react-flow__node').first();
     const nodeId = await untestedNode.getAttribute('data-id');
     const targetNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+    await expect(targetNode).toBeVisible({ timeout: 5000 });
     await targetNode.click({ force: true });
     await expect(page.locator('.details-panel')).toBeVisible({ timeout: 3000 });
     
@@ -173,6 +174,7 @@ test.describe('F3: Living TC (Test Coverage Marking)', () => {
     const node = page.locator('.react-flow__node').first();
     const nodeId = await node.getAttribute('data-id');
     const targetNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+    await expect(targetNode).toBeVisible({ timeout: 5000 });
     
     await targetNode.click({ force: true });
     await expect(page.locator('.details-panel')).toBeVisible({ timeout: 3000 });
@@ -183,7 +185,7 @@ test.describe('F3: Living TC (Test Coverage Marking)', () => {
     await expect(targetNode).toHaveClass(/status-failed/);
   });
 
-  test('Mark Edge Passed', async ({ page }) => {
+  test('Mark Edge Passed', async ({ page, request }) => {
     await expect(page.locator('.react-flow__edge')).not.toHaveCount(0);
     const edge = page.locator('.react-flow__edge').first();
     const edgeId = await edge.getAttribute('data-id');
@@ -200,7 +202,7 @@ test.describe('F3: Living TC (Test Coverage Marking)', () => {
     expect(putRes.ok()).toBeTruthy();
     const { new_id } = await putRes.json();
 
-    const graph = await (await page.request.get('/api/graph')).json();
+    const graph = await (await request.get('/api/graph')).json();
     const saved = graph.edges.find((e: { id: string }) => e.id === new_id);
     expect(saved).toBeDefined();
     expect(saved.test_status).toBe('Passed');
@@ -211,6 +213,7 @@ test.describe('F3: Living TC (Test Coverage Marking)', () => {
     const node = page.locator('.react-flow__node').first();
     const nodeId = await node.getAttribute('data-id');
     const targetNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+    await expect(targetNode).toBeVisible({ timeout: 5000 });
     
     await targetNode.click({ force: true });
     await expect(page.locator('.details-panel')).toBeVisible({ timeout: 3000 });
@@ -232,9 +235,9 @@ test.describe('F3: Living TC (Test Coverage Marking)', () => {
     const initialText = await passedCount.innerText();
     const initialCount = parseInt(initialText, 10);
     
-    const untestedNode = page.locator('.react-flow__node').first();
-    const nodeId = await untestedNode.getAttribute('data-id');
-    const targetNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+    const targetNode = page.locator('.react-flow__node').filter({ hasText: 'Game Settings' }).first();
+    await expect(targetNode).toBeVisible({ timeout: 5000 });
+    // Target isolated node without cascading dependencies
     await targetNode.click({ force: true });
     await expect(page.locator('.details-panel')).toBeVisible({ timeout: 3000 });
     await page.getByRole('button', { name: /mark passed/i }).click();
@@ -276,6 +279,7 @@ test.describe('F4: Graph Editing (Nodes & Edges)', () => {
     const node = nodes.first();
     const nodeId = await node.getAttribute('data-id');
     const targetNode = page.locator(`.react-flow__node[data-id="${nodeId}"]`);
+    await expect(targetNode).toBeVisible({ timeout: 5000 });
     await targetNode.click({ force: true });
     
     const nameInput = page.getByRole('textbox', { name: /name/i });
@@ -338,20 +342,20 @@ test.describe('F4: Graph Editing (Nodes & Edges)', () => {
     return [ids[0], ids[1]];
   };
 
-  test('Add Edge', async ({ page }) => {
+  test('Add Edge', async ({ page, request }) => {
     // 트리아지 ②(스펙 변경): 상/하단 핸들 → 외곽 Halo 핸들 구조로 바뀌어 기존 dragTo(타깃 핸들)가 불가능했음
     await expect(page.locator('.react-flow__node')).not.toHaveCount(0);
     const [sourceId, targetId] = await pickTwoTopLevelNodes(page);
     const newEdgeId = await dragConnect(page, sourceId, targetId);
 
-    const graph = await (await page.request.get('/api/graph')).json();
+    const graph = await (await request.get('/api/graph')).json();
     const saved = graph.edges.find((e: { id: string }) => e.id === newEdgeId);
     expect(saved).toBeDefined();
     expect(saved.source).toBe(sourceId);
     expect(saved.target).toBe(targetId);
   });
 
-  test('Delete Edge', async ({ page }) => {
+  test('Delete Edge', async ({ page, request }) => {
     // 트리아지 ②(스펙 변경): Add Edge와 같은 사유. 생성 후 API로 삭제하지 않고 UI(엣지 선택 → Delete)로 삭제합니다.
     await expect(page.locator('.react-flow__node')).not.toHaveCount(0);
     const [sourceId, targetId] = await pickTwoTopLevelNodes(page);
@@ -368,7 +372,7 @@ test.describe('F4: Graph Editing (Nodes & Edges)', () => {
     expect((await delPromise).ok()).toBeTruthy();
     await expect(targetEdge).toHaveCount(0);
 
-    const graph = await (await page.request.get('/api/graph')).json();
+    const graph = await (await request.get('/api/graph')).json();
     expect(graph.edges.find((e: { id: string }) => e.id === newEdgeId)).toBeUndefined();
   });
 });

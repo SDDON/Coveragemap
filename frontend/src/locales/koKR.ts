@@ -13,28 +13,38 @@ export const koKR = {
   // 공통 버튼
   common: {
     edit: '수정',
-    delete: '삭제',
+    delete: 'Delete',
+    save: 'Save',
+    create: 'Create',
     ok: '확인',
     close: '닫기',
     cancel: '취소',
+    closeWithIcon: '✕ Close',
   },
 
   // 워크스페이스 선택 화면 / 상단 표시 (Workspace 관리자 모달은 FEATURE_PRUNING_GUIDE 3.2에 따라 제거됨)
   workspace: {
+    selectTitle: 'Select Workspace',
     selectGuide: '작업할 도메인(모듈)을 선택하세요. 선택한 도메인과 1~2 Depth 내의 경계 노드들만 로드되어 최적의 성능으로 작업할 수 있습니다.',
     dontShowAgain: '다시 보지 않기 (자동 진입)',
     loadPreset: '📂 샘플 프리셋 로드',
     loadAll: '전체 그래프 로드 (Heavy)',
     all: '전체 워크스페이스',
+    none: 'None',
   },
 
   // 상단 툴바 버튼 툴팁
   // (Cypher Export / Grid Layout 문구는 FEATURE_PRUNING_GUIDE 1순위 정리로 기능과 함께 제거됨)
   toolbar: {
+    addNode: 'Add Node',
+    currentWorkspace: 'Current:',
     switchWorkspace: '워크스페이스(도메인) 선택 화면 열기',
+    switchWorkspaceBtn: 'Switch Workspace',
     presets: '샘플 프리셋 및 데이터셋 관리자를 엽니다.',
+    presetsBtn: '📂 Presets',
     help: '도움말 및 범례 (Help & Legend)',
     relayout: '선택된 노드만 또는 전체를 자동 정렬합니다',
+    relayoutBtn: '⟳ Re-layout',
   },
 
   // 우측 패널 ? 아이콘 툴팁
@@ -178,6 +188,18 @@ export const koKR = {
     unlinkConfirm: '정말 이 뱃지와의 연결(Edge)을 해제하시겠습니까?\n(글로벌 뱃지 원본 데이터는 삭제되지 않습니다.)',
     editButton: '✎ 편집',
     editButtonTitle: (name: string) => `${name} 전역 노드 편집 / 전역 해제`,
+    panelTitle: 'Global Nodes',
+    panelGuide: 'Attach global nodes as badges to the currently selected node.',
+    empty: 'No global nodes found.',
+    impactTooltip: (name: string) => `Show impact: which nodes are affected by ${name}`,
+    impactOn: '🔍 ON',
+    impactButton: '🔍 Impact',
+    attach: '[+] Attach',
+    attachTooltip: (name: string) => `Attach to ${name}`,
+    attachNoSelectionTooltip: 'Select a node on the canvas first to attach',
+    createNew: 'Create New Global Node',
+    newPlaceholder: 'e.g. Common Login',
+    disconnectEdge: 'Disconnect Dependency (Edge only)',
   },
 
   // 원거리 노드 간 빠른 연결 (Quick Connect 팝오버 & 2-Step 타겟 클릭 모드)
@@ -240,7 +262,7 @@ export const koKR = {
     tipsTitle: '🛠 주요 기능 팁',
     connectTitle: '선 연결 (드래그)',
     // 상/하단 핸들 → 외곽 Halo 핸들 구조로 바뀐 현재 동작 기준
-    connectBody: '노드의 테두리(바깥쪽 가장자리)에서 드래그를 시작해 다른 노드 위에 놓으면 선(Edge)이 생성됩니다.',
+    connectBody: '노드의 테두리(바깥쪽 가장자리)에서 드래그를 시작해 다른 노드 위에 놓으면 선(Edge)이 생성됩니다. 하위 노드를 품은 상위 컨테이너(Screen)에 연결할 때는 드래그 시 상단 헤더에 표시되는 점선 드롭 영역에 놓으세요.',
     highlightTipTitle: '다중 선택 하이라이트',
     highlightTipBody: '우측 패널의 Search Highlight에 단어(예: Arena)를 검색하면 해당 그룹의 의존성 흐름을 한눈에 볼 수 있습니다.',
     depthTitle: '깊이 조절 (Max Depth)',
@@ -287,6 +309,64 @@ export const koKR = {
     descPlaceholder: '프리셋에 대한 간략한 설명',
     saving: '저장 중...',
     save: '프리셋 파일 저장',
+  },
+
+  // 우측 패널 (Inspector) 탭 및 폼 라벨
+  inspector: {
+    tabFilters: 'Filters',
+    tabEdit: 'Edit',
+    tabGlobals: 'Globals',
+    filterGraph: 'Filter Graph',
+    passedNodes: 'Passed Nodes:',
+    allAliases: 'All aliases...',
+    searchHighlight: 'Search Highlight',
+    searchPlaceholder: 'Type to highlight nodes...',
+    visibilityFilter: 'Visibility Filter',
+    maxDepth: 'Max Depth',
+    addNodeTitle: 'Add Node',
+    editTitle: (type: string) => type === 'node' ? '노드 편집' : '연결선(Edge) 편집',
+    label: 'Label:',
+    name: 'Name:',
+    nodeCategory: 'Node Category:',
+    edgeType: 'Type:',
+    actionTrigger: 'Action / Trigger:',
+    actionPlaceholder: 'e.g. Android Back Button',
+    status: 'Status:',
+    markPassed: 'Mark Passed',
+    markFailed: 'Mark Failed',
+    resetStatus: 'Reset Status',
+    markBlocked: 'Mark Blocked',
+    selectPrompt: "Select a node or edge on the graph, or click 'Add Node' to start editing.",
+  },
+
+  // 시스템 헬스 상태 알약
+  systemStatus: {
+    online: 'System Online',
+    offline: 'System Offline',
+    checking: 'Checking...',
+  },
+
+  // 캔버스 상태 오버레이
+  canvas: {
+    noNodes: 'No nodes found.',
+    loading: 'Loading Graph...',
+  },
+
+  // 개별 노드/배지 내부 라벨
+  node: {
+    dependencies: 'Dependencies',
+    verificationGuide: (name: string) => `${name} Verification Guide`,
+    markPassedTitle: 'Mark Passed',
+    markFailedTitle: 'Mark Failed',
+    parentDropHint: '📥 여기에 드롭하여 상위 노드에 연결',
+  },
+
+  // 에러 메시지
+  error: {
+    prefix: 'Error: ',
+    unknown: 'An unknown error occurred.',
+    deleteNodeFailed: 'Failed to delete node.',
+    createNodeFailed: 'Failed to create node.',
   },
 } as const;
 

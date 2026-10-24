@@ -9,6 +9,7 @@ import {
 } from '@xyflow/react';
 
 import { getEdgeParams } from './floatingEdgeUtils';
+import type { CoverageEdge, CoverageEdgeData } from './types/graph';
 
 /**
  * 플로팅 엣지 컴포넌트.
@@ -22,7 +23,7 @@ export default function FloatingEdge({
   style,
   label,
   data,
-}: EdgeProps) {
+}: EdgeProps<CoverageEdge>) {
   // React Flow 내부 스토어에서 소스/타겟 노드의 InternalNode 정보를 구독
   const sourceNode = useStore(
     useCallback((s: ReactFlowState) => s.nodeLookup.get(source), [source])
@@ -38,7 +39,8 @@ export default function FloatingEdge({
   // 노드 테두리 교차점 계산
   const { sx, sy, tx, ty, sourcePos, targetPos } = getEdgeParams(sourceNode, targetNode);
 
-  const pathOffset = (data as any)?.pathOffset || 0;
+  const edgeData = data as CoverageEdgeData | undefined;
+  const pathOffset = edgeData?.pathOffset || 0;
   
   let edgePath = '';
   let labelX = 0;
@@ -71,9 +73,9 @@ export default function FloatingEdge({
     edgePath = `M${sx},${sy} Q${midX},${midY} ${tx},${ty}`;
     
     // 라벨 위치 계산을 위한 t 값. 여러 선이 겹치는 경우 곡선을 따라 위치를 엇갈리게(Stagger) 배치
-    const edgeIndex = (data as any)?.edgeIndex || 0;
-    const totalEdges = (data as any)?.totalEdges || 1;
-    const isReverse = (data as any)?.isReverse || false;
+    const edgeIndex = edgeData?.edgeIndex || 0;
+    const totalEdges = edgeData?.totalEdges || 1;
+    const isReverse = edgeData?.isReverse || false;
     
     // 기본적으로 호의 중간(t=0.5)에 위치하지만, 갯수에 따라 t값을 0.3 ~ 0.7 사이로 분산
     let staggerOffset = (edgeIndex - (totalEdges - 1) / 2) * 0.15;
@@ -89,8 +91,8 @@ export default function FloatingEdge({
   }
 
   const markerId = `marker-${id}`;
-  const markerColor = (data as any)?.markerColor || '#64748b';
-  const edgeTypeLower = String((data as any)?.type || label || '').toLowerCase();
+  const markerColor = edgeData?.markerColor || '#64748b';
+  const edgeTypeLower = String(edgeData?.type || label || '').toLowerCase();
   const isContainsEdge = edgeTypeLower === 'contains' || edgeTypeLower === 'has';
 
   return (
@@ -127,9 +129,9 @@ export default function FloatingEdge({
           >
             <div style={{ textAlign: 'center' }}>
               <div>{label}</div>
-              {(data as any)?.action && (
+              {edgeData?.action && (
                 <div style={{ fontSize: '0.6rem', color: '#888', marginTop: '2px' }}>
-                  ({(data as any).action})
+                  ({edgeData.action})
                 </div>
               )}
             </div>

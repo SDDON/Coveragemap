@@ -22,10 +22,52 @@ ALIAS_MAP = {
 
 CANONICAL_VALUES = set(ALIAS_MAP.values())
 
+# ─── Reserved Properties (스키마 예약어 보호) ─────────────────────────
+# Neo4j 원시 속성 딕셔너리에서 NodeModel/EdgeModel의 최상위 명시적 필드와 겹치는 키를 분리합니다.
+RESERVED_NODE_PROPERTIES = {
+    "id",
+    "name",
+    "label",
+    "aliases",
+    "test_status",
+    "is_manual_override",
+    "override_reason",
+}
+
+RESERVED_EDGE_PROPERTIES = {
+    "id",
+    "source",
+    "target",
+    "type",
+    "action",
+    "test_status",
+}
+
+
+def sanitize_node_properties(props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """노드 속성 딕셔너리에서 최상위 예약어 필드를 제거합니다."""
+    if not props:
+        return {}
+    return {k: v for k, v in props.items() if k not in RESERVED_NODE_PROPERTIES}
+
+
+def sanitize_edge_properties(props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """엣지 속성 딕셔너리에서 최상위 예약어 필드를 제거합니다."""
+    if not props:
+        return {}
+    return {k: v for k, v in props.items() if k not in RESERVED_EDGE_PROPERTIES}
+
+
 def _normalize_aliases(aliases: Any) -> List[str]:
+    """
+    별칭(Aliases) 목록을 정규화합니다.
+    - ALIAS_MAP 및 CANONICAL_VALUES에 정의된 사전식 동의어는 표준형(소문자)으로 매핑합니다.
+    - 그 외 사용자 정의 별칭(e.g., 'iOS', 'PvP', 'gRPC')은 원래의 대소문자를 그대로 보존합니다.
+    - 대소문자 구분 없이 중복을 제거하되 최초 등록된 표기와 순서를 유지합니다.
+    """
     if aliases is None:
         return []
-    
+
     raw_list = []
     if isinstance(aliases, str):
         raw_list = [aliases]
@@ -34,21 +76,25 @@ def _normalize_aliases(aliases: Any) -> List[str]:
             raw_list = [str(a) for a in aliases if a is not None]
         except (TypeError, ValueError):
             raw_list = [str(aliases)]
-            
+
     standardized = []
     for a in raw_list:
-        a_lower = a.lower()
+        a_str = a.strip()
+        if not a_str:
+            continue
+        a_lower = a_str.lower()
         if a_lower in ALIAS_MAP:
             standardized.append(ALIAS_MAP[a_lower])
         elif a_lower in CANONICAL_VALUES:
             standardized.append(a_lower)
         else:
-            standardized.append(a.title())
-    
-    # Remove duplicates but keep order
+            standardized.append(a_str)
+
     result = []
+    seen_lower = set()
     for s in standardized:
-        if s not in result:
+        if s.lower() not in seen_lower:
+            seen_lower.add(s.lower())
             result.append(s)
     return result
 
@@ -138,7 +184,7 @@ def compute_synthesized_status(current_status: Optional[str], inputs: List[Dict[
                                checklist: Any = None, is_global: bool = False) -> str:
     """
     타겟 노드의 새 상태를 계산하는 순수 함수 (DB 접근 없음, 프론트 statusPropagation.ts와 동일 규칙).
-    inputs: [{edge_type: 'DEPENDS_ON'|'TESTS'|..., edge_status: str, src_status: str}, ...]
+    inputs: [{edge_type: 'DEPENDS_ON'|'TESTS'|..., edge_status: str, src_status: str, src_is_global: bool, is_badge_attachment: bool}, ...]
     """
     current = current_status or "Untested"
     clean = [i for i in (inputs or []) if i and str(i.get("edge_type", "")).upper() != "RETURN"]
@@ -146,6 +192,13 @@ def compute_synthesized_status(current_status: Optional[str], inputs: List[Dict[
     # 전역(Badge) 노드: 배지 ✓/✖는 엣지 상태로 기록되므로 기존 엣지 기준 규칙만 적용합니다.
     if is_global:
         return _legacy_edge_rule([i.get("edge_status") or "Untested" for i in clean])
+
+    # 비-전역(화면/컴포넌트) 노드: 전역 배지 노드(src_is_global) 및 배지 부착 엣지(is_badge_attachment)는
+    # 화면/컴포넌트에 Blocked/Failed를 전파할 수 없으므로 dependency gating 및 rollup에서 완전히 제외합니다 (AI_IMPLEMENTATION_SPEC §4.3).
+    clean = [
+        i for i in clean
+        if not i.get("src_is_global") and not i.get("is_badge_attachment")
+    ]
 
     def _t(i):
         return str(i.get("edge_type", "")).upper()
@@ -163,7 +216,9 @@ def compute_synthesized_status(current_status: Optional[str], inputs: List[Dict[
         or any(i.get("edge_status") in FAIL_OR_BLOCK for i in flow + tests)
 
     # 1) 검증 TC 또는 체크리스트에 실제 결함이 있으면 Failed (차단보다 우선하는 확정 정보)
-    if "Failed" in rollup:
+    #    또한 선행 의존성(Depends_On)이 차단되더라도, 테스터가 해당 노드에 직접 마킹한 Failed는
+    #    Blocked로 덮어쓰지 않고 최우선 확정 결함으로 보존됩니다 (AI_IMPLEMENTATION_SPEC §3.6).
+    if "Failed" in rollup or (current == "Failed" and not tests and not cl):
         return "Failed"
     # 2) 선행 결함/차단 → Blocked
     if gate_blocked or "Blocked" in rollup:
@@ -184,6 +239,7 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
     MATCH (n)
     OPTIONAL MATCH (n)-[r]->(m)
     RETURN n, r, m
+    ORDER BY n.name, elementId(n)
     """
     result = session.run(query)
     
@@ -200,13 +256,17 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
             name = str(name_val) if name_val is not None else n_id
             aliases = _normalize_aliases(n.get("aliases"))
             
-            n_props = deserialize_props_from_neo4j(dict(n))
+            n_raw = dict(n)
+            n_props = sanitize_node_properties(deserialize_props_from_neo4j(n_raw))
             for key in ["category", "type"]:
                 if key in n_props:
                     n_props[key] = _normalize_string(n_props[key])
-            test_status = n_props.get("test_status", "Untested")
+            test_status = n_raw.get("test_status", "Untested")
+            is_manual_override = n_raw.get("is_manual_override")
+            override_reason = n_raw.get("override_reason")
             
-            G.add_node(n_id, label=label, name=name, aliases=aliases, properties=n_props, test_status=test_status)
+            G.add_node(n_id, label=label, name=name, aliases=aliases, properties=n_props,
+                       test_status=test_status, is_manual_override=is_manual_override, override_reason=override_reason)
         
         m = record["m"]
         r = record["r"]
@@ -219,23 +279,28 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
             m_name = str(m_name_val) if m_name_val is not None else m_id
             m_aliases = _normalize_aliases(m.get("aliases"))
             
-            m_props = deserialize_props_from_neo4j(dict(m))
+            m_raw = dict(m)
+            m_props = sanitize_node_properties(deserialize_props_from_neo4j(m_raw))
             for key in ["category", "type"]:
                 if key in m_props:
                     m_props[key] = _normalize_string(m_props[key])
-            m_test_status = m_props.get("test_status", "Untested")
+            m_test_status = m_raw.get("test_status", "Untested")
+            m_is_manual_override = m_raw.get("is_manual_override")
+            m_override_reason = m_raw.get("override_reason")
             
-            G.add_node(m_id, label=m_label, name=m_name, aliases=m_aliases, properties=m_props, test_status=m_test_status)
+            G.add_node(m_id, label=m_label, name=m_name, aliases=m_aliases, properties=m_props,
+                       test_status=m_test_status, is_manual_override=m_is_manual_override, override_reason=m_override_reason)
             
             r_id = str(r.element_id)
-            r_props = dict(r)
+            r_raw = dict(r)
+            r_props = sanitize_edge_properties(r_raw)
             for key in ["category", "type"]:
                 if key in r_props:
                     r_props[key] = _normalize_string(r_props[key])
-            r_test_status = r_props.get("test_status", "Untested")
+            r_test_status = r_raw.get("test_status", "Untested")
             normalized_edge_type = _normalize_string(r.type)
             
-            G.add_edge(n_id, m_id, key=r_id, id=r_id, type=normalized_edge_type, action=r_props.get("action"), properties=r_props, test_status=r_test_status)
+            G.add_edge(n_id, m_id, key=r_id, id=r_id, type=normalized_edge_type, action=r_raw.get("action"), properties=r_props, test_status=r_test_status)
             
     return G
 
@@ -291,8 +356,10 @@ def convert_to_response(G: nx.MultiDiGraph, debounce_id: Optional[str] = None) -
             label=data.get("label", "Node"),
             name=data.get("name", node_id),
             aliases=data.get("aliases", []),
-            properties=data.get("properties", {}),
-            test_status=data.get("test_status", "Untested")
+            properties=sanitize_node_properties(data.get("properties", {})),
+            test_status=data.get("test_status", "Untested"),
+            is_manual_override=data.get("is_manual_override"),
+            override_reason=data.get("override_reason")
         ))
         
     edges = []
@@ -304,7 +371,7 @@ def convert_to_response(G: nx.MultiDiGraph, debounce_id: Optional[str] = None) -
             target=v,
             type=data.get("type", "RELATED"),
             action=data.get("action"),
-            properties=data.get("properties", {}),
+            properties=sanitize_edge_properties(data.get("properties", {})),
             test_status=data.get("test_status", "Untested")
         ))
         
@@ -326,16 +393,18 @@ def create_node(session, node_data: NodeCreate) -> str:
         if derived_status:
             effective_test_status = derived_status
 
+    clean_props = sanitize_node_properties(node_data.properties)
+
     query = f"""
     CREATE (n:`{node_data.label}`)
-    SET n.name = $name,
+    SET n += $properties,
+        n.name = $name,
         n.aliases = $aliases,
         n.description = $description,
         n.issue_link = $issue_link,
         n.test_status = $test_status,
         n.is_manual_override = $is_manual_override,
-        n.override_reason = $override_reason,
-        n += $properties
+        n.override_reason = $override_reason
     RETURN elementId(n) as id
     """
     result = session.run(query, 
@@ -346,7 +415,7 @@ def create_node(session, node_data: NodeCreate) -> str:
         test_status=effective_test_status,
         is_manual_override=node_data.is_manual_override,
         override_reason=node_data.override_reason,
-        properties=serialize_props_for_neo4j(node_data.properties)
+        properties=serialize_props_for_neo4j(clean_props)
     )
     record = result.single()
     return record["id"]
@@ -355,6 +424,11 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
     set_clauses = []
     params = {"id": node_id}
     
+    # properties를 먼저 SET 절에 배치하여 이후 명시적 필드(name, test_status 등)가 덮어쓰도록 보장
+    if node_data.properties is not None:
+        clean_props = sanitize_node_properties(node_data.properties)
+        set_clauses.append("n += $properties")
+        params["properties"] = serialize_props_for_neo4j(clean_props)
     if node_data.name is not None:
         set_clauses.append("n.name = $name")
         params["name"] = node_data.name
@@ -376,9 +450,6 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
     if node_data.override_reason is not None:
         set_clauses.append("n.override_reason = $override_reason")
         params["override_reason"] = node_data.override_reason
-    if node_data.properties is not None:
-        set_clauses.append("n += $properties")
-        params["properties"] = serialize_props_for_neo4j(node_data.properties)
         
     set_query = "SET " + ", ".join(set_clauses) if set_clauses else ""
         
@@ -422,40 +493,123 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
 MAX_PROPAGATION_STEPS = 1000
 
 
+def _check_dependency_cycle_and_self_loop(session, source_id: str, target_id: str, edge_type: str, exclude_edge_id: Optional[str] = None):
+    """
+    Depends_On 및 Tests 엣지에 대해 셀프 루프(source == target) 및 N-hop 순환 의존성을 검사합니다.
+    순환이 감지되면 ValueError를 발생시켜 FastAPI에서 HTTP 400 Bad Request를 반환하도록 합니다.
+    """
+    if source_id == target_id:
+        raise ValueError("Self-loop dependency is not allowed.")
+
+    if str(edge_type).upper() in STATUS_DEPENDENT_EDGE_TYPES:
+        if exclude_edge_id:
+            cycle_query = """
+            MATCH (target), (source)
+            WHERE elementId(target) = $target_id AND elementId(source) = $source_id
+            OPTIONAL MATCH path = (target)-[r*1..50]->(source)
+            WHERE ALL(rel IN relationships(path) WHERE toUpper(type(rel)) IN ['DEPENDS_ON', 'TESTS'] AND elementId(rel) <> $edge_id)
+            RETURN count(path) > 0 AS has_cycle
+            """
+            rec = session.run(cycle_query, target_id=target_id, source_id=source_id, edge_id=exclude_edge_id).single()
+        else:
+            cycle_query = """
+            MATCH (target), (source)
+            WHERE elementId(target) = $target_id AND elementId(source) = $source_id
+            OPTIONAL MATCH path = (target)-[r*1..50]->(source)
+            WHERE ALL(rel IN relationships(path) WHERE toUpper(type(rel)) IN ['DEPENDS_ON', 'TESTS'])
+            RETURN count(path) > 0 AS has_cycle
+            """
+            rec = session.run(cycle_query, target_id=target_id, source_id=source_id).single()
+
+        if rec and (rec.get("has_cycle") is True or rec.get("has_cycle") == 1):
+            raise ValueError("Dependency cycle detected.")
+
+
 def _dependent_targets(session, node_id: str) -> List[str]:
     """
     node_id의 상태를 입력으로 쓰는 하류 노드(DEPENDS_ON 후행 / TESTS 대상) 목록.
-    흐름 엣지(Transition 등)는 엣지 자체 상태로만 판정하므로 출발 노드 변경으로 재계산하지 않으며,
-    RETURN 엣지는 전파 대상에서 완전히 제외됩니다 (순환 Deadlock 방지).
+    - 출발 노드가 전역(is_global)이거나 수동 고정(is_manual_override)이면 하류 전파가 원천 차단됩니다 (빈 목록 반환).
+    - 도착 노드가 전역이거나 수동 고정인 경우에도 연쇄 전파 대상에서 제외됩니다.
+    - RETURN 엣지는 전파 대상에서 완전히 제외됩니다 (순환 Deadlock 방지).
     """
     downstream_query = """
     MATCH (src)-[r]->(downstream) WHERE elementId(src) = $id
       AND toUpper(type(r)) IN $dep_types
+      AND coalesce(toLower(toString(src.is_global)), 'false') <> 'true'
+      AND coalesce(src.is_manual_override, false) <> true
+      AND coalesce(toLower(toString(downstream.is_global)), 'false') <> 'true'
+      AND coalesce(downstream.is_manual_override, false) <> true
     RETURN DISTINCT elementId(downstream) AS next_id
     """
     downstream_recs = session.run(downstream_query, id=node_id, dep_types=list(STATUS_DEPENDENT_EDGE_TYPES))
     return [d["next_id"] for d in list(downstream_recs)]
 
 
+def _order_by_dependencies(session, node_ids: List[str]) -> List[str]:
+    """
+    node_ids 목록 중에서 선행 노드가 후행 노드보다 먼저 오도록 위상 정렬합니다.
+    (예: [comp, tc2] 중 tc2 -> comp 의존이 있다면 tc2가 comp보다 앞에 오도록 정렬)
+    """
+    if len(node_ids) <= 1:
+        return list(node_ids)
+
+    id_set = set(node_ids)
+    in_degrees = {nid: 0 for nid in node_ids}
+
+    for nid in node_ids:
+        targets = set(_dependent_targets(session, nid)) & id_set
+        for tgt in targets:
+            in_degrees[tgt] = in_degrees.get(tgt, 0) + 1
+
+    zero_in = [nid for nid in node_ids if in_degrees.get(nid, 0) == 0]
+    non_zero = [nid for nid in node_ids if in_degrees.get(nid, 0) > 0]
+    return zero_in + non_zero
+
+
 def _run_propagation(session, start_ids: List[str], exclude: Optional[set] = None):
     """
     워크리스트 방식 연쇄 전파: 상태가 바뀐 노드의 하류만 다시 큐에 넣습니다.
-    (다이아몬드 의존에서 먼저 계산된 노드도 입력이 바뀌면 재계산되어 최종 상태로 수렴)
-    exclude: 사용자가 방금 직접 마킹한 노드 — 순환이 있어도 사용자의 입력을 덮어쓰지 않습니다.
+    - processed 집합을 유지하여 한 번의 전파 패스에서 동일 노드가 중복 재계산되지 않도록 보장합니다.
+    - is_manual_override 및 is_global 노드에 도달하면 즉시 전파를 중단(Boundary Termination)합니다.
+    - 선행 노드가 후행 노드보다 먼저 계산되도록 위상 순서를 준수합니다.
+    - exclude: 사용자가 방금 직접 마킹한 노드 — 순환이 있어도 사용자의 입력을 덮어쓰지 않습니다.
     """
     exclude = exclude or set()
-    queue = collections.deque(start_ids)
-    queued = set(start_ids)
+    ordered_starts = _order_by_dependencies(session, start_ids)
+    queue = collections.deque(ordered_starts)
+    queued = set(ordered_starts)
+    processed = set()
     steps = 0
     while queue and steps < MAX_PROPAGATION_STEPS:
-        nid = queue.popleft()
+        # 큐에 2개 이상의 노드가 있을 때, 큐 내의 다른 노드를 선행 조건으로 갖지 않는 노드를 우선 선택
+        if len(queue) > 1:
+            chosen_idx = 0
+            for idx, candidate in enumerate(queue):
+                is_downstream_of_queue = False
+                for other in queue:
+                    if other != candidate and candidate in _dependent_targets(session, other):
+                        is_downstream_of_queue = True
+                        break
+                if not is_downstream_of_queue:
+                    chosen_idx = idx
+                    break
+            if chosen_idx != 0:
+                nid = queue[chosen_idx]
+                del queue[chosen_idx]
+            else:
+                nid = queue.popleft()
+        else:
+            nid = queue.popleft()
+
         queued.discard(nid)
         steps += 1
-        if nid in exclude:
+        if nid in exclude or nid in processed:
             continue
-        if _recalc_single_node_status(session, nid):
+        processed.add(nid)
+        # allow_global=False를 전달하여 전역 노드 및 수동 고정 노드에서 전파를 즉시 중단합니다.
+        if _recalc_single_node_status(session, nid, allow_global=False):
             for nxt in _dependent_targets(session, nid):
-                if nxt not in queued and nxt not in exclude:
+                if nxt not in queued and nxt not in exclude and nxt not in processed:
                     queue.append(nxt)
                     queued.add(nxt)
 
@@ -465,11 +619,12 @@ def _propagate_to_dependents(session, node_id: str):
     _run_propagation(session, _dependent_targets(session, node_id), exclude={node_id})
 
 
-def _recalc_single_node_status(session, target_id: str) -> bool:
+def _recalc_single_node_status(session, target_id: str, allow_global: bool = True) -> bool:
     """
     Living TC 4-Stage Status Taxonomy에 따라 타겟 노드 1개의 상태를 들어오는 엣지/출발 노드 상태/체크리스트로 재계산합니다.
     - 수동 오버라이드(is_manual_override=True)가 설정된 노드는 사용자의 판단을 보존합니다.
     - RETURN 엣지는 집계에서 제외합니다. (TESTCASE 스펙 3.4)
+    - allow_global=False: 연쇄 전파 워크리스트 도중 전역 노드를 만나면 전파 경계로 간주하여 중단합니다.
     반환값: 상태가 실제로 바뀌었는지 여부
     """
     # 관계 타입은 type(in_r)로 읽습니다. (엣지의 'type'은 속성이 아니라 Neo4j 관계 타입)
@@ -480,7 +635,9 @@ def _recalc_single_node_status(session, target_id: str) -> bool:
     WITH target, collect(CASE WHEN in_r IS NULL THEN NULL ELSE {
         edge_type: toUpper(type(in_r)),
         edge_status: coalesce(in_r.test_status, 'Untested'),
-        src_status: coalesce(src.test_status, 'Untested')
+        src_status: coalesce(src.test_status, 'Untested'),
+        src_is_global: coalesce(toLower(toString(src.is_global)), 'false') = 'true',
+        is_badge_attachment: coalesce(toLower(toString(in_r.is_badge_attachment)), 'false') = 'true'
     } END) AS inputs
     RETURN target.test_status AS current_status,
            target.is_manual_override AS is_override,
@@ -492,19 +649,25 @@ def _recalc_single_node_status(session, target_id: str) -> bool:
     if not rec:
         return False
 
-    # 수동 고정(Manual Override)되어 있다면 자동 합성 스킵
+    # 수동 고정(Manual Override)되어 있다면 자동 합성 스킵 (전파 중단)
     if rec["is_override"] in [True, "true", "True"]:
+        return False
+
+    is_global = rec.get("is_global")
+    is_global_bool = str(is_global).lower() == "true"
+    
+    # 연쇄 전파 워크리스트 도중 전역 노드를 만나면 전파 경계로 간주하여 중단합니다 (allow_global=False)
+    if is_global_bool and not allow_global:
         return False
 
     old_status = rec["current_status"]
     # neo4j Record와 테스트용 dict 모두 .get을 지원합니다. (checklist는 JSON 문자열로 저장되어 있어 복원 필요)
     checklist = deserialize_props_from_neo4j({"checklist": rec.get("checklist")}).get("checklist")
-    is_global = rec.get("is_global")
     new_status = compute_synthesized_status(
         old_status,
         rec["inputs"] or [],
         checklist=checklist,
-        is_global=str(is_global).lower() == "true",
+        is_global=is_global_bool,
     )
 
     if new_status == old_status:
@@ -553,13 +716,21 @@ def delete_node(session, node_id: str):
         _recalc_target_node_status(session, t_id)
 
 def create_edge(session, edge_data: EdgeCreate) -> str:
+    # 1. 셀프 루프 및 의존성 순환 검사
+    _check_dependency_cycle_and_self_loop(session, edge_data.source, edge_data.target, edge_data.type)
+
+    # 2. Return 엣지 가중치 0 보장 및 속성 정제
+    clean_props = sanitize_edge_properties(edge_data.properties)
+    if str(edge_data.type).upper() == "RETURN":
+        clean_props["weight"] = 0
+
     query = f"""
     MATCH (source), (target)
     WHERE elementId(source) = $source_id AND elementId(target) = $target_id
     CREATE (source)-[r:`{edge_data.type}`]->(target)
-    SET r.test_status = $test_status,
-        r.action = $action,
-        r += $properties
+    SET r += $properties,
+        r.test_status = $test_status,
+        r.action = $action
     RETURN elementId(r) as id
     """
     result = session.run(query, 
@@ -567,7 +738,7 @@ def create_edge(session, edge_data: EdgeCreate) -> str:
         target_id=edge_data.target,
         test_status=edge_data.test_status,
         action=edge_data.action,
-        properties=edge_data.properties
+        properties=clean_props
     )
     record = result.single()
     if not record:
@@ -576,18 +747,35 @@ def create_edge(session, edge_data: EdgeCreate) -> str:
     return record["id"]
 
 def update_edge(session, edge_id: str, edge_data: EdgeUpdate) -> str:
+    # 1. If edge type is updated to Depends_On or Tests, validate against cycles
+    if getattr(edge_data, "type", None) is not None and str(edge_data.type).upper() in STATUS_DEPENDENT_EDGE_TYPES:
+        rel_info = session.run(
+            "MATCH (a)-[r]->(b) WHERE elementId(r) = $id RETURN elementId(a) AS source_id, elementId(b) AS target_id, type(r) AS rel_type",
+            id=edge_id
+        ).single()
+        if rel_info and hasattr(rel_info, "get") and rel_info.get("source_id") and rel_info.get("target_id"):
+            src_id = rel_info["source_id"]
+            tgt_id = rel_info["target_id"]
+            _check_dependency_cycle_and_self_loop(session, src_id, tgt_id, edge_data.type, exclude_edge_id=edge_id)
+
     set_clauses = []
     params = {"id": edge_id}
     
+    clean_props = sanitize_edge_properties(edge_data.properties) if edge_data.properties is not None else None
+    if getattr(edge_data, "type", None) is not None and str(edge_data.type).upper() == "RETURN":
+        if clean_props is None:
+            clean_props = {}
+        clean_props["weight"] = 0
+
+    if clean_props is not None:
+        set_clauses.append("r += $properties")
+        params["properties"] = clean_props
     if edge_data.test_status is not None:
         set_clauses.append("r.test_status = $test_status")
         params["test_status"] = edge_data.test_status
     if getattr(edge_data, "action", None) is not None or "action" in edge_data.model_fields_set:
         set_clauses.append("r.action = $action")
         params["action"] = edge_data.action
-    if edge_data.properties is not None:
-        set_clauses.append("r += $properties")
-        params["properties"] = edge_data.properties
         
     set_query = "SET " + ", ".join(set_clauses) if set_clauses else ""
     
@@ -889,7 +1077,7 @@ def clone_node_with_children(session, node_id: str, tag: Optional[str] = None) -
             edge_type = "Transition"
 
         raw_edge_props = dict(e_rec.get("properties") or {})
-        clean_edge_props = {k: v for k, v in raw_edge_props.items() if k not in ("id", "test_status", "action")}
+        clean_edge_props = sanitize_edge_properties(raw_edge_props)
 
         create_edge_query = f"""
         MATCH (source), (target)
@@ -966,24 +1154,111 @@ def get_impact_nodes(session, global_node_id: str) -> dict:
     }
 
 def delete_alias(session, alias_name: str):
-    """Delete an alias from all nodes that contain it."""
+    """모든 노드에서 해당 별칭을 대소문자 무시(case-insensitive)로 검색하여 삭제합니다."""
+    clean_alias = alias_name.strip()
     query = """
-    MATCH (n) WHERE $alias_name IN n.aliases
-    SET n.aliases = [a IN n.aliases WHERE a <> $alias_name]
+    MATCH (n) WHERE any(a IN n.aliases WHERE toLower(a) = toLower($alias_name))
+    SET n.aliases = [a IN n.aliases WHERE toLower(a) <> toLower($alias_name)]
     """
-    session.run(query, alias_name=alias_name)
+    session.run(query, alias_name=clean_alias)
 
 def rename_alias(session, old_alias: str, new_alias: str):
-    """Rename an alias across all nodes."""
+    """모든 노드에서 old_alias를 대소문자 무시로 검색하여 new_alias로 치환하며, 새 별칭의 대소문자를 보존합니다."""
+    clean_old = old_alias.strip()
+    clean_new = new_alias.strip()
     query = """
-    MATCH (n) WHERE $old_alias IN n.aliases
-    // Only add new_alias if it doesn't already exist in the remaining list to prevent duplicates
+    MATCH (n) WHERE any(a IN n.aliases WHERE toLower(a) = toLower($old_alias))
+    WITH n,
+         [a IN n.aliases WHERE toLower(a) <> toLower($old_alias)] AS without_old,
+         any(a IN n.aliases WHERE toLower(a) = toLower($new_alias)) AS has_new
     SET n.aliases = CASE
-        WHEN $new_alias IN [a IN n.aliases WHERE a <> $old_alias] THEN [a IN n.aliases WHERE a <> $old_alias]
-        ELSE [a IN n.aliases WHERE a <> $old_alias] + $new_alias
+        WHEN has_new THEN without_old
+        ELSE [a IN n.aliases | CASE WHEN toLower(a) = toLower($old_alias) THEN $new_alias ELSE a END]
     END
     """
-    session.run(query, old_alias=old_alias, new_alias=new_alias)
+    session.run(query, old_alias=clean_old, new_alias=clean_new)
+
+
+def find_root_cause_bfs(session, target_id: str, target_name: str) -> Optional[RootCauseInfo]:
+    """
+    결함 원인 역추적(Root Cause Tracing, AI_IMPLEMENTATION_SPEC 3.3):
+    target_id로부터 역방향(Incoming, Return 복귀선 제외) BFS로 최단 결함 경로를 결정론적으로 탐색합니다.
+    - Flow 엣지(Transition, Contains 등)는 엣지 자체 상태(edge_status)로만 판정합니다 (출발 노드 상태 무시).
+    - 의존성 엣지(Depends_On, Tests)는 출발 노드(src_status) 또는 엣지 상태가 Failed/Blocked일 때 전파로 간주합니다.
+    - 탐색 큐는 홉 수(BFS 계층) 및 노드 이름 오름차순으로 결정론적으로 정렬됩니다.
+    """
+    incoming_query = """
+    MATCH (src)-[r]->(target)
+    WHERE elementId(target) = $curr_id
+      AND toUpper(type(r)) <> 'RETURN'
+    RETURN elementId(src) AS src_id,
+           src.name AS src_name,
+           coalesce(src.test_status, 'Untested') AS src_status,
+           elementId(r) AS edge_id,
+           toUpper(type(r)) AS edge_type,
+           coalesce(r.test_status, 'Untested') AS edge_status,
+           r.action AS edge_action
+    ORDER BY src.name ASC, elementId(r) ASC
+    """
+
+    queue = collections.deque([(target_id, target_name, [target_name], 0)])
+    visited = {target_id}
+
+    while queue:
+        curr_id, curr_name, path, depth = queue.popleft()
+        if depth >= 10:
+            continue
+
+        recs = list(session.run(incoming_query, curr_id=curr_id))
+        causal_edges = []
+        for rec in recs:
+            edge_type = rec["edge_type"]
+            edge_status = rec["edge_status"]
+            src_status = rec["src_status"]
+
+            # 도메인 인과 판정 규칙:
+            # - Depends_On, Tests: 출발 노드 또는 엣지가 Failed/Blocked
+            # - Flow 엣지(Transition 등): 엣지 자체만 Failed/Blocked (출발 화면 상태와 무관)
+            if edge_type in STATUS_DEPENDENT_EDGE_TYPES:
+                is_causal = (src_status in FAIL_OR_BLOCK) or (edge_status in FAIL_OR_BLOCK)
+            else:
+                is_causal = (edge_status in FAIL_OR_BLOCK)
+
+            if is_causal:
+                causal_edges.append(rec)
+
+        if not causal_edges:
+            # 타겟 노드가 아닌 상류 노드에 도달했으나 더 이상 원인 간선이 없는 경우 = 최초 결함 근원지
+            if curr_id != target_id:
+                return RootCauseInfo(
+                    origin_node_id=curr_id,
+                    origin_node_name=curr_name,
+                    reason=f"선행 노드 '{curr_name}'에서 결함(Failed) 발생",
+                    path=path
+                )
+        else:
+            for rec in causal_edges:
+                src_id = rec["src_id"]
+                src_name = rec["src_name"]
+                edge_status = rec["edge_status"]
+                edge_type = rec["edge_type"]
+                new_path = [src_name] + path
+
+                # Flow 전환 엣지 자체가 실패한 경우 해당 액션이 원인이므로 최단 경로로 즉시 반환
+                if edge_type not in STATUS_DEPENDENT_EDGE_TYPES and edge_status == "Failed":
+                    action_label = rec.get("edge_action") or edge_type
+                    return RootCauseInfo(
+                        origin_node_id=src_id,
+                        origin_node_name=src_name,
+                        reason=f"전환 엣지 '{action_label}'에서 결함(Failed) 발생",
+                        path=new_path
+                    )
+
+                if src_id not in visited:
+                    visited.add(src_id)
+                    queue.append((src_id, src_name, new_path, depth + 1))
+
+    return None
 
 
 # ─── QA Copilot Service Functions (Phase 1) ─────────────────────────
@@ -1025,24 +1300,7 @@ def get_node_status_summary(session, query_str: str) -> Optional[NodeStatusSumma
     
     root_cause_info = None
     if test_status in ["Blocked", "Failed"]:
-        # 역방향으로 Failed/Blocked 원인 추적 (Return 복귀선 제외, 노드 결함 및 엣지 결함 모두 추적)
-        trace_query = """
-        MATCH p = (origin)-[r*1..10]->(n)
-        WHERE elementId(n) = $id
-          AND ALL(rel IN relationships(p) WHERE toUpper(type(rel)) <> 'RETURN')
-          AND (origin.test_status = 'Failed' OR (relationships(p)[0]).test_status = 'Failed')
-        RETURN elementId(origin) AS origin_id, origin.name AS origin_name,
-               [node IN nodes(p) | node.name] AS path_names
-        LIMIT 1
-        """
-        trace_rec = session.run(trace_query, id=node_id).single()
-        if trace_rec:
-            root_cause_info = RootCauseInfo(
-                origin_node_id=trace_rec["origin_id"],
-                origin_node_name=trace_rec["origin_name"],
-                reason=f"선행 노드 '{trace_rec['origin_name']}'에서 결함(Failed) 발생",
-                path=trace_rec["path_names"]
-            )
+        root_cause_info = find_root_cause_bfs(session, node_id, rec["name"])
             
     is_override_bool = bool(rec["is_manual_override"] in [True, "true", "True"])
     
@@ -1365,12 +1623,13 @@ def get_node_full_details(session, query_str: str) -> Optional[Dict[str, Any]]:
     """
     incoming_edges = []
     for r in session.run(in_query, id=node_id):
+        raw_e_props = deserialize_props_from_neo4j(dict(r["properties"] or {}))
         incoming_edges.append({
             "id": r["id"],
             "type": _normalize_string(r["type"]),
             "test_status": r["test_status"],
             "action": r["action"],
-            "properties": dict(r["properties"] or {}),
+            "properties": sanitize_edge_properties(raw_e_props),
             "source_id": r["source_id"],
             "source_name": r["source_name"],
             "source_label": r["source_label"] or "Node",
@@ -1392,12 +1651,13 @@ def get_node_full_details(session, query_str: str) -> Optional[Dict[str, Any]]:
     """
     outgoing_edges = []
     for r in session.run(out_query, id=node_id):
+        raw_e_props = deserialize_props_from_neo4j(dict(r["properties"] or {}))
         outgoing_edges.append({
             "id": r["id"],
             "type": _normalize_string(r["type"]),
             "test_status": r["test_status"],
             "action": r["action"],
-            "properties": dict(r["properties"] or {}),
+            "properties": sanitize_edge_properties(raw_e_props),
             "target_id": r["target_id"],
             "target_name": r["target_name"],
             "target_label": r["target_label"] or "Node",
@@ -1440,7 +1700,7 @@ def get_node_full_details(session, query_str: str) -> Optional[Dict[str, Any]]:
         "is_modified": str(props.get("is_modified", "false")).lower() == "true",
         "modified_note": props.get("modified_note"),
         "checklist": checklist,
-        "properties": props,
+        "properties": sanitize_node_properties(props),
         "parent": parent,
         "children": children,
         "incoming_edges": incoming_edges,
