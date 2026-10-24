@@ -473,21 +473,42 @@ export function useGraphLayout({
       // Run ELK on the subset
       const { nodes: layouted } = await getLayoutedElements(nodesToLayout, targetEdges);
 
-      // Keep the group at its original top-left to avoid jumping
-      const minX = Math.min(...nodesToLayout.map(n => n.position.x));
-      const minY = Math.min(...nodesToLayout.map(n => n.position.y));
-      const newMinX = Math.min(...layouted.map(n => n.position.x));
-      const newMinY = Math.min(...layouted.map(n => n.position.y));
-      const offsetX = minX - newMinX;
-      const offsetY = minY - newMinY;
+      // Keep the group at its original top-left to avoid jumping (루트 노드만 절대 좌표 기준으로 오프셋 계산)
+      const rootNodesBefore = nodesToLayout.filter(n => !n.parentId);
+      const rootNodesAfter = layouted.filter(n => !n.parentId);
+      const minX = rootNodesBefore.length > 0 ? Math.min(...rootNodesBefore.map(n => n.position.x)) : 0;
+      const minY = rootNodesBefore.length > 0 ? Math.min(...rootNodesBefore.map(n => n.position.y)) : 0;
+      const newMinX = rootNodesAfter.length > 0 ? Math.min(...rootNodesAfter.map(n => n.position.x)) : 0;
+      const newMinY = rootNodesAfter.length > 0 ? Math.min(...rootNodesAfter.map(n => n.position.y)) : 0;
+      const offsetX = focusedNodes.length >= 2 ? minX - newMinX : 0;
+      const offsetY = focusedNodes.length >= 2 ? minY - newMinY : 0;
+      // 위에서 rootNodesBefore/rootNodesAfter 기준으로 이미 계산됨
+
+
+
+
+
 
       // Build position map
-      const posMap = new Map(layouted.map(n => [n.id, { x: n.position.x + offsetX, y: n.position.y + offsetY }]));
+      // 자식 노드(parentId 존재)는 부모 내부 상대 좌표를 사용하므로 전역 오프셋(offsetX/offsetY)을 더하지 않습니다.
+      const layoutedMap = new Map(
+        layouted.map(n => [
+          n.id,
+          {
+            position: n.parentId
+              ? { x: n.position.x, y: n.position.y }
+              : { x: n.position.x + offsetX, y: n.position.y + offsetY },
+            style: n.style,
+          },
+        ])
+      );
 
       // Update positions
       setNodes(nds => nds.map(n => {
-        if (posMap.has(n.id)) {
-          return { ...n, position: posMap.get(n.id)! };
+        if (layoutedMap.has(n.id)) {
+          const updated = layoutedMap.get(n.id)!;
+          return { ...n, position: updated.position, style: updated.style ?? n.style };
+
         }
         return n;
       }));

@@ -152,7 +152,7 @@ export const getLayoutedElements = async (nodes: CoverageNode[], edges: Coverage
         borderRadius: '16px',
         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)',
       };
-    } else if (!n.parentId) {
+    } else if (!n.parentId && !n.hidden) {
       // Regular root node (e.g. TestCase)
       const estimatedW = estimateNodeWidth(n);
       nodeDimensions[n.id] = { w: estimatedW, h: nodeHeight };
@@ -161,7 +161,7 @@ export const getLayoutedElements = async (nodes: CoverageNode[], edges: Coverage
 
   // -- Step 3: Register only root nodes with ELK --
   newNodes.forEach(node => {
-    if (!node.parentId) {
+    if (!node.parentId && !node.hidden) {
       const dims = nodeDimensions[node.id] || { w: nodeWidth, h: nodeHeight };
       elkGraph.children.push({ id: node.id, width: dims.w, height: dims.h });
     }
