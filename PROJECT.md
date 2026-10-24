@@ -6,14 +6,14 @@
 - **MCP Server**: FastMCP server (`mcp_server/server.py`) communicating with backend over HTTP with full error detection and URL encoding.
 - **Frontend**: React 18, React Flow (`@xyflow/react`), ELK.js, Vite, TypeScript.
   - Acyclic 5-layer architecture:
-    - Level 1: `types/` (`graph.ts`, `ui.ts`)
-    - Level 2: `api/` (`client.ts`), `utils/` (`constants.ts`, `edgeBundling.ts`, `graphScopes.ts`)
-    - Level 3: `hooks/` (`useGraphSync.ts`, `useUndoStack.ts`, `useImpactOverlay.ts`, `useGraphLayout.ts`)
-    - Level 4: `components/` (`InspectorPanel/`, `CanvasOverlays/`)
-    - Level 5: `App.tsx` (< 500 lines coordinator)
+    - Level 1: `types/` (`graph.ts`, `ui.ts`, `index.ts`)
+    - Level 2: `api/` (`client.ts`), `utils/` (`constants.ts`, `edgeBundling.ts`, `graphScopes.ts`), `layout.ts`, `statusPropagation.ts`
+    - Level 3: `hooks/` (`useCanvasBadgeEvents.ts`, `useFocusContext.ts`, `useGraphLayout.ts`, `useGraphOperations.ts`, `useGraphSync.ts`, `useImpactOverlay.ts`, `useQuickConnect.ts`, `useUndoStack.ts`)
+    - Level 4: `components/` (`Inspector/`, `CanvasOverlays/`, `PresetManagerModal.tsx`), `CoverageNode.tsx`, `FloatingEdge.tsx`
+    - Level 5: `App.tsx` (522-line top-level coordinator)
 - **Verification Infrastructure**:
-  - Tier 1: Static policy checker (`scripts/check_policy.py`)
-  - Tier 2: Backend tests (`backend/tests/` via pytest), Frontend build (`npm run build`), Linter (`npx eslint src`), Playwright E2E (`e2e-tests/`)
+  - Tier 1: Static policy checker (`scripts/check_policy.py`), comment audit (`scripts/deep_comment_audit.py`), layer cycle audit (`scripts/verify_layer_dependencies.py`)
+  - Tier 2: Backend tests (`backend/test_*.py` via pytest), MCP tests (`mcp_server/test_*.py`), Frontend build (`npm run build`), Linter (`npx eslint src`), Playwright E2E (`e2e-tests/`)
   - Tier 3: 10-point Human Signoff Checklist in `AI_IMPLEMENTATION_SPEC.md`
 
 ## Feature Inventory
@@ -89,25 +89,28 @@ backend/
 ├── main.py                   # FastAPI application, CORS, dev endpoint gates, server binding
 ├── graph_service.py          # Cypher queries, state synthesis, cycle check, worklist, BFS root cause
 ├── preset_service.py         # Preset loading with path traversal validation
-└── tests/                    # Pytest unit and integration test suite
+└── test_*.py                 # Pytest unit, integration, and stress test suite (224 tests)
 
 mcp_server/
-└── server.py                 # FastMCP server with resilient error handling and URL encoding
+├── server.py                 # FastMCP server with resilient error handling and URL encoding
+└── test_*.py                 # MCP resiliency & stress tests (16 tests)
 
 scripts/
-└── check_policy.py           # Tier 1 static policy checker (z-index, inline styles, scale, ports)
+├── check_policy.py           # Tier 1 static policy checker (z-index, inline styles, scale, ports)
+├── deep_comment_audit.py     # Verifies 150/150 domain comments are preserved
+└── verify_layer_dependencies.py # Enforces 5-layer acyclic frontend architecture
 
 frontend/
 ├── src/
-│   ├── types/                # Level 1: Domain types (graph.ts, ui.ts)
+│   ├── types/                # Level 1: Domain types (graph.ts, ui.ts, index.ts)
 │   ├── api/                  # Level 2: API client with res.ok validation (client.ts)
 │   ├── utils/                # Level 2: Pure utilities & constants (constants.ts, edgeBundling.ts, graphScopes.ts)
-│   ├── hooks/                # Level 3: Custom domain hooks (useGraphSync.ts, useUndoStack.ts, useImpactOverlay.ts, useGraphLayout.ts)
-│   ├── components/           # Level 4: UI subcomponents (InspectorPanel/, CanvasOverlays/)
+│   ├── hooks/                # Level 3: Custom domain hooks (useCanvasBadgeEvents, useFocusContext, useGraphLayout, useGraphOperations, useGraphSync, useImpactOverlay, useQuickConnect, useUndoStack)
+│   ├── components/           # Level 4: UI subcomponents (Inspector/, CanvasOverlays/, PresetManagerModal.tsx)
 │   ├── locales/              # koKR.ts localization dictionary
-│   ├── index.css             # Focus+Context dimming (0.4), @keyframes dash, .status-blocked
-│   └── App.tsx               # Level 5: Slim canvas coordinator (< 500 lines)
-└── vite.config.ts            # Vite configuration with PORT env support
+│   ├── index.css             # Focus+Context dimming (0.4), @keyframes dash, .status-blocked, parent drop-zone hint
+│   └── App.tsx               # Level 5: Slim canvas coordinator (522 lines)
+└── vite.config.ts            # Vite configuration with PORT/BACKEND_PORT env support
 
-e2e-tests/                    # Playwright test suite (deterministic assertions, Tiers 1-5)
+e2e-tests/                    # Playwright test suite (global-setup.ts, fixtures.ts, 10 spec files, 68 tests)
 ```

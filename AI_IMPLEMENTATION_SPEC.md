@@ -251,7 +251,8 @@ AI 모델은 코드에 임의의 숫자(`z-index: 99`, `z-index: 9999`)를 직�
 #### 3. 드롭 타겟 핸들(Target Drop Hitbox) 격리 원칙
 - 타겟 핸들(`<Handle type="target" id="target" className="target-drop-handle" />`)은 평상시 내부 클릭을 가로채지 않으면서도 연결 드래그 시에는 카드 전역 드롭을 수용해야 합니다:
   - **평상시 (Idle)**: 중앙 `1px × 1px` 점 + `pointer-events: none` + `z-index: var(--z-canvas-bg)`로 유지하여 내부 배지(✔/✖/⊘)·접기(`+/-`) 버튼 클릭 및 노드 드래그를 절대 가로채지 않습니다.
-  - **연결 드래그 중 (`.react-flow--connecting`)**: `App.tsx`의 `onConnectStart`/`onConnectEnd`로 루트에 부여된 `.react-flow--connecting` 상태에서 `inset: 0` 전체 크기 + `pointer-events: all` + `z-index: var(--z-active-node)`로 자동 확장되어 대상 노드 카드 어디에 드롭하더라도 연결이 체결됩니다.
+  - **연결 드래그 중 (`.react-flow--connecting`)**: `App.tsx`의 `onConnectStart`/`onConnectEnd`로 루트에 부여된 `.react-flow--connecting` 상태에서 일반 노드는 `inset: 0` 전체 크기 + `pointer-events: all` + `z-index: var(--z-active-node)`로 자동 확장되어 대상 노드 카드 어디에 드롭하더라도 연결이 체결됩니다.
+  - **펼쳐진 부모 컨테이너 상단 헤더 드롭존 제한 (`max-height: 150px` & `data-drop-hint`)**: 자식 노드를 품고 펼쳐진 부모 컨테이너(`.react-flow__node[style*="width"]`)의 경우, 컨테이너 본체 안쪽에 배치된 하위 자식 컴포넌트로의 드롭을 가로채지 않도록 타겟 핸들의 높이를 상단 헤더(`max-height: 150px !important`)로 제한하며, 연결 드래그 시작 즉시 상단 헤더에 점선 테두리와 드롭 안내 배지(`data-drop-hint="📥 여기에 드롭하여 상위 노드에 연결"`)를 표시합니다.
   - **자기 연결 차단**: 자기 자신으로의 루프 연결은 `isValidConnection`으로 차단합니다.
 
 ### 🌟 Rule 6: 단일 부모 트리 제약, 부모 노드 스케일 불변 및 클린 라이트 테마 표준 (Parent Constraints & Light Theme)

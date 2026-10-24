@@ -319,9 +319,10 @@ flowchart LR
 - **향후 재검토 방안**:
   - 부모-자식 그룹핑(`Contains`/`Has`)을 순수 구조적 포함 관계(가중치 `0`)로만 취급하길 원하는 피드백이 확인되면, `compute_synthesized_status` 및 프론트엔드 `statusPropagation.ts`에서 `Return`뿐만 아니라 `Contains`/`Has` 관계도 상태 합성 입력에서 제외하도록 개선합니다.
 
-### 8.4. 전역 배지(`is_global`)의 엣지 방향성 및 영향도 리포트(`get_impact_scope`) 라벨 필터
-- **현재 동작 및 예상 불편**:
-  - 웹 UI에서 전역 배지를 부착하면 `대상노드 → 전역배지` 방향으로 `Depends_On`이 생성되어 배지가 실패해도 대상 노드가 `Blocked`되지 않고 붉은 결함 칩(`🔴`)만 표시되지만, 외부 JSON 프리셋에서 역방향(`전역배지 → 대상노드`)으로 작성할 경우 배지 실패 시 대상 노드가 `Blocked`로 전환될 수 있습니다.
-  - 또한 `get_impact_scope` API의 텍스트 요약(`recommended_regression_scope`)은 현재 `Screen`, `Feature`, `TestCase` 라벨만 필터링하여 반환하므로 `Component`, `Modal`, `Data` 등 다른 라벨 노드는 요약 텍스트에서 누락될 수 있습니다 (단, 캔버스 `.highlight-affected` 시각 하이라이트 및 접힌 부모 롤업에는 정상 표시됨).
+### 8.4. 영향도 리포트(`get_impact_scope`) 텍스트 요약의 라벨 필터
+- **전역 배지(`is_global`) 비전파 보장 (해결 완료)**:
+  - 백엔드(`compute_synthesized_status`, `_run_propagation`)와 프론트엔드(`statusPropagation.ts`) 모두에서 전역 배지 노드(`is_global: true`) 및 배지 부착 엣지는 방향(`대상노드 → 전역배지` 또는 외부 프리셋의 `전역배지 → 대상노드`)에 관계없이 하류 화면/컴포넌트 노드를 `Blocked`나 `Failed`로 전파하지 않으며, 결함 시에는 동적 결함 칩(`🔴`)으로만 표시됩니다.
+- **현재 동작 및 예상 불편 (`get_impact_scope` 요약 라벨)**:
+  - `get_impact_scope` API의 텍스트 요약(`recommended_regression_scope`)은 현재 `Screen`, `Feature`, `TestCase` 라벨만 필터링하여 반환하므로 `Component`, `Modal`, `Data` 등 다른 라벨 노드는 요약 텍스트에서 누락될 수 있습니다 (단, 캔버스 `.highlight-affected` 시각 하이라이트 및 접힌 부모 롤업에는 정상 표시됨).
 - **향후 재검토 방안**:
-  - 프리셋 작성 및 영향도 텍스트 리포트 활용 과정에서 혼선이 발생할 경우, 전역 배지 엣지 방향 정규화 및 `recommended_regression_scope` 대상 라벨 확장을 검토합니다.
+  - 영향도 텍스트 리포트 활용 과정에서 `Component`나 `Modal`까지 요약 텍스트에 포함하길 원하는 피드백이 발생할 경우, `recommended_regression_scope` 대상 라벨 확장을 검토합니다.
