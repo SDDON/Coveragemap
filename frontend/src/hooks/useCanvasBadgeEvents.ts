@@ -140,6 +140,43 @@ export function useCanvasBadgeEvents({
       });
     };
 
+    const handleToggleCollapseAll = (e: Event) => {
+      const customEvent = e as CustomEvent<{ collapsed?: boolean } | undefined>;
+      setNodes(nds => {
+        const parentNodes = nds.filter(n => n.data?.hasChildren);
+        if (parentNodes.length === 0) return nds;
+        const shouldCollapse =
+          typeof customEvent.detail?.collapsed === 'boolean'
+            ? customEvent.detail.collapsed
+            : !parentNodes.every(p => p.data?.isCollapsed);
+        const parentIds = new Set(parentNodes.map(p => p.id));
+        return nds.map(n => {
+          if (parentIds.has(n.id)) {
+            const children = nds.filter(c => c.parentId === n.id);
+            const childSummary = {
+              total: children.length,
+              passed: children.filter(c => c.data?.test_status === 'Passed').length,
+              failed: children.filter(c => c.data?.test_status === 'Failed').length,
+              blocked: children.filter(c => c.data?.test_status === 'Blocked').length,
+            };
+            const expandedStyle = n.data?.expandedStyle || n.style;
+            const nextStyle = shouldCollapse
+              ? { ...n.style, width: 280, height: 'auto', minHeight: 110 }
+              : expandedStyle;
+            return {
+              ...n,
+              style: nextStyle,
+              data: { ...n.data, isCollapsed: shouldCollapse, childSummary, expandedStyle },
+            };
+          }
+          if (n.parentId && parentIds.has(n.parentId)) {
+            return { ...n, hidden: shouldCollapse };
+          }
+          return n;
+        });
+      });
+    };
+
     const handleDeleteBadge = async (e: Event) => {
       const customEvent = e as CustomEvent<{ nodeId: string; edgeId: string }>;
       const { edgeId } = customEvent.detail;
@@ -169,6 +206,7 @@ export function useCanvasBadgeEvents({
     window.addEventListener('selectBadgeNode', handleBadgeSelect);
     window.addEventListener('markBadgeStatus', handleMarkBadgeStatus);
     window.addEventListener('toggleCollapseNode', handleToggleCollapse);
+    window.addEventListener('toggleCollapseAllNodes', handleToggleCollapseAll);
     window.addEventListener('deleteBadge', handleDeleteBadge);
     window.addEventListener('hoverGlobalBadge', handleHoverGlobal);
     window.addEventListener('unhoverGlobalBadge', handleUnhoverGlobal);
@@ -176,6 +214,7 @@ export function useCanvasBadgeEvents({
       window.removeEventListener('selectBadgeNode', handleBadgeSelect);
       window.removeEventListener('markBadgeStatus', handleMarkBadgeStatus);
       window.removeEventListener('toggleCollapseNode', handleToggleCollapse);
+      window.removeEventListener('toggleCollapseAllNodes', handleToggleCollapseAll);
       window.removeEventListener('deleteBadge', handleDeleteBadge);
       window.removeEventListener('hoverGlobalBadge', handleHoverGlobal);
       window.removeEventListener('unhoverGlobalBadge', handleUnhoverGlobal);

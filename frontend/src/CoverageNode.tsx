@@ -1,7 +1,8 @@
 import { memo, useState, useEffect } from 'react';
 import { Handle, Position, useInternalNode, useUpdateNodeInternals } from '@xyflow/react';
 import { t } from './locales/koKR';
-import type { CoverageNodeData, BadgeData, ChecklistItem } from './types/graph';
+import type { CoverageNode as CoverageNodeType, CoverageNodeData, BadgeData, ChecklistItem } from './types/graph';
+import { getRawNodeDomain, getDomainMeta } from './utils/graphScopes';
 
 /**
  * CoverageNode: Custom React Flow node for the CoverageMap graph.
@@ -85,6 +86,9 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
   const failedBadges = Array.isArray(data.badges)
     ? data.badges.filter((b: BadgeData) => b?.test_status === 'Failed')
     : [];
+  // 논리 도메인 메타 정보 (PROPOSAL_TAG_BASED_DOMAIN_GROUPING 4.2)
+  const rawDomain = getRawNodeDomain({ id, data } as CoverageNodeType);
+  const domainMeta = rawDomain ? getDomainMeta(rawDomain) : null;
 
   return (
     <div className="custom-node-wrapper" style={wrapperStyle}>
@@ -99,6 +103,9 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
       />
       <Handle type="source" position={Position.Bottom} id="source" className="halo-handle" />
       <div className={`custom-node${isModified ? ' node-modified-pulse' : ''}`} style={customNodeStyle}>
+        {domainMeta && (
+          <div className={`node-domain-accent domain-tone-${domainMeta.tone}`} />
+        )}
         {/* Collapse/Expand button for parent nodes */}
         {data.hasChildren && (
           <button className="collapse-btn nodrag nopan" 
@@ -113,7 +120,12 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
 
         {/* Category label (e.g., Screen, Component) */}
         <div className="node-type">
-          {data.label || 'Node'}
+          <span>{data.label || 'Node'}</span>
+          {domainMeta && (
+            <span className={`node-domain-badge domain-tone-${domainMeta.tone}`}>
+              {domainMeta.displayLabel}
+            </span>
+          )}
           {/* 📌 수동 고정 표시: 사유는 툴팁으로 노출 */}
           {isPinned && (
             <span className="override-pin" title={t.override.pinTitle(props.override_reason || data.override_reason || '')}>📌</span>

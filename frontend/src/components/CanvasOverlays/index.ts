@@ -10,3 +10,5 @@ export * from './HelpModal';
 export * from './ErrorToast';
 export * from './EmptyStateOverlay';
 export * from './LoadingOverlay';
+export * from './DomainFilterBar';
+

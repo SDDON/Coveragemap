@@ -37,6 +37,9 @@ export interface UseGraphOperationsProps {
   setIsCreatingNode?: Dispatch<SetStateAction<boolean>>;
   rfInstance?: ReactFlowInstance<CoverageNode, CoverageEdge> | null;
   setEditFormData?: Dispatch<SetStateAction<EditFormData>>;
+  filterText?: string;
+  setFilterText?: Dispatch<SetStateAction<string>>;
+  setShowAllDomains?: Dispatch<SetStateAction<boolean>>;
 }
 
 export function useGraphOperations({
@@ -61,6 +64,9 @@ export function useGraphOperations({
   setIsCreatingNode,
   rfInstance,
   setEditFormData,
+  filterText,
+  setFilterText,
+  setShowAllDomains,
 }: UseGraphOperationsProps) {
   /**
    * 캔버스 드래그 연결(onConnect), Quick Connect 팝오버(Pattern A), 2-Step 클릭 연결(Pattern B)이
@@ -411,20 +417,59 @@ export function useGraphOperations({
       pushUndo({ type: 'CLONE_SUBGRAPH', id: targetId, createdNodeIds: res.cloned_node_ids, createdEdgeIds: res.cloned_edge_ids, nodeIds: res.cloned_node_ids });
       if (res.cloned_root_id) {
         const targetNode = nodesRef.current.find(n => n.id === targetId) || (selectedNodeRef.current?.id === targetId ? selectedNodeRef.current : undefined);
+        const parentNode = targetNode?.parentId ? nodesRef.current.find(p => p.id === targetNode.parentId) : undefined;
+        const baseAbsX = parentNode
+          ? (parentNode.position?.x || 0)
+          : (targetNode?.position?.x || 0);
+        const baseAbsY = parentNode
+          ? (parentNode.position?.y || 0) + (targetNode?.position?.y || 0)
+          : (targetNode?.position?.y || 0);
+        const sourceWidth = parentNode
+          ? (parentNode.measured?.width || Number(parentNode.style?.width) || 300)
+          : (targetNode?.measured?.width || Number(targetNode?.style?.width) || 260);
+        let cloneX = baseAbsX + sourceWidth + 60;
+        const cloneY = baseAbsY;
+        while (
+          nodesRef.current.some(
+            n => !n.hidden && !n.parentId && Math.abs((n.position?.x || 0) - cloneX) < 220 && Math.abs((n.position?.y || 0) - cloneY) < 110
+          )
+        ) {
+          cloneX += 300;
+        }
+        const clonePosition = { x: cloneX, y: cloneY };
+
+        const cleanTag = (tag || '').replace(/^#+/, '').trim();
+        const baseAliases = Array.isArray(targetNode?.data?.aliases) ? [...targetNode.data.aliases] : [];
+        if (cleanTag && !baseAliases.some(a => String(a).replace(/^#+/, '').trim().toLowerCase() === cleanTag.toLowerCase())) {
+          baseAliases.push(cleanTag);
+        }
+
         const clonedNode: CoverageNode = {
           id: res.cloned_root_id,
           type: 'custom',
-          position: targetNode?.position ? { x: targetNode.position.x + 50, y: targetNode.position.y + 50 } : { x: 0, y: 0 },
+          position: clonePosition,
+          selected: true,
+          className: 'status-untested',
           data: {
             id: res.cloned_root_id,
             label: targetNode?.data?.label || 'Node',
             name: res.name || targetNode?.data?.name || '',
-            aliases: tag ? [tag.replace(/^#/, '')] : (targetNode?.data?.aliases || []),
+            aliases: baseAliases,
             test_status: 'Untested',
-            properties: {},
-            badges: [],
+            properties: { ...(targetNode?.data?.properties || {}), is_manual_override: false, override_reason: undefined },
+            badges: targetNode?.data?.badges ? targetNode.data.badges.map(b => ({ ...b, test_status: 'Untested' })) : [],
           },
         };
+
+        // 1) 낙관적 업데이트: triggerRefresh(ELK 레이아웃) 실행 전에 nodesRef와 setNodes에 복제 노드를 먼저 등록하여
+        //    useGraphLayout의 prevNodesMap이 원본 바로 옆(clonePosition) 좌표를 그대로 보존하도록 보장합니다.
+        const nextNodesList = [
+          ...nodesRef.current.map(n => (n.selected ? { ...n, selected: false } : n)),
+          clonedNode,
+        ];
+        nodesRef.current = nextNodesList;
+        setNodes(nextNodesList);
+
         selectedNodeRef.current = clonedNode;
         setSelectedNode(clonedNode);
         if (setEditFormData) {
@@ -436,17 +481,99 @@ export function useGraphOperations({
             description: '',
             issue_link: '',
             test_status: 'Untested',
-            properties: {},
+            properties: { ...(clonedNode.data.properties || {}) },
             type: 'node',
           });
         }
         setPinnedFocusNodeId(prev => (prev === targetId ? res.cloned_root_id : prev));
+
+        // 2) 현재 워크스페이스 필터(filterText)가 활성화된 상태에서 새 태그(#골드던전 등)로 복제하여
+        //    기존 해시태그가 치환되면 /api/graph?filter=... 응답에서 복제된 노드가 제외될 수 있으므로 전체 보기로 전환합니다.
+        if (filterText && setFilterText) {
+          const fl = filterText.toLowerCase();
+          const matchesCurrentFilter =
+            clonedNode.data.name.toLowerCase().includes(fl) ||
+            clonedNode.data.label.toLowerCase().includes(fl) ||
+            (clonedNode.data.aliases || []).some(a => String(a).toLowerCase().includes(fl));
+          if (!matchesCurrentFilter) {
+            if (setShowAllDomains) setShowAllDomains(true);
+            setFilterText('');
+          }
+        }
       }
       triggerRefresh();
     } catch (err: unknown) {
       setErrorToast(extractErrorMessage(err));
     }
-  }, [selectedNodeRef, pushUndo, triggerRefresh, setErrorToast, setPinnedFocusNodeId, nodesRef, setSelectedNode, setEditFormData]);
+  }, [selectedNodeRef, pushUndo, triggerRefresh, setErrorToast, setPinnedFocusNodeId, nodesRef, setNodes, setSelectedNode, setEditFormData, filterText, setFilterText, setShowAllDomains]);
+
+  /**
+   * 항목 C: 빈 공간 드래그 Quick Connect 팝오버에서 새 노드를 즉시 생성하고 소스 노드와 연결합니다.
+   */
+  const handleQuickCreateAndConnect = useCallback(async (
+    sourceId: string,
+    newNodeName: string,
+    newNodeLabel: string,
+    edgeType?: string,
+    screenPosition?: { x: number; y: number }
+  ) => {
+    const trimmedName = newNodeName.trim();
+    if (!sourceId || !trimmedName) return;
+    try {
+      const sourceNode = nodesRef.current.find(n => n.id === sourceId);
+      const extractedTags = Array.from(trimmedName.matchAll(/#([^\s#]+)/g)).map(m => m[1]);
+      const payloadAliases = [...extractedTags];
+      if (filterText && !payloadAliases.some(a => a.toLowerCase() === filterText.toLowerCase())) {
+        payloadAliases.push(filterText);
+      }
+      const inheritedDomain = sourceNode?.data?.properties?.domain;
+      const initialProperties: Record<string, unknown> = inheritedDomain ? { domain: inheritedDomain } : {};
+
+      const newId = await api.nodes.createNode({
+        label: newNodeLabel || 'Screen',
+        name: trimmedName,
+        aliases: payloadAliases,
+        description: '',
+        issue_link: '',
+        test_status: 'Untested',
+        properties: initialProperties,
+      });
+      pushUndo({ type: 'CREATE_NODE', id: newId });
+
+      let initialPos = {
+        x: (sourceNode?.position?.x || 0) + (sourceNode?.measured?.width || 260) + 80,
+        y: sourceNode?.position?.y || 0,
+      };
+      if (rfInstance && screenPosition) {
+        initialPos = rfInstance.screenToFlowPosition(screenPosition);
+      }
+
+      const newNode: CoverageNode = {
+        id: newId,
+        type: 'custom',
+        position: initialPos,
+        className: 'status-untested',
+        data: {
+          id: newId,
+          label: newNodeLabel || 'Screen',
+          name: trimmedName,
+          aliases: payloadAliases,
+          description: '',
+          issue_link: '',
+          test_status: 'Untested',
+          properties: initialProperties,
+          badges: [],
+        },
+      };
+      const updatedNodes = [...nodesRef.current, newNode];
+      nodesRef.current = updatedNodes;
+      setNodes(updatedNodes);
+
+      await createEdgeBetweenNodes(sourceId, newId, edgeType);
+    } catch (err: unknown) {
+      setErrorToast(extractErrorMessage(err));
+    }
+  }, [nodesRef, filterText, pushUndo, rfInstance, setNodes, createEdgeBetweenNodes, setErrorToast]);
 
   const handleSave = useCallback(async () => {
     if (isCreatingNode) {
@@ -605,6 +732,7 @@ export function useGraphOperations({
 
   return {
     createEdgeBetweenNodes,
+    handleQuickCreateAndConnect,
     onNodesDelete,
     onEdgesDelete,
     handleDetachFromParent,

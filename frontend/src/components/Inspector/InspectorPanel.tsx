@@ -36,6 +36,8 @@ interface InspectorPanelProps {
   setVisibleTypes: Dispatch<SetStateAction<Set<string>>>;
   maxDepth: number;
   setMaxDepth: (depth: number) => void;
+  hideUnconnectedEdges?: boolean;
+  setHideUnconnectedEdges?: (hide: boolean) => void;
   rfInstance: ReactFlowInstance<CoverageNode, CoverageEdge> | null;
   globalNodesList: ApiNode[];
   activeImpacts: ActiveImpactItem[];
@@ -93,6 +95,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   setVisibleTypes,
   maxDepth,
   setMaxDepth,
+  hideUnconnectedEdges,
+  setHideUnconnectedEdges,
   rfInstance,
   globalNodesList,
   activeImpacts,
@@ -237,6 +241,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             setVisibleTypes={setVisibleTypes}
             maxDepth={maxDepth}
             setMaxDepth={setMaxDepth}
+            hideUnconnectedEdges={hideUnconnectedEdges}
+            setHideUnconnectedEdges={setHideUnconnectedEdges}
           />
         </div>
 

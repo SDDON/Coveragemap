@@ -897,15 +897,16 @@ def _normalize_clone_tag(tag: Optional[str]) -> str:
 def _apply_clone_tag(original_name: str, tag: Optional[str], existing_names: Set[str]) -> str:
     """
     원본 노드 이름에 복제 태그(기본값 '#복사본')를 적용하고 DB 내 중복 시 숫자 접미사(2, 3...)를 부여합니다.
-    - 원본 이름의 마지막 '#...' 해시태그 토큰이 있으면 새 태그로 치환하고, 없으면 끝에 ' {tag}'를 부착합니다.
+    - 원본 이름의 마지막 '#...' 해시태그(공백 포함 '#일반 던전' 또는 붙여쓴 '#일반던전')가 있으면 새 태그로 치환하고, 없으면 끝에 ' {tag}'를 부착합니다.
     """
     norm_tag = _normalize_clone_tag(tag)
     orig = (original_name or "").strip()
 
-    matches = list(re.finditer(r"(?:^|(?<=\s))#\S+", orig))
-    if matches:
-        last = matches[-1]
-        base_name = f"{orig[:last.start()]}{norm_tag}{orig[last.end():]}"
+    trailing_match = re.search(r"#[^#]+$", orig)
+    if trailing_match:
+        prefix = orig[:trailing_match.start()]
+        sep = "" if (not prefix or prefix[-1].isspace()) else " "
+        base_name = f"{prefix}{sep}{norm_tag}"
     else:
         base_name = f"{orig} {norm_tag}" if orig else norm_tag
 

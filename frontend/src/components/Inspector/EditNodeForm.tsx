@@ -179,6 +179,49 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
         </datalist>
       </div>
 
+      <div className="form-group">
+        <label htmlFor="nodeDomain" className="form-label">
+          {t.domain.fieldLabel}
+          <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.nodeDomain}>?</span>
+        </label>
+        <input
+          id="nodeDomain"
+          type="text"
+          list="domain-presets"
+          autoComplete="off"
+          placeholder={t.domain.fieldPlaceholder}
+          value={String(editFormData.properties?.domain || '')}
+          onChange={e => {
+            const newProps = { ...(editFormData.properties || {}), domain: e.target.value };
+            setEditFormData({ ...editFormData, properties: newProps });
+          }}
+        />
+        <datalist id="domain-presets">
+          {(['Battle', 'Growth', 'Economy', 'Social', 'System'] as const).map(key => (
+            <option key={key} value={key}>{t.domain.presets[key]}</option>
+          ))}
+        </datalist>
+        <div className="domain-preset-pills">
+          {(['Battle', 'Growth', 'Economy', 'Social', 'System'] as const).map(key => {
+            const isSelected = String(editFormData.properties?.domain || '') === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`domain-preset-pill domain-tone-${key.toLowerCase()}${isSelected ? ' active' : ''}`}
+                onClick={() => {
+                  const nextVal = isSelected ? '' : key;
+                  const newProps = { ...(editFormData.properties || {}), domain: nextVal };
+                  setEditFormData({ ...editFormData, properties: newProps });
+                }}
+              >
+                {t.domain.presets[key]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {!isCreatingNode && liveEditNode && parentId && (
         <div className="form-group parent-relation-box">
           <div className="parent-relation-label" title={parentName}>

@@ -31,6 +31,9 @@ export default function FloatingEdge({
   const targetNode = useStore(
     useCallback((s: ReactFlowState) => s.nodeLookup.get(target), [target])
   );
+  const edgeClassName = useStore(
+    useCallback((s: ReactFlowState) => s.edgeLookup.get(id)?.className || '', [id])
+  );
 
   if (!sourceNode || !targetNode) {
     return null;
@@ -94,6 +97,19 @@ export default function FloatingEdge({
   const markerColor = edgeData?.markerColor || '#64748b';
   const edgeTypeLower = String(edgeData?.type || label || '').toLowerCase();
   const isContainsEdge = edgeTypeLower === 'contains' || edgeTypeLower === 'has';
+  const isDeEmphasized = edgeClassName.includes('de-emphasized');
+  const isActiveEdge = edgeClassName.includes('active');
+  const isImpactEdge = edgeClassName.includes('impact-edge');
+  const isDomainEdge = edgeClassName.includes('domain-edge');
+  const labelStateClass = [
+    isDeEmphasized ? 'is-de-emphasized' : '',
+    isActiveEdge ? 'is-active' : '',
+    isImpactEdge ? 'is-impact-edge' : '',
+    isDomainEdge ? 'is-domain-edge' : '',
+  ]
+    .filter(Boolean)
+    .map(c => ` ${c}`)
+    .join('');
 
   return (
     <>
@@ -125,7 +141,7 @@ export default function FloatingEdge({
               padding: '2px 6px',
               borderRadius: '4px',
             }}
-            className="nodrag nopan"
+            className={`nodrag nopan floating-edge-label${labelStateClass}`}
           >
             <div style={{ textAlign: 'center' }}>
               <div>{label}</div>

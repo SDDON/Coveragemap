@@ -53,9 +53,11 @@ export const koKR = {
     searchHighlight: '검색어가 포함된 노드와 그 의존성 흐름을 하이라이트합니다.',
     visibilityFilter: '체크한 타입의 노드들만 캔버스에 표시합니다.',
     maxDepth: '선택한 노드로부터 지정한 단계(Depth)까지만 연관 노드를 표시합니다.',
+    hideUnconnectedEdges: '노드 선택 또는 포커스 시, 관심 범위와 직접 연결되지 않은 배경 간선들을 완전히 숨겨 복잡한 그래프에서의 가독성을 높입니다.',
     nodeLabel: '노드의 역할을 나타내는 주요 타입입니다. (예: Screen, Feature 등)',
     nodeName: '노드에 표시될 실제 이름입니다.',
     nodeCategory: '그룹화나 검색에 쓰이는 카테고리 태그(Alias)입니다.',
+    nodeDomain: '허브 앤 스포크 복잡도를 줄이기 위한 논리적 최상위 도메인 분류입니다 (Max Depth=1 유지).',
     globalNode: '체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.',
     status: '현재 테스트/개발 상태를 나타냅니다.',
     globalNodes: '전역 노드를 다른 노드에 부착(Attach)하거나, 해당 전역 노드에 의존하는 모든 노드(Impact)를 시각화합니다.',
@@ -156,6 +158,10 @@ export const koKR = {
       return `🟢 통과: ${passed} / 🔴 결함: ${failed}${blockedPart} (${pct}%)`;
     },
     affectedChildCount: (count: number) => `⚡ 영향 하위 컴포넌트 ${count}개`,
+    collapseAllBtn: '📦 하위 그룹 접기',
+    expandAllBtn: '📂 하위 그룹 펼치기',
+    collapseAllTitle: '개괄적인 상위 흐름만 볼 수 있도록 모든 부모 화면의 하위 컴포넌트를 접고 간선을 상위 노드로 위임합니다.',
+    expandAllTitle: '접혀 있는 모든 상위 화면의 하위 컴포넌트를 다시 펼칩니다.',
   },
 
   // 결함 원인 역추적 (Root Cause Tracing, AI_IMPLEMENTATION_SPEC 3.3)
@@ -213,6 +219,12 @@ export const koKR = {
     pendingBanner: (sourceName: string, edgeType: string) =>
       `🔗 [${sourceName}]에서 (${edgeType}) 연결 중 — 연결할 대상 노드를 클릭하세요`,
     cancelPending: '취소 ✕',
+    alreadyConnectedSame: (edgeType: string) => `⚠️ 동일 연결됨 (→ ${edgeType})`,
+    alreadyConnectedOut: (edgeType: string) => `🔗 연결됨 (→ ${edgeType})`,
+    alreadyConnectedIn: (edgeType: string) => `🔗 연결됨 (← ${edgeType})`,
+    alreadyAttachedBadge: '🏷️ 배지 부착됨',
+    newNodeLabelSelectTitle: '새로 생성할 노드의 타입(Label)',
+    createAndConnectBtn: (name: string, edgeType: string) => `➕ "${name}" 새 노드 생성 후 (${edgeType}) 연결`,
   },
 
   // 캔버스 우클릭 메뉴
@@ -230,7 +242,7 @@ export const koKR = {
     unpinBannerButton: '고정 해제 ✕',
   },
 
-  // 전역 노드 영향도(Impact) 표시 (다중 Global Node 5색 슬롯 & OR/AND 교집합 필터)
+  // 전역 노드 영향도(Impact) 표시 (다중 Global Node 5색 슬롯, OR/AND 교집합 필터, 격리 보기 & 네비게이터)
   impact: {
     affected: (count: number) => `영향 받는 노드 ${count}개`,
     modeOr: '합집합 (OR)',
@@ -238,6 +250,44 @@ export const koKR = {
     modeOrTitle: '선택한 전역 노드 중 하나라도 연결된 노드를 모두 표시합니다',
     modeAndTitle: '선택한 전역 노드들이 모두 동시에 연결된 교집합 노드만 표시합니다',
     removeChipTitle: (name: string) => `${name} 영향도 강조 해제`,
+    isolateOn: '👁️ 격리 보기 ON',
+    isolateOff: '👁️ 격리 보기 OFF',
+    isolateTitle: '영향 받는 노드와 엣지만 화면에 남기고 비관련 요소를 숨깁니다',
+    listToggleOpen: (count: number) => `📋 목록 보기 (${count}) ▲`,
+    listToggleClose: (count: number) => `📋 목록 닫기 (${count}) ▼`,
+    listTitle: '영향 받는 노드 네비게이터',
+    listEmpty: '조건에 일치하는 영향 노드가 없습니다.',
+    flyToHint: '클릭하여 해당 노드 위치로 카메라 이동',
+    parentBadge: (parentName: string) => `📦 ${parentName}`,
+  },
+
+  // 태그/속성 기반 최상위 도메인 그룹핑 및 퀵 격리 탐색 (PROPOSAL_TAG_BASED_DOMAIN_GROUPING.md)
+  domain: {
+    barLabel: '🏷️ 도메인:',
+    all: '전체 보기',
+    unassigned: '미분류',
+    isolateOn: '👁️ 격리 ON',
+    isolateOff: '👁️ 격리 OFF',
+    isolateTitle: '선택한 도메인과 연결 허브 노드만 화면에 남기고 타 도메인 노드를 숨깁니다',
+    fieldLabel: '최상위 도메인 (Domain):',
+    fieldPlaceholder: '도메인 선택 또는 직접 입력 (예: Battle, Growth, 상점)',
+    noneOption: '선택 안 함',
+    chipCount: (label: string, count: number) => `${label} (${count})`,
+    presets: {
+      Battle: '⚔️ 전투',
+      Growth: '🎒 성장',
+      Economy: '💎 상점',
+      Social: '👥 소셜',
+      System: '⚙️ 시스템',
+    },
+    keywords: {
+      battle: ['battle', '전투', '던전', '아레나', '레이드'],
+      growth: ['growth', '성장', '영웅', '캐릭터', '장비', '가방'],
+      economy: ['economy', '상점', '재화', '결제', '가챠', '소환'],
+      social: ['social', '소셜', '길드', '친구', '채팅', '우편'],
+      system: ['system', '시스템', '설정', '계정', '보안', '로그인'],
+    },
+    tagPrefixes: ['domain:', '도메인:'],
   },
 
   // 도움말 모달
@@ -323,6 +373,8 @@ export const koKR = {
     searchPlaceholder: 'Type to highlight nodes...',
     visibilityFilter: 'Visibility Filter',
     maxDepth: 'Max Depth',
+    hideUnconnectedEdges: '포커스 시 비연결 간선 숨기기',
+    overviewModeLabel: '개괄 뷰 (Parent Overview)',
     addNodeTitle: 'Add Node',
     editTitle: (type: string) => type === 'node' ? '노드 편집' : '연결선(Edge) 편집',
     label: 'Label:',

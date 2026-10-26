@@ -14,6 +14,8 @@ interface ViewTabProps {
   setVisibleTypes: Dispatch<SetStateAction<Set<string>>>;
   maxDepth: number;
   setMaxDepth: (depth: number) => void;
+  hideUnconnectedEdges?: boolean;
+  setHideUnconnectedEdges?: (hide: boolean) => void;
 }
 
 export const ViewTab: React.FC<ViewTabProps> = ({
@@ -27,8 +29,12 @@ export const ViewTab: React.FC<ViewTabProps> = ({
   setVisibleTypes,
   maxDepth,
   setMaxDepth,
+  hideUnconnectedEdges = false,
+  setHideUnconnectedEdges,
 }) => {
   const passedCount = nodes.filter(n => n.data?.test_status === 'Passed').length;
+  const parentNodes = nodes.filter(n => n.data?.hasChildren);
+  const allParentsCollapsed = parentNodes.length > 0 && parentNodes.every(n => n.data?.isCollapsed);
 
   return (
     <div>
@@ -107,6 +113,39 @@ export const ViewTab: React.FC<ViewTabProps> = ({
           value={maxDepth}
           onChange={(e) => setMaxDepth(parseInt(e.target.value) || 1)}
         />
+      </div>
+
+      <div className="form-group" style={{ marginTop: '12px' }}>
+        <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '6px' }}>
+          <input
+            id="hideUnconnectedEdges"
+            type="checkbox"
+            checked={hideUnconnectedEdges}
+            onChange={(e) => setHideUnconnectedEdges?.(e.target.checked)}
+            style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+          />
+          <span>{t.inspector.hideUnconnectedEdges}</span>
+          <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.hideUnconnectedEdges}>?</span>
+        </label>
+      </div>
+
+      <div className="form-group" style={{ marginTop: '12px' }}>
+        <label className="form-label" style={{ marginBottom: '6px' }}>
+          {t.inspector.overviewModeLabel}
+        </label>
+        <button
+          type="button"
+          className={`overview-collapse-all-btn${allParentsCollapsed ? ' active' : ''}`}
+          disabled={parentNodes.length === 0}
+          title={t.parentCollapse.collapseAllTitle}
+          onClick={() => {
+            window.dispatchEvent(
+              new CustomEvent('toggleCollapseAllNodes', { detail: { collapsed: !allParentsCollapsed } })
+            );
+          }}
+        >
+          {allParentsCollapsed ? t.parentCollapse.expandAllBtn : t.parentCollapse.collapseAllBtn}
+        </button>
       </div>
     </div>
   );

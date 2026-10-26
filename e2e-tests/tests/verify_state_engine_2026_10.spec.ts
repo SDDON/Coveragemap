@@ -1041,4 +1041,214 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(nodeLocator(page, ids.root)).not.toHaveClass(/\bimpact-highlighted\b/);
     await expect(nodeLocator(page, ids.settings)).not.toHaveClass(/\bimpact-highlighted\b/);
   });
+
+  test('R. Global Impact Isolation, Impact Navigator Drawer & Fly-to, and Domain Filter Bar', async ({ page, request }) => {
+    // 1. Assign domain '전투' to ids.root in Inspector EditNodeForm
+    await selectNode(page, ids.root);
+    const domainPresetBtn = page.locator('.domain-preset-pill', { hasText: '전투' });
+    await expect(domainPresetBtn).toBeVisible();
+    await domainPresetBtn.click();
+    await expect(page.locator('#nodeDomain')).toHaveValue('Battle');
+
+    const putDomain = page.waitForResponse(
+      res => res.url().includes(`/api/nodes/${encodeURIComponent(ids.root)}`) && res.request().method() === 'PUT'
+    );
+    await page.locator('.details-panel button.primary:has-text("Save")').click();
+    expect((await putDomain).ok()).toBeTruthy();
+
+    // Verify domain badge & accent bar on ids.root and DomainFilterBar at top of canvas
+    await expect(nodeLocator(page, ids.root).locator('.node-domain-badge')).toContainText('전투');
+    await expect(nodeLocator(page, ids.root).locator('.node-domain-accent')).toBeVisible();
+
+    // Also create a node with '#도메인:성장' hashtag fallback and Failed status to verify hashtag domain & visible fault dot
+    const growthRes = await request.post('/api/nodes', {
+      data: { label: 'Screen', name: 'Hero_Upgrade_Screen #도메인:성장', aliases: ['#도메인:성장'], test_status: 'Failed', properties: {} },
+    });
+    const growthNodeId = await growthRes.json();
+    const reloadAfterGrowth = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadAfterGrowth;
+
+    await expect(nodeLocator(page, growthNodeId).locator('.node-domain-badge')).toContainText('성장');
+    await expect(nodeLocator(page, growthNodeId).locator('.node-domain-accent')).toBeVisible();
+
+    const domainBar = page.locator('.domain-filter-bar');
+    await expect(domainBar).toBeVisible();
+    const battleChip = domainBar.locator('.domain-chip-btn', { hasText: '전투' });
+    await expect(battleChip).toBeVisible();
+    const growthChip = domainBar.locator('.domain-chip-btn', { hasText: '성장' });
+    await expect(growthChip).toBeVisible();
+    const faultDot = growthChip.locator('.domain-fault-dot');
+    await expect(faultDot).toBeVisible();
+    const dotBox = await faultDot.boundingBox();
+    expect(dotBox).not.toBeNull();
+    expect(dotBox!.width).toBeGreaterThanOrEqual(5);
+    expect(dotBox!.height).toBeGreaterThanOrEqual(5);
+
+    // 2. Click '전투' domain chip -> .react-flow gets .domain-active, ids.root gets .domain-matched
+    await battleChip.click();
+    await expect(page.locator('.react-flow')).toHaveClass(/\bdomain-active\b/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bdomain-matched\b/);
+    await expect(nodeLocator(page, ids.settings)).not.toHaveClass(/\bdomain-matched\b/);
+
+    // Toggle domain isolation -> .react-flow gets .domain-isolated and non-matched node becomes opacity: 0
+    const domainIsolateBtn = domainBar.locator('.domain-isolate-toggle-btn');
+    await expect(domainIsolateBtn).toBeVisible();
+    await domainIsolateBtn.click();
+    await expect(page.locator('.react-flow')).toHaveClass(/\bdomain-isolated\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveCSS('opacity', '0');
+
+    // Switch to '성장' domain while isolated -> edges on Game_Root are not in Growth domain, so their labels become opacity: 0
+    await growthChip.click();
+    const nonDomainEdgeLabel = page.locator('.floating-edge-label:not(.is-domain-edge)').first();
+    await expect(nonDomainEdgeLabel).toHaveCSS('opacity', '0');
+
+    // Clear domain filter
+    await domainBar.locator('.domain-chip-all').click();
+    await expect(page.locator('.react-flow')).not.toHaveClass(/\bdomain-active\b/);
+
+    // 3. Global Impact Isolation & Impact Navigator Drawer
+    const gRes = await request.post('/api/nodes', {
+      data: { label: 'Component', name: 'Global_Net_Guard', aliases: [], test_status: 'Passed', properties: { is_global: 'true' } },
+    });
+    const gId = await gRes.json();
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: gId, type: 'Depends_On', test_status: 'Passed', properties: {} },
+    });
+
+    const reloadGraph = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadGraph;
+
+    await page.getByRole('button', { name: 'Globals' }).click();
+    await page.locator('button[title="Show impact: which nodes are affected by Global_Net_Guard"]').click();
+
+    const statsBar = page.locator('.impact-stats-bar');
+    await expect(statsBar).toBeVisible();
+
+    // Toggle Impact Isolation ON
+    const isolateBtn = statsBar.locator('.impact-isolate-btn');
+    await expect(isolateBtn).toBeVisible();
+    await isolateBtn.click();
+    await expect(page.locator('.react-flow')).toHaveClass(/\bis-isolated\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveCSS('opacity', '0');
+
+    // Open Impact Navigator Drawer and click item to Fly-to & select node
+    const listToggleBtn = statsBar.locator('.impact-list-toggle-btn');
+    await listToggleBtn.click();
+    const drawer = page.locator('.impact-navigator-drawer');
+    await expect(drawer).toBeVisible();
+    const navItem = drawer.locator('.impact-navigator-item', { hasText: 'Game Testing Root' });
+    await expect(navItem).toBeVisible();
+    await navItem.click();
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bhighlight-selected\b/);
+  });
+
+  test('S. Overview Collapse All & Proxy Edges, Quick Connect Create & Connected Badge, Hide Unconnected Edges, and Clone with #골드던전 under Active Filter', async ({ page, request }) => {
+    // 1. Setup parent-child hierarchy (ids.root --Contains--> subId) and inter-group edge (subId --Transition--> ids.settings)
+    const subRes = await request.post('/api/nodes', {
+      data: { label: 'Component', name: 'Sub_Hero_Slot #일반던전', aliases: ['subslot'], test_status: 'Failed', properties: {} },
+    });
+    const subId = await subRes.json();
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: subId, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: subId, target: ids.settings, type: 'Transition', test_status: 'Failed', properties: {} },
+    });
+
+    const reloadGraph = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadGraph;
+
+    // 2. Item A: Collapse All button in TopToolbar -> child node hides and proxy edge delegates to ids.root -> ids.settings
+    const collapseAllBtn = page.locator('.toolbar-collapse-all-btn');
+    await expect(collapseAllBtn).toBeVisible();
+    await collapseAllBtn.click();
+
+    await expect(nodeLocator(page, subId)).toHaveCount(0);
+    await expect(nodeLocator(page, ids.root).locator('.parent-collapse-summary')).toBeVisible();
+    const proxyEdge = page.locator(`.react-flow__edge[data-id="${ids.root}-${ids.settings}-Transition"]`);
+    await expect(proxyEdge).toBeVisible();
+
+
+    // Expand all back
+    await collapseAllBtn.click();
+    await expect(nodeLocator(page, subId)).toBeVisible();
+
+    // 3. Item H: Hide Unconnected Edges when focused
+    await page.getByRole('button', { name: 'Filters' }).click();
+    const hideUnconnectedCheckbox = page.locator('#hideUnconnectedEdges');
+    await expect(hideUnconnectedCheckbox).toBeVisible();
+    await hideUnconnectedCheckbox.check();
+    await expect(page.locator('.react-flow')).toHaveClass(/\bhide-unconnected-edges\b/);
+
+    await selectNode(page, ids.tc1);
+    const deEmphasizedEdge = page.locator('.react-flow__edge.de-emphasized').first();
+    await expect(deEmphasizedEdge).toHaveCSS('opacity', '0');
+
+    await page.getByRole('button', { name: 'Filters' }).click();
+    await hideUnconnectedCheckbox.uncheck();
+
+    // 4. Items C & D: Quick Connect Popover shows already-connected badge and supports inline node creation + immediate connection
+    const rootBox = await nodeLocator(page, ids.root).locator('.custom-node').boundingBox();
+    expect(rootBox).not.toBeNull();
+    const startX = rootBox!.x + rootBox!.width + 4;
+    const startY = rootBox!.y + rootBox!.height / 2;
+    const dropX = Math.max(60, rootBox!.x - 160);
+    const dropY = Math.max(60, rootBox!.y - 120);
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(dropX, dropY, { steps: 10 });
+    await page.mouse.up();
+
+    const popover = page.locator('.quick-connect-popover');
+    await expect(popover).toBeVisible();
+
+    // Item D: Search 'Game Testing Child' (already connected from ids.root via Depends_On) -> verify connected badge is visible
+    await popover.locator('.quick-connect-search-input').fill('Game Testing Child');
+    const childCandidate = popover.locator('.quick-connect-item', { hasText: 'Game Testing Child' });
+    await expect(childCandidate).toBeVisible();
+    await expect(childCandidate.locator('.quick-connect-connected-badge')).toBeVisible();
+
+    // Item C: Type a new node name and click inline Create & Connect button
+    await popover.locator('.quick-connect-search-input').fill('Quick_Created_Dungeon');
+    const createBtn = popover.locator('.quick-connect-create-btn');
+    await expect(createBtn).toBeVisible();
+
+    const postNewNode = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    const postNewEdge = page.waitForResponse(res => res.url().includes('/api/edges') && res.request().method() === 'POST');
+    await createBtn.click();
+    const createdNodeId = await (await postNewNode).json();
+    expect((await postNewEdge).ok()).toBeTruthy();
+
+    await expect(popover).toBeHidden();
+    await expect(nodeLocator(page, createdNodeId)).toBeVisible();
+
+    // 5. Item B: Clone a node with '#골드던전' while a workspace filter is active -> cloned node is immediately visible without refresh
+    await page.getByRole('button', { name: 'Filters' }).click();
+    const filterGraphRes = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.locator('#filterGraph').selectOption('subslot');
+    await filterGraphRes;
+    await page.waitForTimeout(300);
+
+    await nodeLocator(page, subId).locator('.custom-node').click({ force: true });
+    await expect(page.locator('.details-panel .node-id')).toContainText(subId);
+    await page.getByRole('button', { name: '📋 노드 복제' }).click();
+    await page.locator('.node-clone-tag-input').fill('#골드던전');
+    const cloneApiRes = page.waitForResponse(res => res.url().includes('/clone') && res.request().method() === 'POST');
+    await page.locator('.node-clone-confirm-btn').click();
+    const cloneData = await (await cloneApiRes).json();
+    const clonedNodeId = cloneData.cloned_root_id;
+
+    // Cloned node must be immediately visible on the canvas without needing a browser reload
+    await expect(nodeLocator(page, clonedNodeId)).toBeVisible({ timeout: 10000 });
+    await expect(nodeLocator(page, clonedNodeId)).toContainText('Sub_Hero_Slot #골드던전');
+  });
 });
+
+
+
+
+

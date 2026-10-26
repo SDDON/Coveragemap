@@ -630,6 +630,12 @@ def test_apply_clone_tag_rules():
     assert _apply_clone_tag("영웅 슬롯 #일반던전", "##아레나", existing) == "영웅 슬롯 #아레나2"
     # 5) 다중 해시태그('로그인 팝업 #모바일 #게스트') 복제 시 앞선 '#모바일'은 보존하고 마지막 '#게스트'만 치환
     assert _apply_clone_tag("로그인 팝업 #모바일 #게스트", "#구글", existing) == "로그인 팝업 #모바일 #구글"
+    # 6) 공백 없이 붙어있는 해시태그('보상화면#일반던전') 및 공백 포함 해시태그('파티 편성 #일반 던전') 복제 시에도 마지막 해시태그를 치환
+    assert _apply_clone_tag("보상화면#일반던전", "#골드던전", existing) == "보상화면 #골드던전"
+    assert _apply_clone_tag("파티 편성 #일반 던전", "#골드던전", existing) == "파티 편성 #골드던전"
+    assert _apply_clone_tag("파티 편성 #일반던전", "#골드 던전", existing) == "파티 편성 #골드 던전"
+    assert _apply_clone_tag("#일반던전", "#골드던전", existing) == "#골드던전"
+
 
 
 def test_clone_node_with_children_replaces_tags_resets_statuses_and_excludes_external_edges():

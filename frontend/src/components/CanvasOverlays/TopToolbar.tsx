@@ -10,6 +10,9 @@ export interface TopToolbarProps {
   onOpenPresets: () => void;
   onOpenHelp: () => void;
   onRelayout: () => void;
+  hasParentNodes?: boolean;
+  allParentsCollapsed?: boolean;
+  onToggleCollapseAll?: () => void;
 }
 
 export const TopToolbar: React.FC<TopToolbarProps> = ({
@@ -20,6 +23,9 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   onOpenPresets,
   onOpenHelp,
   onRelayout,
+  hasParentNodes = false,
+  allParentsCollapsed = false,
+  onToggleCollapseAll,
 }) => {
   return (
     <Panel position="top-left">
@@ -66,6 +72,17 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
         >
           {t.toolbar.relayoutBtn}
         </button>
+        {hasParentNodes && onToggleCollapseAll && (
+          <button
+            type="button"
+            className={`toolbar-collapse-all-btn${allParentsCollapsed ? ' active' : ''}`}
+            style={{ padding: 8, cursor: 'pointer' }}
+            title={t.parentCollapse.collapseAllTitle}
+            onClick={onToggleCollapseAll}
+          >
+            {allParentsCollapsed ? t.parentCollapse.expandAllBtn : t.parentCollapse.collapseAllBtn}
+          </button>
+        )}
       </div>
     </Panel>
   );

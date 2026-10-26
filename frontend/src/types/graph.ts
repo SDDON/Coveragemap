@@ -43,6 +43,7 @@ export interface NodeProperties {
   checklist?: ChecklistItem[];
   description?: string;
   issue_link?: string;
+  domain?: string;
   [key: string]: unknown;
 }
 
@@ -51,6 +52,7 @@ export interface CoverageNodeData extends Record<string, unknown> {
   label: string;
   name: string;
   aliases?: string[];
+  domain?: string;
   test_status: StatusName;
   is_manual_override?: boolean;
   override_reason?: string;

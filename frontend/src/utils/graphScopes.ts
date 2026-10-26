@@ -341,3 +341,131 @@ export function computeContentFocusScope(
 
   return { activeNodes, incoming, outgoing, edgeHighlights, seedUnitIds };
 }
+
+/**
+ * 도메인 문자열을 표준 키(Battle, Growth, Economy, Social, System 또는 사용자 지정 문자열)로 정규화합니다.
+ */
+export function canonicalizeDomain(raw?: string | null): string {
+  const val = String(raw || '').trim();
+  if (!val) return '';
+  const lower = val.toLowerCase();
+  if ((t.domain.keywords.battle as readonly string[]).some(k => lower === k || lower.includes(k))) return 'Battle';
+  if ((t.domain.keywords.growth as readonly string[]).some(k => lower === k || lower.includes(k))) return 'Growth';
+  if ((t.domain.keywords.economy as readonly string[]).some(k => lower === k || lower.includes(k))) return 'Economy';
+  if ((t.domain.keywords.social as readonly string[]).some(k => lower === k || lower.includes(k))) return 'Social';
+  if ((t.domain.keywords.system as readonly string[]).some(k => lower === k || lower.includes(k))) return 'System';
+  return val;
+}
+
+export function getRawNodeDomain(node?: CoverageNode | null): string {
+  if (!node) return '';
+  const raw = node.data?.properties?.domain ?? node.data?.domain ?? '';
+  const explicit = canonicalizeDomain(String(raw));
+  if (explicit) return explicit;
+
+  // Fallback: aliases 또는 노드 이름의 해시태그(#도메인:전투, #domain:Battle, #Growth 등)에서 도메인 추출
+  const aliases: string[] = Array.isArray(node.data?.aliases) ? node.data.aliases.map(a => String(a)) : [];
+  const nameTags = Array.from(String(node.data?.name || '').matchAll(/#([^\s#]+)/g)).map(m => m[1]);
+  const tokens = [...aliases, ...nameTags];
+
+  for (const tk of tokens) {
+    const clean = tk.replace(/^#+/, '').trim();
+    if (!clean) continue;
+    const lower = clean.toLowerCase();
+    for (const prefix of t.domain.tagPrefixes) {
+      if (lower.startsWith(prefix)) {
+        const extracted = clean.slice(prefix.length).trim();
+        if (extracted) return canonicalizeDomain(extracted);
+      }
+    }
+  }
+
+  for (const tk of tokens) {
+    const clean = tk.replace(/^#+/, '').trim().toLowerCase();
+    if (!clean) continue;
+    if ((t.domain.keywords.battle as readonly string[]).includes(clean)) return 'Battle';
+    if ((t.domain.keywords.growth as readonly string[]).includes(clean)) return 'Growth';
+    if ((t.domain.keywords.economy as readonly string[]).includes(clean)) return 'Economy';
+    if ((t.domain.keywords.social as readonly string[]).includes(clean)) return 'Social';
+    if ((t.domain.keywords.system as readonly string[]).includes(clean)) return 'System';
+  }
+
+  return '';
+}
+
+export function getEffectiveNodeDomain(node: CoverageNode, allNodes?: CoverageNode[]): string {
+  const own = getRawNodeDomain(node);
+  if (own) return own;
+  if (node.parentId && allNodes) {
+    const parent = allNodes.find(p => p.id === node.parentId);
+    if (parent) return getRawNodeDomain(parent);
+  }
+  return '';
+}
+
+export function getDomainMeta(domainKey: string): { key: string; tone: string; displayLabel: string } {
+  const canon = domainKey === '__unassigned__' ? '__unassigned__' : canonicalizeDomain(domainKey);
+  if (canon === 'Battle') return { key: 'Battle', tone: 'battle', displayLabel: t.domain.presets.Battle };
+  if (canon === 'Growth') return { key: 'Growth', tone: 'growth', displayLabel: t.domain.presets.Growth };
+  if (canon === 'Economy') return { key: 'Economy', tone: 'economy', displayLabel: t.domain.presets.Economy };
+  if (canon === 'Social') return { key: 'Social', tone: 'social', displayLabel: t.domain.presets.Social };
+  if (canon === 'System') return { key: 'System', tone: 'system', displayLabel: t.domain.presets.System };
+  if (canon === '__unassigned__') return { key: '__unassigned__', tone: 'system', displayLabel: t.domain.unassigned };
+  return { key: canon, tone: 'custom', displayLabel: `🏷️ ${canon}` };
+}
+
+/**
+ * PROPOSAL_TAG_BASED_DOMAIN_GROUPING.md 3.1 & 4.1:
+ * 선택된 도메인에 속한 노드(.domain-matched), 이들과 직접 연결된 허브 노드(.domain-hub),
+ * 그리고 연결 간선(.domain-edge)을 계산합니다.
+ */
+export function computeDomainScope(
+  selectedDomain: string | null,
+  nodes: CoverageNode[],
+  edges: CoverageEdge[]
+) {
+  const matchedNodeIds = new Set<string>();
+  const hubNodeIds = new Set<string>();
+  const domainEdgeIds = new Set<string>();
+  if (!selectedDomain) return { matchedNodeIds, hubNodeIds, domainEdgeIds, key: '' };
+
+  for (const n of nodes) {
+    if (String(n.data?.properties?.is_global ?? n.data?.is_global ?? '').toLowerCase() === 'true') continue;
+    const eff = getEffectiveNodeDomain(n, nodes);
+    if (selectedDomain === '__unassigned__') {
+      if (!eff) matchedNodeIds.add(n.id);
+    } else if (eff === selectedDomain) {
+      matchedNodeIds.add(n.id);
+    }
+  }
+
+  // 부모가 매칭되면 직속 자식도 매칭에 포함, 자식이 매칭되면 소속 부모도 포함
+  for (const n of nodes) {
+    if (n.parentId && matchedNodeIds.has(n.parentId)) {
+      matchedNodeIds.add(n.id);
+    } else if (n.parentId && matchedNodeIds.has(n.id)) {
+      matchedNodeIds.add(n.parentId);
+    }
+  }
+
+  // 매칭된 도메인 노드들과 직접 연결된 1-hop 외부 허브 노드(예: 메인 로비) 및 간선 산출
+  for (const e of edges) {
+    const sMatched = matchedNodeIds.has(e.source);
+    const tMatched = matchedNodeIds.has(e.target);
+    if (sMatched && tMatched) {
+      domainEdgeIds.add(e.id);
+    } else if (!isContainsEdge(e) && (sMatched || tMatched)) {
+      domainEdgeIds.add(e.id);
+      const hubId = sMatched ? e.target : e.source;
+      hubNodeIds.add(hubId);
+      const hubNode = nodes.find(n => n.id === hubId);
+      if (hubNode?.parentId) {
+        hubNodeIds.add(hubNode.parentId);
+      }
+    }
+  }
+
+  const key = `${selectedDomain}|${Array.from(matchedNodeIds).sort().join(',')}|${Array.from(hubNodeIds).sort().join(',')}|${Array.from(domainEdgeIds).sort().join(',')}`;
+  return { matchedNodeIds, hubNodeIds, domainEdgeIds, key };
+}
+

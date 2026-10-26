@@ -26,6 +26,7 @@ import { PresetManagerModal } from './components/PresetManagerModal';
 import { InspectorPanel } from './components/Inspector';
 import {
   TopToolbar,
+  DomainFilterBar,
   WorkspaceSelectorOverlay,
   CanvasContextMenu,
   QuickConnectPopover,
@@ -39,6 +40,7 @@ import {
   LoadingOverlay,
 } from './components/CanvasOverlays';
 import { calculateEdgeBundling } from './utils/edgeBundling';
+import { computeDomainScope } from './utils/graphScopes';
 import { FILTERABLE_NODE_TYPES } from './utils/constants';
 import { api } from './api/client';
 import { useUndoStack } from './hooks/useUndoStack';
@@ -69,6 +71,9 @@ export default function App() {
   const [maxDepth, setMaxDepth] = useState<number>(1);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [visibleTypes, setVisibleTypes] = useState<Set<string>>(() => new Set(FILTERABLE_NODE_TYPES));
+  const [hideUnconnectedEdges, setHideUnconnectedEdges] = useState<boolean>(false);
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
+  const [isDomainIsolated, setIsDomainIsolated] = useState<boolean>(false);
   const [aliases, setAliases] = useState<string[]>([]);
   const [globalNodesList, setGlobalNodesList] = useState<ApiNode[]>([]);
 
@@ -131,10 +136,11 @@ export default function App() {
   });
 
   const {
-    activeImpacts, setActiveImpacts, impactFilterOperator, setImpactFilterOperator, hasImpactOverlay,
+    activeImpacts, setActiveImpacts, impactFilterOperator, setImpactFilterOperator,
+    isImpactIsolated, toggleImpactIsolation, focusNodeFromImpactList, hasImpactOverlay,
     toggleImpact, removeImpact, deactivateImpact, modifiedNoteDraft, setModifiedNoteDraft, handleMarkModified, handleAcknowledge,
   } = useImpactOverlay({
-    nodesRef, setNodes, setSelectedNode, setSelectedEdge, setSearchQuery, setPinnedFocusNodeId, setErrorToast,
+    nodesRef, setNodes, setSelectedNode, setSelectedEdge, setSearchQuery, setPinnedFocusNodeId, setErrorToast, rfInstance,
     pushNodeUndoSnapshot: node => pushUndo({
       type: 'UPDATE_NODE', id: node.id,
       previousData: { label: node.data?.label || 'Node', name: node.data?.name || '', aliases: node.data?.aliases || [], test_status: node.data?.test_status || 'Untested', properties: { ...(node.data?.properties || {}) } },
@@ -148,16 +154,16 @@ export default function App() {
 
   const { rootCauseScope, scopedAuditScope } = useFocusContext({
     nodes, edges, setNodes, setEdges, selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery,
-    pinnedFocusNodeId, tracedRootNodeId, scopedAuditRootId, activeImpacts, impactFilterOperator, hasImpactOverlay, graphVersion, isDraggingRef,
+    pinnedFocusNodeId, tracedRootNodeId, scopedAuditRootId, activeImpacts, impactFilterOperator, hasImpactOverlay, selectedDomain, graphVersion, isDraggingRef,
   });
 
   const {
-    createEdgeBetweenNodes, onNodesDelete, onEdgesDelete, handleDetachFromParent,
+    createEdgeBetweenNodes, handleQuickCreateAndConnect, onNodesDelete, onEdgesDelete, handleDetachFromParent,
     handleDelete, handleSaveStatus, saveChecklist, handleCloneNode, handleSave,
   } = useGraphOperations({
     nodesRef, edgesRef, selectedNodeRef, selectedEdgeRef, editFormData, setNodes, setEdges, setSelectedNode, setSelectedEdge,
     setPinnedFocusNodeId, setActiveImpacts, pushUndo, applyLocalStatusChanges, syncStatusesFromServer, triggerRefresh, unparentNodesOnContainsDelete, setErrorToast,
-    isCreatingNode, setIsCreatingNode, rfInstance, setEditFormData,
+    isCreatingNode, setIsCreatingNode, rfInstance, setEditFormData, filterText, setFilterText, setShowAllDomains,
   });
 
   const {
@@ -185,22 +191,37 @@ export default function App() {
     }
   }, [selectedNode?.id, selectedEdge?.id, isCreatingNode]);
 
-  // Ensure it stays floating
-  // (Cypher Export 기능은 FEATURE_PRUNING_GUIDE 1순위 정리 대상으로 제거됨 — 데이터 백업/공유는 프리셋 JSON 저장 사용)
+  // 부모 노드들이 접힌(isCollapsed) 개괄 뷰 상태에서의 대리 간선(Proxy Edge) 정책 (항목 A):
+  // - 동일 그룹 내부 간선(newSource === newTarget)은 숨김 처리하여 내부 복잡도 제거
+  // - 외부 그룹과의 연결 간선은 부모 컨테이너로 위임(Reroute)하되, 기존 '...' 축약 대신
+  //   원래 관계 타입(Transition, Depends_On 등)과 병합 건수(예: Transition (×2))를 명시하고
+  //   최악 상태(Failed > Blocked > Passed > Untested) 및 활성 하이라이트 클래스를 롤업 보존합니다.
   const visibleEdges = useMemo(() => {
     const edgeMap = new Map<string, CoverageEdge>();
-    const edgePriority = (edge: CoverageEdge): number => {
-      const cls = edge.className || '';
-      let score = 0;
-      if (cls.includes('active')) score += 100;
-      if (cls.includes('highlight-root-cause')) score += 50;
-      if (cls.includes('highlight-affected')) score += 25;
-      if (cls.includes('impact-edge')) score += 25;
-      if (cls.includes('status-failed')) score += 4;
-      else if (cls.includes('status-blocked')) score += 3;
-      else if (cls.includes('status-passed')) score += 2;
-      else if (cls.includes('status-untested')) score += 1;
-      return score;
+    const reroutedCountMap = new Map<string, number>();
+
+    const statusRank = (st?: string): number => {
+      const s = String(st || '').toLowerCase();
+      if (s.includes('failed')) return 4;
+      if (s.includes('blocked')) return 3;
+      if (s.includes('passed')) return 2;
+      return 1;
+    };
+
+    const mergeEdgeClasses = (clsA: string, clsB: string): string => {
+      const tokensA = clsA.split(/\s+/).filter(Boolean);
+      const tokensB = clsB.split(/\s+/).filter(Boolean);
+      const union = new Set<string>([...tokensA, ...tokensB]);
+      // 하나라도 de-emphasized가 아니면(활성 간선이 섞여 있으면) de-emphasized 해제
+      if (!tokensA.includes('de-emphasized') || !tokensB.includes('de-emphasized')) {
+        union.delete('de-emphasized');
+      }
+      // 상태 클래스는 가장 심각한 상태(Failed > Blocked > Passed > Untested) 하나만 유지
+      const allStatuses = Array.from(union).filter(tk => tk.startsWith('status-'));
+      allStatuses.forEach(tk => union.delete(tk));
+      const bestStatus = allStatuses.sort((a, b) => statusRank(b) - statusRank(a))[0] || 'status-untested';
+      union.add(bestStatus);
+      return Array.from(union).join(' ');
     };
 
     // Ensure memoization invalidates on structural or status updates
@@ -223,15 +244,35 @@ export default function App() {
       if (newSource === newTarget) return;
 
       const isRerouted = newSource !== e.source || newTarget !== e.target;
-      const domainType = String(e.data?.type || e.label || e.type || 'floating');
+      const domainType = String(e.data?.type || e.label || 'Transition');
       const key = `${newSource}-${newTarget}-${domainType}`;
       const finalEdge: CoverageEdge = { ...e, source: newSource, target: newTarget };
       if (isRerouted) {
+        const nextCount = (reroutedCountMap.get(key) || 0) + 1;
+        reroutedCountMap.set(key, nextCount);
         finalEdge.id = key;
-        finalEdge.label = '...';
+        finalEdge.label = nextCount > 1 ? `${domainType} (×${nextCount})` : domainType;
         finalEdge.type = 'floating';
         const existing = edgeMap.get(key);
-        if (!existing || edgePriority(finalEdge) > edgePriority(existing)) edgeMap.set(key, finalEdge);
+        if (!existing) {
+          edgeMap.set(key, finalEdge);
+        } else {
+          const mergedCls = mergeEdgeClasses(existing.className || '', finalEdge.className || '');
+          const worstStatus =
+            statusRank(finalEdge.data?.test_status) > statusRank(existing.data?.test_status)
+              ? finalEdge.data?.test_status
+              : existing.data?.test_status;
+          edgeMap.set(key, {
+            ...existing,
+            label: `${domainType} (×${nextCount})`,
+            className: mergedCls,
+            data: {
+              ...(existing.data || {}),
+              type: domainType,
+              test_status: worstStatus || 'Untested',
+            },
+          });
+        }
       } else {
         edgeMap.set(e.id, finalEdge);
       }
@@ -321,6 +362,12 @@ export default function App() {
     return () => { mounted = false; clearInterval(interval); };
   }, []);
 
+  const parentNodes = useMemo(() => nodes.filter(n => n.data?.hasChildren), [nodes]);
+  const allParentsCollapsed = useMemo(
+    () => parentNodes.length > 0 && parentNodes.every(n => n.data?.isCollapsed),
+    [parentNodes]
+  );
+
   // CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.1 & 4.1:
   // 배지 Hover 시 글로벌 노드를 화면 중앙에 강제 소환(hidden: false, position: center)하지 않고,
   // 현재 캔버스에 이미 표시 중인 연결 노드들에만 경량 외곽선 하이라이트(.hovered-global-neighbor)를 부여합니다.
@@ -358,6 +405,16 @@ export default function App() {
     });
     return [...visibleEdges, ...tempEdges];
   }, [nodes, visibleEdges, hoveredGlobalBadgeId, rfInstance]);
+
+  const canvasClassName = [
+    (selectedNode || selectedEdge || searchQuery.length > 0 || pinnedFocusNodeId || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : '',
+    hasImpactOverlay ? 'has-impact' : '',
+    hasImpactOverlay && isImpactIsolated ? 'is-isolated' : '',
+    selectedDomain ? 'domain-active' : '',
+    selectedDomain && isDomainIsolated ? 'domain-isolated' : '',
+    hideUnconnectedEdges ? 'hide-unconnected-edges' : '',
+    isConnecting ? 'react-flow--connecting' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -410,7 +467,7 @@ export default function App() {
         onEdgeMouseEnter={(_, edge) => setHoveredEdge(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdge(null)}
         connectionMode={ConnectionMode.Loose}
-        className={`${(selectedNode || selectedEdge || searchQuery.length > 0 || pinnedFocusNodeId || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : ''} ${hasImpactOverlay ? 'has-impact' : ''} ${isConnecting ? 'react-flow--connecting' : ''}`}
+        className={canvasClassName}
         deleteKeyCode={['Backspace', 'Delete']}
         fitView
       >
@@ -425,6 +482,86 @@ export default function App() {
           onOpenPresets={() => setShowPresetManager(true)}
           onOpenHelp={() => setShowHelp(true)}
           onRelayout={relayoutFocused}
+          hasParentNodes={parentNodes.length > 0}
+          allParentsCollapsed={allParentsCollapsed}
+          onToggleCollapseAll={() => {
+            window.dispatchEvent(
+              new CustomEvent('toggleCollapseAllNodes', { detail: { collapsed: !allParentsCollapsed } })
+            );
+          }}
+        />
+
+        <DomainFilterBar
+          nodes={nodes}
+          selectedDomain={selectedDomain}
+          onSelectDomain={domain => {
+            setSelectedDomain(domain);
+            if (!domain) {
+              setIsDomainIsolated(false);
+              setTimeout(() => {
+                try {
+                  rfInstance?.fitView({ padding: 0.2, duration: 400 });
+                } catch {
+                  // Ignore fitView errors
+                }
+              }, 60);
+              return;
+            }
+            const scope = computeDomainScope(domain, nodesRef.current, edgesRef.current);
+            const targetIds = new Set<string>();
+            scope.matchedNodeIds.forEach(id => {
+              const nd = nodesRef.current.find(n => n.id === id);
+              if (!nd) return;
+              if (nd.hidden && nd.parentId) targetIds.add(nd.parentId);
+              else if (!nd.hidden) targetIds.add(id);
+            });
+            if (targetIds.size > 0) {
+              setTimeout(() => {
+                try {
+                  rfInstance?.fitView({
+                    nodes: Array.from(targetIds).map(id => ({ id })),
+                    padding: 0.25,
+                    maxZoom: 1.25,
+                    duration: 400,
+                  });
+                } catch {
+                  // Ignore fitView errors
+                }
+              }, 60);
+            }
+          }}
+          isDomainIsolated={isDomainIsolated}
+          onToggleDomainIsolate={() => {
+            setIsDomainIsolated(prev => {
+              const next = !prev;
+              if (selectedDomain) {
+                const scope = computeDomainScope(selectedDomain, nodesRef.current, edgesRef.current);
+                const targetIds = new Set<string>();
+                const baseSet = next ? scope.matchedNodeIds : new Set([...scope.matchedNodeIds, ...scope.hubNodeIds]);
+                baseSet.forEach(id => {
+                  const nd = nodesRef.current.find(n => n.id === id);
+                  if (!nd) return;
+                  if (nd.hidden && nd.parentId) targetIds.add(nd.parentId);
+                  else if (!nd.hidden) targetIds.add(id);
+                });
+                if (targetIds.size > 0) {
+                  setTimeout(() => {
+                    try {
+                      rfInstance?.fitView({
+                        nodes: Array.from(targetIds).map(id => ({ id })),
+                        padding: 0.25,
+                        maxZoom: 1.25,
+                        duration: 400,
+                      });
+                    } catch {
+                      // Ignore fitView errors
+                    }
+                  }, 60);
+                }
+              }
+              return next;
+            });
+          }}
         />
 
         <InspectorPanel
@@ -438,7 +575,9 @@ export default function App() {
           filterText={filterText} setFilterText={setFilterText} aliases={aliases}
           searchQuery={searchQuery} setSearchQuery={setSearchQuery}
           visibleTypes={visibleTypes} setVisibleTypes={setVisibleTypes}
-          maxDepth={maxDepth} setMaxDepth={setMaxDepth} rfInstance={rfInstance}
+          maxDepth={maxDepth} setMaxDepth={setMaxDepth}
+          hideUnconnectedEdges={hideUnconnectedEdges} setHideUnconnectedEdges={setHideUnconnectedEdges}
+          rfInstance={rfInstance}
           globalNodesList={globalNodesList} activeImpacts={activeImpacts}
           toggleImpact={toggleImpact} fetchGlobals={fetchGlobals} triggerRefresh={triggerRefresh}
           tracedRootNodeId={tracedRootNodeId} setTracedRootNodeId={setTracedRootNodeId} rootCauseScope={rootCauseScope}
@@ -466,6 +605,7 @@ export default function App() {
       <QuickConnectPopover
         popover={quickConnectPopover}
         nodes={nodes}
+        edges={edges}
         onClose={() => setQuickConnectPopover(null)}
         onSelectEdgeType={et => setQuickConnectPopover(prev => (prev ? { ...prev, edgeType: et, edgeTypeManuallySet: true } : null))}
         onSearchChange={search => setQuickConnectPopover(prev => (prev ? { ...prev, search } : null))}
@@ -474,6 +614,18 @@ export default function App() {
           const popoverSnap = quickConnectPopover;
           setQuickConnectPopover(null);
           createEdgeBetweenNodes(popoverSnap.sourceNodeId, targetId, popoverSnap.edgeTypeManuallySet ? popoverSnap.edgeType : undefined);
+        }}
+        onCreateAndConnect={(newNodeName, newNodeLabel) => {
+          if (!quickConnectPopover) return;
+          const popoverSnap = quickConnectPopover;
+          setQuickConnectPopover(null);
+          handleQuickCreateAndConnect(
+            popoverSnap.sourceNodeId,
+            newNodeName,
+            newNodeLabel,
+            popoverSnap.edgeType,
+            { x: popoverSnap.x, y: popoverSnap.y }
+          );
         }}
         onPickOnCanvas={() => {
           if (!quickConnectPopover) return;
@@ -511,6 +663,10 @@ export default function App() {
         onChangeOperator={setImpactFilterOperator}
         onRemoveImpact={removeImpact}
         onDeactivate={deactivateImpact}
+        isIsolated={isImpactIsolated}
+        onToggleIsolation={toggleImpactIsolation}
+        onSelectNodeFromList={focusNodeFromImpactList}
+        selectedNodeId={selectedNode?.id}
       />
       <ErrorToast error={errorToast || layoutError} onClose={() => { setErrorToast(null); setLayoutError(null); }} />
       <EmptyStateOverlay show={nodes.length === 0 && !loading} />

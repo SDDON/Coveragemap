@@ -43,8 +43,12 @@ Thumbs.db
 *.bak
 scratch/
 
-# 파괴적 작업 전 자동 생성되는 백업 프리셋 (로컬 전용)
-backend/presets/_autobackup_*
+# 사용자 생성 프리셋 및 파괴적 작업 전 자동 백업 프리셋 무시 (샘플 프리셋 3종만 버전 관리)
+backend/presets/*.json
+!backend/presets/honkai_starrail_title.json
+!backend/presets/minimal_e2e.json
+!backend/presets/mobile_game_qa_guide_2026_10.json
 
 # Multi-agent orchestration working directory
 .agents/teamwork/
+

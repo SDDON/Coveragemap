@@ -6,6 +6,9 @@ import {
   computeRootCauseScope,
   computeScopedAuditScope,
   computeContentFocusScope,
+  computeDomainScope,
+  getEffectiveNodeDomain,
+  getDomainMeta,
 } from '../utils/graphScopes';
 
 export interface UseFocusContextProps {
@@ -25,6 +28,7 @@ export interface UseFocusContextProps {
   activeImpacts: ActiveImpactItem[];
   impactFilterOperator: ImpactFilterOperator;
   hasImpactOverlay: boolean;
+  selectedDomain?: string | null;
   graphVersion: number;
   isDraggingRef: MutableRefObject<boolean>;
 }
@@ -46,6 +50,7 @@ export function useFocusContext({
   activeImpacts,
   impactFilterOperator,
   hasImpactOverlay,
+  selectedDomain = null,
   graphVersion,
   isDraggingRef,
 }: UseFocusContextProps) {
@@ -63,6 +68,7 @@ export function useFocusContext({
   const affectedScope = useMemo(() => computeAffectedScope(nodes, edges), [nodes, edges]);
   const rootCauseScope = useMemo(() => computeRootCauseScope(tracedRootNodeId, nodes, edges), [tracedRootNodeId, nodes, edges]);
   const scopedAuditScope = useMemo(() => computeScopedAuditScope(scopedAuditRootId, nodes, edges), [scopedAuditRootId, nodes, edges]);
+  const domainScope = useMemo(() => computeDomainScope(selectedDomain, nodes, edges), [selectedDomain, nodes, edges]);
 
   // React Flow ResizeObserver가 가시 노드의 초기 측정(measured)을 완료했는지 확인 (미측정 상태에서 setNodes로 노드 참조 교체 시 handleBounds가 초기화되는 경합 방지)
   const allNodesMeasured = useMemo(
@@ -79,13 +85,39 @@ export function useFocusContext({
     const edgeHighlights = new Set<string>();
     const relatedEdges = new Set<string>();
 
+    const nodeCollapseMap = new Map<string, { parentId?: string; isCollapsed?: boolean }>();
+    nodes.forEach(n => {
+      nodeCollapseMap.set(n.id, { parentId: n.parentId, isCollapsed: Boolean(n.data?.isCollapsed) });
+    });
+    const getProxyEdgeInfo = (e: CoverageEdge) => {
+      const sInfo = nodeCollapseMap.get(e.source);
+      const tInfo = nodeCollapseMap.get(e.target);
+      const sParent = sInfo?.parentId ? nodeCollapseMap.get(sInfo.parentId) : undefined;
+      const tParent = tInfo?.parentId ? nodeCollapseMap.get(tInfo.parentId) : undefined;
+      const newSource = sParent?.isCollapsed ? (sInfo?.parentId as string) : e.source;
+      const newTarget = tParent?.isCollapsed ? (tInfo?.parentId as string) : e.target;
+      const domainType = String(e.data?.type || e.label || 'Transition');
+      const isRerouted = newSource !== e.source || newTarget !== e.target;
+      const proxyId = isRerouted ? `${newSource}-${newTarget}-${domainType}` : e.id;
+      return { newSource, newTarget, proxyId };
+    };
+
     const searchSeeds = searchQuery
       ? nodes.filter(n => {
           const name = (n.data?.name || '').toLowerCase();
           const label = (n.data?.label || '').toLowerCase();
           const nodeAliases = (n.data?.aliases || []).map((a: string) => a.toLowerCase());
-          const q = searchQuery.toLowerCase();
-          return name.includes(q) || label.includes(q) || nodeAliases.some((a: string) => a.includes(q));
+          const effDomain = getEffectiveNodeDomain(n, nodes);
+          const domainLabel = effDomain ? getDomainMeta(effDomain).displayLabel.toLowerCase() : '';
+          const q = searchQuery.trim().toLowerCase();
+          const qClean = q.replace(/^#+/, '').trim();
+          return (
+            name.includes(q) ||
+            label.includes(q) ||
+            nodeAliases.some((a: string) => a.includes(q) || (qClean.length > 0 && a.replace(/^#+/, '').includes(qClean))) ||
+            (qClean.length > 0 && effDomain.toLowerCase().includes(qClean)) ||
+            (qClean.length > 0 && domainLabel.includes(qClean))
+          );
         })
       : [];
     const searchSeedIds = new Set(searchSeeds.map(s => s.id));
@@ -145,6 +177,14 @@ export function useFocusContext({
         edgeHighlights.add(selectedEdge.id);
         activeNodes.add(selectedEdge.source);
         activeNodes.add(selectedEdge.target);
+        edges.forEach(e => {
+          const pInfo = getProxyEdgeInfo(e);
+          if (pInfo.proxyId === selectedEdge.id) {
+            edgeHighlights.add(e.id);
+            activeNodes.add(pInfo.newSource);
+            activeNodes.add(pInfo.newTarget);
+          }
+        });
       }
     } else if (selectedNode) {
       if (isSelectedGlobal) addGlobalHolders(selectedNode.id);
@@ -159,6 +199,14 @@ export function useFocusContext({
       edgeHighlights.add(selectedEdge.id);
       activeNodes.add(selectedEdge.source);
       activeNodes.add(selectedEdge.target);
+      edges.forEach(e => {
+        const pInfo = getProxyEdgeInfo(e);
+        if (pInfo.proxyId === selectedEdge.id) {
+          edgeHighlights.add(e.id);
+          activeNodes.add(pInfo.newSource);
+          activeNodes.add(pInfo.newTarget);
+        }
+      });
       // Highlight sibling edges that point to the same target node to show the "Test Group"
       edges.filter(e => e.target === selectedEdge.target && e.id !== selectedEdge.id).forEach(e => {
         relatedEdges.add(e.id);
@@ -179,18 +227,35 @@ export function useFocusContext({
       }
     }
     if (hoveredEdge) {
-      const edge = edges.find(e => e.id === hoveredEdge);
-      if (edge) {
-        activeNodes.add(edge.source);
-        activeNodes.add(edge.target);
-      }
+      edges.forEach(e => {
+        const pInfo = getProxyEdgeInfo(e);
+        if (e.id === hoveredEdge || pInfo.proxyId === hoveredEdge) {
+          edgeHighlights.add(e.id);
+          activeNodes.add(pInfo.newSource);
+          activeNodes.add(pInfo.newTarget);
+        }
+      });
+    }
+
+    const impactMatchedNodeSet = new Set<string>();
+    if (hasImpactOverlay) {
+      nodes.forEach(n => {
+        const childNodes = n.data?.hasChildren ? nodes.filter(c => c.parentId === n.id) : [];
+        const matching = activeImpacts.filter(item =>
+          item.globalNodeId === n.id ||
+          item.connectedIds.has(n.id) ||
+          Boolean(n.data?.isCollapsed && childNodes.some(c => item.connectedIds.has(c.id)))
+        );
+        const isMatched = impactFilterOperator === 'AND' ? matching.length === activeImpacts.length : matching.length >= 1;
+        if (isMatched) impactMatchedNodeSet.add(n.id);
+      });
     }
 
     setNodes(nds => {
       if (nds.some(n => !n.hidden && (!n.measured?.width || !n.measured?.height))) return nds;
       let changed = false;
       const next = nds.map(n => {
-        let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z0-9-]+|status-[a-z-]+)\b/g, '').trim();
+        let cls = (n.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z0-9-]+|domain-[a-z0-9-]+|status-[a-z-]+)\b/g, '').trim();
         const st = (n.data?.test_status || 'untested').toLowerCase();
         cls += ' status-' + st;
         const isRootCauseNode = rootCauseScope.nodeIds.has(n.id);
@@ -225,6 +290,10 @@ export function useFocusContext({
             cls += ` impact-highlighted impact-slot-${matchingImpacts[0].slotIndex}`;
             if (matchingImpacts.length >= 2) cls += ' impact-multi-overlap';
             if (activeImpacts.some(item => item.globalNodeId === n.id)) cls += ' impact-source';
+          } else if (!n.data?.isCollapsed && impactedChildrenInOverlay.length > 0) {
+            // GLOBAL_IMPACT_ISOLATION_AND_NAVIGATION_SPEC 4.1:
+            // 펼쳐진 부모 컨테이너 내부에 영향받는 자식이 있는 경우 격리 모드에서도 컨테이너 외곽선을 은은하게 유지
+            cls += ' impact-parent-container';
           }
           if (selectedNode?.id === n.id || hoveredNode === n.id) cls += ' active';
           if (selectedNode?.id === n.id) cls += ' highlight-selected';
@@ -239,6 +308,13 @@ export function useFocusContext({
         } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId) {
           cls += ' de-emphasized';
         }
+
+        // 논리 도메인 필터링 클래스 (PROPOSAL_TAG_BASED_DOMAIN_GROUPING 4.1)
+        if (selectedDomain) {
+          if (domainScope.matchedNodeIds.has(n.id)) cls += ' domain-matched';
+          else if (domainScope.hubNodeIds.has(n.id)) cls += ' domain-hub';
+        }
+
         // 결함 원인 역추적(Root Cause Tracing, Spec 3.3) — 선행 결함 경로 맥동 강조
         if (isRootCauseNode) cls += ' highlight-root-cause';
         // D. 변경 영향권(Impact Ripple) — Focus 상태와 독립적으로 유지되는 순수 CSS 클래스
@@ -263,18 +339,26 @@ export function useFocusContext({
     setEdges(eds => {
       let changed = false;
       const next = eds.map(e => {
-        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z0-9-]+|status-[a-z-]+|edge-contains)\b/g, '').trim();
+        let cls = (e.className || '').replace(/\b(de-emphasized|active|related|highlight-[a-z-]+|impact-[a-z0-9-]+|domain-[a-z0-9-]+|status-[a-z-]+|edge-contains)\b/g, '').trim();
         const etLower = String(e.data?.type || e.label || '').toLowerCase();
-        if (etLower === 'contains' || etLower === 'has') cls += ' edge-contains';
+        const isContains = etLower === 'contains' || etLower === 'has';
+        if (isContains) cls += ' edge-contains';
         cls += ' status-' + (e.data?.test_status || 'untested').toLowerCase();
         const isRootCauseEdge = rootCauseScope.edgeIds.has(e.id);
-        const isImpactEdge = hasImpactOverlay && (impactFilterOperator === 'AND' ? activeImpacts.every(item => item.edgeIds.has(e.id)) : activeImpacts.some(item => item.edgeIds.has(e.id)));
+        const isDirectImpactEdge = hasImpactOverlay && (impactFilterOperator === 'AND' ? activeImpacts.every(item => item.edgeIds.has(e.id)) : activeImpacts.some(item => item.edgeIds.has(e.id)));
+        const isInterMatchedEdge = hasImpactOverlay && !isContains && impactMatchedNodeSet.has(e.source) && impactMatchedNodeSet.has(e.target);
+        const isImpactEdge = isDirectImpactEdge || isInterMatchedEdge;
 
         // Impact mode edge classes
         if (isImpactEdge) cls += ' impact-edge';
         else if (!hasImpactOverlay && (edgeHighlights.has(e.id) || hoveredEdge === e.id || isRootCauseEdge)) cls += ' active highlight-edge';
         else if (!hasImpactOverlay && relatedEdges.has(e.id)) cls += ' related';
         else if (!hasImpactOverlay && (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId)) cls += ' de-emphasized';
+
+        // 논리 도메인 필터링 간선 클래스 (PROPOSAL_TAG_BASED_DOMAIN_GROUPING 4.1)
+        if (selectedDomain && domainScope.domainEdgeIds.has(e.id)) {
+          cls += ' domain-edge';
+        }
 
         // 결함 원인 역추적 엣지 강조
         if (isRootCauseEdge) cls += ' highlight-root-cause';
@@ -303,6 +387,8 @@ export function useFocusContext({
     activeImpacts,
     impactFilterOperator,
     hasImpactOverlay,
+    selectedDomain,
+    domainScope,
     affectedScope,
     rootCauseScope,
     scopedAuditScope,
@@ -322,5 +408,6 @@ export function useFocusContext({
     affectedScope,
     rootCauseScope,
     scopedAuditScope,
+    domainScope,
   };
 }

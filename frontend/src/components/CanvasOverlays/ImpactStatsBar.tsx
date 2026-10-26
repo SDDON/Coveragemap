@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { ActiveImpactItem, CoverageNode, ImpactFilterOperator } from '../../types';
 import { t } from '../../locales/koKR';
 
@@ -9,9 +9,20 @@ export interface ImpactStatsBarProps {
   onChangeOperator: (operator: ImpactFilterOperator) => void;
   onRemoveImpact: (globalNodeId: string) => void;
   onDeactivate: () => void;
+  isIsolated?: boolean;
+  onToggleIsolation?: () => void;
+  onSelectNodeFromList?: (nodeId: string) => void;
+  selectedNodeId?: string | null;
 }
 
-/* Impact Overlay Stats Bar (Multi-Global 5-Slot & OR/AND Filter) */
+const STATUS_PRIORITY: Record<string, number> = {
+  Failed: 0,
+  Blocked: 1,
+  Untested: 2,
+  Passed: 3,
+};
+
+/* Impact Overlay Stats Bar (Multi-Global 5-Slot, OR/AND Filter, Isolation Toggle & Node Navigator Drawer) */
 export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
   activeImpacts,
   nodes,
@@ -19,21 +30,45 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
   onChangeOperator,
   onRemoveImpact,
   onDeactivate,
+  isIsolated = false,
+  onToggleIsolation,
+  onSelectNodeFromList,
+  selectedNodeId,
 }) => {
-  if (activeImpacts.length === 0) return null;
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  let matchedIds: Set<string>;
-  if (activeImpacts.length === 1) {
-    matchedIds = activeImpacts[0].connectedIds;
-  } else if (operator === 'AND') {
-    const [first, ...rest] = activeImpacts;
-    matchedIds = new Set(
-      Array.from(first.connectedIds).filter(id => rest.every(item => item.connectedIds.has(id)))
-    );
-  } else {
-    matchedIds = new Set<string>();
-    activeImpacts.forEach(item => item.connectedIds.forEach(id => matchedIds.add(id)));
-  }
+  const matchedIds = useMemo(() => {
+    if (activeImpacts.length === 0) return new Set<string>();
+    if (activeImpacts.length === 1) {
+      return activeImpacts[0].connectedIds;
+    }
+    if (operator === 'AND') {
+      const [first, ...rest] = activeImpacts;
+      return new Set(
+        Array.from(first.connectedIds).filter(id => rest.every(item => item.connectedIds.has(id)))
+      );
+    }
+    const union = new Set<string>();
+    activeImpacts.forEach(item => item.connectedIds.forEach(id => union.add(id)));
+    return union;
+  }, [activeImpacts, operator]);
+
+  const matchedNodes = useMemo(() => {
+    const list: CoverageNode[] = [];
+    matchedIds.forEach(id => {
+      const nd = nodes.find(n => n.id === id);
+      if (nd) list.push(nd);
+    });
+    list.sort((a, b) => {
+      const stA = STATUS_PRIORITY[String(a.data?.test_status || 'Untested')] ?? 2;
+      const stB = STATUS_PRIORITY[String(b.data?.test_status || 'Untested')] ?? 2;
+      if (stA !== stB) return stA - stB;
+      return String(a.data?.name || '').localeCompare(String(b.data?.name || ''));
+    });
+    return list;
+  }, [matchedIds, nodes]);
+
+  if (activeImpacts.length === 0) return null;
 
   const stats = activeImpacts.length === 1
     ? activeImpacts[0].stats
@@ -57,6 +92,64 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
       className="impact-stats-bar"
       style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 'var(--z-floating-panel)' }}
     >
+      {isDrawerOpen && (
+        <div
+          className="impact-navigator-drawer"
+          style={{ zIndex: 'var(--z-floating-panel)' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="impact-navigator-header">
+            <span>{t.impact.listTitle} ({matchedNodes.length})</span>
+            <button
+              type="button"
+              className="impact-navigator-close"
+              onClick={() => setIsDrawerOpen(false)}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="impact-navigator-list">
+            {matchedNodes.length === 0 ? (
+              <div className="impact-navigator-empty">{t.impact.listEmpty}</div>
+            ) : (
+              matchedNodes.map(nd => {
+                const st = String(nd.data?.test_status || 'Untested');
+                const stColor =
+                  st === 'Passed' ? '#22c55e' :
+                  st === 'Failed' ? '#ef4444' :
+                  st === 'Blocked' ? '#eab308' : '#64748b';
+                const parentNode = nd.parentId ? nodes.find(p => p.id === nd.parentId) : null;
+                const matchingSlots = activeImpacts
+                  .filter(item => item.connectedIds.has(nd.id))
+                  .map(item => item.slotIndex);
+                const isSelected = selectedNodeId === nd.id;
+
+                return (
+                  <button
+                    key={nd.id}
+                    type="button"
+                    className={`impact-navigator-item${isSelected ? ' active' : ''}`}
+                    title={t.impact.flyToHint}
+                    onClick={() => onSelectNodeFromList?.(nd.id)}
+                  >
+                    <span className="impact-stat-dot" style={{ background: stColor, flexShrink: 0 }} />
+                    <span className="impact-navigator-label">[{nd.data?.label || 'Node'}]</span>
+                    <span className="impact-navigator-name">
+                      {parentNode ? `${parentNode.data?.name || parentNode.id} › ${nd.data?.name || nd.id}` : (nd.data?.name || nd.id)}
+                    </span>
+                    <span className="impact-navigator-slots">
+                      {matchingSlots.map(slotIdx => (
+                        <span key={slotIdx} className={`impact-slot-dot slot-${slotIdx}`} />
+                      ))}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '1.1rem' }}>🔍</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
@@ -95,6 +188,24 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
           {t.impact.modeAnd}
         </button>
       </div>
+      {onToggleIsolation && (
+        <button
+          type="button"
+          className={`impact-isolate-btn${isIsolated ? ' active' : ''}`}
+          title={t.impact.isolateTitle}
+          onClick={onToggleIsolation}
+        >
+          {isIsolated ? t.impact.isolateOn : t.impact.isolateOff}
+        </button>
+      )}
+      <button
+        type="button"
+        className={`impact-list-toggle-btn${isDrawerOpen ? ' active' : ''}`}
+        title={t.impact.listTitle}
+        onClick={() => setIsDrawerOpen(prev => !prev)}
+      >
+        {isDrawerOpen ? t.impact.listToggleClose(matchedNodes.length) : t.impact.listToggleOpen(matchedNodes.length)}
+      </button>
       <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
       <div className="impact-stat-item">
         <div className="impact-stat-dot" style={{ background: '#22c55e' }} />
