@@ -426,6 +426,8 @@ export const koKR = {
     descPlaceholder: '프리셋에 대한 간략한 설명',
     saving: '저장 중...',
     save: '프리셋 파일 저장',
+    featuredBadge: '⭐ 대규모 실전 QA 샘플',
+    backupSection: (count: number) => `🕒 자동 백업 복원 목록 (${count}개)`,
   },
 
   // 우측 패널 (Inspector) 탭 및 폼 라벨

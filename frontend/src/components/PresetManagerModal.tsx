@@ -30,10 +30,14 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
 
   // New preset form state
   const [showSaveSection, setShowSaveSection] = useState(false);
+  const [showBackups, setShowBackups] = useState(false);
   const [saveId, setSaveId] = useState('');
   const [saveName, setSaveName] = useState('');
   const [saveDesc, setSaveDesc] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const regularPresets = presets.filter((p) => !p.id.startsWith('_autobackup_'));
+  const backupPresets = presets.filter((p) => p.id.startsWith('_autobackup_'));
 
   useEffect(() => {
     if (isOpen) {
@@ -126,6 +130,95 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
     } finally {
       setSaving(false);
     }
+  };
+
+  const renderPresetCard = (preset: PresetItem) => {
+    const isFeatured = preset.id === 'honkai_starrail_full_qa';
+    return (
+      <div
+        key={preset.id}
+        data-testid={`preset-card-${preset.id}`}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '16px',
+          border: isFeatured ? '2px solid #3b82f6' : '1.5px solid #e2e8f0',
+          borderRadius: '12px',
+          backgroundColor: isFeatured ? '#f8faff' : '#ffffff',
+          transition: 'all 0.15s ease',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
+                {preset.name}
+              </span>
+              {isFeatured && (
+                <span style={{
+                  padding: '2px 8px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  backgroundColor: '#dbeafe',
+                  color: '#1d4ed8',
+                  borderRadius: '9999px'
+                }}>
+                  {t.preset.featuredBadge}
+                </span>
+              )}
+              <span style={{
+                padding: '2px 8px',
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                backgroundColor: '#e0f2fe',
+                color: '#0369a1',
+                borderRadius: '9999px'
+              }}>
+                {t.preset.nodeCount(preset.node_count)}
+              </span>
+              <span style={{
+                padding: '2px 8px',
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                backgroundColor: '#f1f5f9',
+                color: '#475569',
+                borderRadius: '9999px'
+              }}>
+                {t.preset.edgeCount(preset.edge_count)}
+              </span>
+            </div>
+            <div style={{
+              fontSize: '0.85rem',
+              color: '#64748b',
+              marginTop: '6px',
+              lineHeight: '1.45'
+            }}>
+              {preset.description || t.preset.noDescription}
+            </div>
+          </div>
+
+          <button
+            onClick={() => handleLoadPreset(preset.id)}
+            disabled={loadingPresetId !== null}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: loadingPresetId === preset.id ? '#94a3b8' : '#2563eb',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              cursor: loadingPresetId !== null ? 'not-allowed' : 'pointer',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 1px 2px rgba(37, 99, 235, 0.2)'
+            }}
+          >
+            {loadingPresetId === preset.id ? t.preset.loading : t.preset.load}
+          </button>
+        </div>
+      </div>
+    );
   };
 
   if (!isOpen) return null;
@@ -274,78 +367,37 @@ export const PresetManagerModal: React.FC<PresetManagerModalProps> = ({
                 {t.preset.empty}
               </div>
             ) : (
-              presets.map((preset) => (
-                <div
-                  key={preset.id}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: '16px',
-                    border: '1.5px solid #e2e8f0',
-                    borderRadius: '12px',
-                    backgroundColor: '#ffffff',
-                    transition: 'all 0.15s ease',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>
-                          {preset.name}
-                        </span>
-                        <span style={{
-                          padding: '2px 8px',
-                          fontSize: '0.7rem',
-                          fontWeight: 600,
-                          backgroundColor: '#e0f2fe',
-                          color: '#0369a1',
-                          borderRadius: '9999px'
-                        }}>
-                          {t.preset.nodeCount(preset.node_count)}
-                        </span>
-                        <span style={{
-                          padding: '2px 8px',
-                          fontSize: '0.7rem',
-                          fontWeight: 600,
-                          backgroundColor: '#f1f5f9',
-                          color: '#475569',
-                          borderRadius: '9999px'
-                        }}>
-                          {t.preset.edgeCount(preset.edge_count)}
-                        </span>
-                      </div>
-                      <div style={{
-                        fontSize: '0.85rem',
-                        color: '#64748b',
-                        marginTop: '6px',
-                        lineHeight: '1.45'
-                      }}>
-                        {preset.description || t.preset.noDescription}
-                      </div>
-                    </div>
-
+              <>
+                {regularPresets.map(renderPresetCard)}
+                {backupPresets.length > 0 && (
+                  <div style={{ marginTop: '8px', borderTop: '1px dashed #cbd5e1', paddingTop: '12px' }}>
                     <button
-                      onClick={() => handleLoadPreset(preset.id)}
-                      disabled={loadingPresetId !== null}
+                      type="button"
+                      onClick={() => setShowBackups(!showBackups)}
                       style={{
-                        padding: '8px 16px',
-                        backgroundColor: loadingPresetId === preset.id ? '#94a3b8' : '#2563eb',
-                        color: '#ffffff',
+                        background: 'none',
                         border: 'none',
-                        borderRadius: '8px',
+                        padding: '4px 0',
+                        color: '#64748b',
                         fontWeight: 600,
-                        fontSize: '0.875rem',
-                        cursor: loadingPresetId !== null ? 'not-allowed' : 'pointer',
-                        whiteSpace: 'nowrap',
-                        boxShadow: '0 1px 2px rgba(37, 99, 235, 0.2)'
+                        fontSize: '0.85rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
                       }}
                     >
-                      {loadingPresetId === preset.id ? t.preset.loading : t.preset.load}
+                      <span>{showBackups ? '▼' : '▶'}</span>
+                      <span>{t.preset.backupSection(backupPresets.length)}</span>
                     </button>
+                    {showBackups && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                        {backupPresets.map(renderPresetCard)}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))
+                )}
+              </>
             )}
           </div>
 

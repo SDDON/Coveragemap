@@ -16,7 +16,8 @@ def ensure_presets_dir():
 def list_presets() -> List[Dict[str, Any]]:
     """List all available presets with metadata."""
     ensure_presets_dir()
-    presets = []
+    regular_presets = []
+    backup_presets = []
     
     for filename in sorted(os.listdir(PRESETS_DIR)):
         if filename.endswith(".json"):
@@ -24,18 +25,32 @@ def list_presets() -> List[Dict[str, Any]]:
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    presets.append({
-                        "id": data.get("id", os.path.splitext(filename)[0]),
+                    preset_id = data.get("id", os.path.splitext(filename)[0])
+                    item = {
+                        "id": preset_id,
                         "name": data.get("name", filename),
                         "description": data.get("description", ""),
                         "created_at": data.get("created_at", ""),
                         "node_count": len(data.get("nodes", [])),
                         "edge_count": len(data.get("edges", []))
-                    })
+                    }
+                    if preset_id.startswith(AUTOBACKUP_PREFIX) or filename.startswith(AUTOBACKUP_PREFIX):
+                        backup_presets.append(item)
+                    else:
+                        regular_presets.append(item)
             except Exception as e:
                 print(f"Error reading preset file {filename}: {e}")
-                
-    return presets
+
+    # 대표 실전 프리셋(honkai_starrail_full_qa)을 최상단에 배치하고, 자동 백업은 최신순으로 하단에 배치합니다.
+    priority_order = {
+        "honkai_starrail_full_qa": 0,
+        "mobile_game_qa_guide_2026_10": 1,
+        "honkai_starrail_title": 2,
+        "minimal_e2e": 3,
+    }
+    regular_presets.sort(key=lambda p: (priority_order.get(p["id"], 10), p["id"]))
+    backup_presets.sort(key=lambda p: p["id"], reverse=True)
+    return regular_presets + backup_presets
 
 def _resolve_preset_path(preset_id: str) -> str:
     """
@@ -142,53 +157,115 @@ def load_preset_to_neo4j(session, preset_id: str, clean: bool = False) -> Dict[s
             aliases = n.get("aliases", [])
             description = n.get("description", "")
             test_status = n.get("test_status", "Untested")
-            props = serialize_props_for_neo4j(n.get("properties", {}))
+            raw_props = dict(n.get("properties", {}))
+            if n.get("is_manual_override") is True and "is_manual_override" not in raw_props:
+                raw_props["is_manual_override"] = True
+            if n.get("override_reason") and "override_reason" not in raw_props:
+                raw_props["override_reason"] = n.get("override_reason")
+            props = serialize_props_for_neo4j(raw_props)
 
-            # Safe cypher creation
-            query = f"""
-            CREATE (n:`{label}`)
-            SET n.id = $id,
-                n.name = $name,
-                n.aliases = $aliases,
-                n.description = $description,
-                n.test_status = $test_status,
-                n += $props
-            RETURN elementId(n) AS elem_id
-            """
+            # Safe cypher creation (clean=True uses CREATE; clean=False uses MERGE by id to prevent duplicate nodes)
+            if clean or not n_id:
+                query = f"""
+                CREATE (n:`{label}`)
+                SET n.id = $id,
+                    n.name = $name,
+                    n.aliases = $aliases,
+                    n.description = $description,
+                    n.test_status = $test_status,
+                    n += $props
+                RETURN elementId(n) AS elem_id
+                """
+            else:
+                query = f"""
+                MERGE (n {{id: $id}})
+                SET n:`{label}`,
+                    n.name = $name,
+                    n.aliases = $aliases,
+                    n.description = $description,
+                    n.test_status = $test_status,
+                    n += $props
+                RETURN elementId(n) AS elem_id
+                """
             res = tx.run(query, id=n_id, name=name, aliases=aliases, description=description, test_status=test_status, props=props)
             record = res.single()
             if record:
                 elem_id = record["elem_id"]
                 id_to_elem_id[n_id] = elem_id
 
-        # 2. Create Edges
+        # 2. Create Edges (UNWIND batching by edge type for large 300+ edge presets)
         created_edges_count = 0
+        batched_by_type: Dict[str, List[Dict[str, Any]]] = {}
+        fallback_edges: List[Dict[str, Any]] = []
+
         for e in edges:
             source_key = e.get("source")
             target_key = e.get("target")
             e_type = e.get("type", "Depends_On")
-            action = e.get("action", "")
+            action = e.get("action") or e.get("properties", {}).get("action", "")
             test_status = e.get("test_status", "Untested")
-            props = e.get("properties", {})
+            raw_edge_props = dict(e.get("properties", {}))
+            if str(e_type).upper() == "RETURN" and "weight" not in raw_edge_props:
+                raw_edge_props["weight"] = 0
+            props = serialize_props_for_neo4j(raw_edge_props)
 
             source_elem = id_to_elem_id.get(source_key)
             target_elem = id_to_elem_id.get(target_key)
 
             if source_elem and target_elem:
-                edge_query = f"""
-                MATCH (s), (t)
-                WHERE elementId(s) = $s_id AND elementId(t) = $t_id
-                CREATE (s)-[r:`{e_type}`]->(t)
-                SET r.action = $action,
-                    r.test_status = $test_status,
-                    r += $props
-                RETURN elementId(r) AS elem_id
-                """
-                res = tx.run(edge_query, s_id=source_elem, t_id=target_elem, action=action, test_status=test_status, props=props)
-                if res.single():
-                    created_edges_count += 1
+                batched_by_type.setdefault(e_type, []).append({
+                    "s_id": source_elem,
+                    "t_id": target_elem,
+                    "action": action,
+                    "test_status": test_status,
+                    "props": props,
+                })
             else:
-                # Fallback lookup by id property if nodes were already existing in DB
+                fallback_edges.append({
+                    "source_key": source_key,
+                    "target_key": target_key,
+                    "e_type": e_type,
+                    "action": action,
+                    "test_status": test_status,
+                    "props": props,
+                })
+
+        for e_type, batch in batched_by_type.items():
+            if clean:
+                edge_query = f"""
+                UNWIND $batch AS item
+                MATCH (s), (t)
+                WHERE elementId(s) = item.s_id AND elementId(t) = item.t_id
+                CREATE (s)-[r:`{e_type}`]->(t)
+                SET r.action = item.action,
+                    r.test_status = item.test_status,
+                    r += item.props
+                RETURN count(r) AS cnt
+                """
+            else:
+                edge_query = f"""
+                UNWIND $batch AS item
+                MATCH (s), (t)
+                WHERE elementId(s) = item.s_id AND elementId(t) = item.t_id
+                MERGE (s)-[r:`{e_type}` {{action: item.action}}]->(t)
+                SET r.test_status = item.test_status,
+                    r += item.props
+                RETURN count(r) AS cnt
+                """
+            res = tx.run(edge_query, batch=batch)
+            record = res.single()
+            if record and isinstance(record.get("cnt") if hasattr(record, "get") else None, int):
+                created_edges_count += record["cnt"]
+            elif record:
+                try:
+                    cnt_val = record["cnt"]
+                    created_edges_count += cnt_val if isinstance(cnt_val, int) else len(batch)
+                except Exception:
+                    created_edges_count += len(batch)
+
+        for fe in fallback_edges:
+            e_type = fe["e_type"]
+            if clean:
                 edge_query = f"""
                 MATCH (s {{id: $source_key}}), (t {{id: $target_key}})
                 CREATE (s)-[r:`{e_type}`]->(t)
@@ -197,9 +274,24 @@ def load_preset_to_neo4j(session, preset_id: str, clean: bool = False) -> Dict[s
                     r += $props
                 RETURN elementId(r) AS elem_id
                 """
-                res = tx.run(edge_query, source_key=source_key, target_key=target_key, action=action, test_status=test_status, props=props)
-                if res.single():
-                    created_edges_count += 1
+            else:
+                edge_query = f"""
+                MATCH (s {{id: $source_key}}), (t {{id: $target_key}})
+                MERGE (s)-[r:`{e_type}` {{action: $action}}]->(t)
+                SET r.test_status = $test_status,
+                    r += $props
+                RETURN elementId(r) AS elem_id
+                """
+            res = tx.run(
+                edge_query,
+                source_key=fe["source_key"],
+                target_key=fe["target_key"],
+                action=fe["action"],
+                test_status=fe["test_status"],
+                props=fe["props"],
+            )
+            if res.single():
+                created_edges_count += 1
 
         tx.commit()
     except Exception:
@@ -234,11 +326,17 @@ def save_current_graph_as_preset(session, preset_id: str, name: str, description
     elem_to_export_id = {}
     used_ids = set()
     for n in response_data.nodes:
-        export_id = n.properties.get("id") or n.id
+        semantic_id = full_graph.nodes[n.id].get("semantic_id") if n.id in full_graph else None
+        export_id = semantic_id or n.properties.get("id") or n.id
         if export_id in used_ids:
             export_id = n.id
         used_ids.add(export_id)
         elem_to_export_id[n.id] = export_id
+        exported_props = {k: v for k, v in n.properties.items() if k not in ("id", "name", "aliases", "test_status", "description")}
+        if getattr(n, "is_manual_override", False):
+            exported_props["is_manual_override"] = True
+            if getattr(n, "override_reason", None):
+                exported_props["override_reason"] = n.override_reason
         nodes_export.append({
             "id": export_id,
             "label": n.label,
@@ -246,7 +344,7 @@ def save_current_graph_as_preset(session, preset_id: str, name: str, description
             "aliases": n.aliases,
             "description": n.properties.get("description", ""),
             "test_status": n.test_status,
-            "properties": {k: v for k, v in n.properties.items() if k not in ("id", "name", "aliases", "test_status", "description")}
+            "properties": exported_props
         })
         
     edges_export = []

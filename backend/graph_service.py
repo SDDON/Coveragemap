@@ -266,7 +266,8 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
             override_reason = n_raw.get("override_reason")
             
             G.add_node(n_id, label=label, name=name, aliases=aliases, properties=n_props,
-                       test_status=test_status, is_manual_override=is_manual_override, override_reason=override_reason)
+                       test_status=test_status, is_manual_override=is_manual_override,
+                       override_reason=override_reason, semantic_id=n_raw.get("id"))
         
         m = record["m"]
         r = record["r"]
@@ -289,7 +290,8 @@ def fetch_graph_from_neo4j(session) -> nx.MultiDiGraph:
             m_override_reason = m_raw.get("override_reason")
             
             G.add_node(m_id, label=m_label, name=m_name, aliases=m_aliases, properties=m_props,
-                       test_status=m_test_status, is_manual_override=m_is_manual_override, override_reason=m_override_reason)
+                       test_status=m_test_status, is_manual_override=m_is_manual_override,
+                       override_reason=m_override_reason, semantic_id=m_raw.get("id"))
             
             r_id = str(r.element_id)
             r_raw = dict(r)

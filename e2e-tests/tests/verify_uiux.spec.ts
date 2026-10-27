@@ -133,4 +133,70 @@ test.describe('Badge Usability UI/UX Verification', () => {
     await badge.hover();
     await expect(tooltip).toBeVisible();
   });
+
+  test('Page title is CoverageMap and enterprise preset (40 nodes / 300 edges) loads cleanly', async ({ page, request }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('savedShowAll', 'true');
+    });
+    const graphPromise = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.goto('/');
+    await graphPromise;
+
+    await expect(page).toHaveTitle('CoverageMap');
+
+    // Open Presets modal
+    await page.locator('button:has-text("Presets")').click();
+    const featuredCard = page.getByTestId('preset-card-honkai_starrail_full_qa');
+    await expect(featuredCard).toBeVisible();
+    await expect(featuredCard).toContainText('노드 40개');
+    await expect(featuredCard).toContainText('엣지 300개');
+
+    // Click Load on featured preset
+    const loadRespPromise = page.waitForResponse(
+      res => res.url().includes('/api/presets/honkai_starrail_full_qa/load') && res.status() === 200
+    );
+    await featuredCard.locator('button:has-text("불러오기")').click();
+    const loadResp = await loadRespPromise;
+    const loadJson = await loadResp.json();
+    expect(loadJson.nodes_created).toBe(40);
+    expect(loadJson.edges_created).toBe(300);
+
+    // Verify backend /api/graph returns 40 nodes and 300 edges
+    const verifyGraph = await (await request.get('/api/graph')).json();
+    expect(verifyGraph.nodes.length).toBe(40);
+    expect(verifyGraph.edges.length).toBe(300);
+
+    // Wait for modal auto-close (700ms timer), then re-open Presets modal to verify collapsible auto-backup section and merge mode (clean=false)
+    await expect(featuredCard).not.toBeVisible();
+    await page.locator('button:has-text("Presets")').click();
+    const backupToggleBtn = page.locator('button:has-text("자동 백업 복원 목록")');
+    await expect(backupToggleBtn).toBeVisible();
+    await backupToggleBtn.click();
+    await expect(page.locator('[data-testid^="preset-card-_autobackup_"]').first()).toBeVisible();
+
+    // Uncheck Clean Load to test Merge mode (clean=false) idempotency on the 40-node / 300-edge graph
+    const cleanCheckbox = page.locator('#cleanLoadCheckbox');
+    await cleanCheckbox.uncheck();
+
+    const mergeRespPromise = page.waitForResponse(
+      res => res.url().includes('/api/presets/honkai_starrail_full_qa/load?clean=false') && res.status() === 200
+    );
+    await page.getByTestId('preset-card-honkai_starrail_full_qa').locator('button:has-text("불러오기")').click();
+    const mergeResp = await mergeRespPromise;
+    const mergeJson = await mergeResp.json();
+    expect(mergeJson.clean_mode).toBe(false);
+
+    // Verify graph did not duplicate nodes or edges after merge load
+    const verifyMergedGraph = await (await request.get('/api/graph')).json();
+    expect(verifyMergedGraph.nodes.length).toBe(40);
+    expect(verifyMergedGraph.edges.length).toBe(300);
+
+    // Verify the latest auto-backup of the 40-node graph preserved semantic node IDs
+    const presetsList = await (await request.get('/api/presets')).json();
+    const latestBackup = presetsList.find((p: any) => p.id.startsWith('_autobackup_') && p.node_count === 40);
+    expect(latestBackup).toBeTruthy();
+    const backupDetail = await (await request.get(`/api/presets/${latestBackup.id}`)).json();
+    expect(backupDetail.nodes.some((n: any) => n.id === 'Screen_Title_Express')).toBe(true);
+  });
 });
+

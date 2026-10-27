@@ -1,0 +1,3570 @@
+{
+  "id": "honkai_starrail_full_qa",
+  "name": "호요버스 『붕괴: 스타레일』 — 전 도메인 실전 통합 QA 맵 (40 Nodes / 300 Edges)",
+  "description": "대형 서브컬처 수집형 턴제 RPG 『붕괴: 스타레일(Honkai: Star Rail)』의 실제 인게임 5대 도메인(⚙️시스템 · 🎒성장 · 💎상점/워프 · ⚔️전투/가이드 · 👥소셜/우편함)을 40개 노드와 300개 간선으로 모델링한 실전 규모 QA 커버리지 프리셋입니다. ① 9개 상위 화면(Screen)과 20개 하위 컴포넌트(Contains, Max Depth=1), ② 4종 공용 모달 팝업(#Popup) 및 정방향 Transition / 역방향 Return(가중치 0) 순환 내비게이션, ③ 결제 API 결함(🔴 Failed) → 상점 결제(🟡 1-Hop Blocked) → 우편함 수령(🟡 2-Hop Blocked) 연쇄 차단 및 원인 역추적, ④ 종말의 환영 시즌 미오픈 수동 고정(📌), ⑤ 캐릭터 이벤트 워프 스펙 변경 영향도(⚡ Ripple), ⑥ 5대 전역 배지(다국어·네트워크·오디오·재화바·레드닷) 다중 Impact 격리 탐색을 즉시 검증할 수 있습니다.",
+  "created_at": "2026-10-27T12:30:00Z",
+  "nodes": [
+    {
+      "id": "Screen_Title_Express",
+      "label": "Screen",
+      "name": "타이틀 & 은하열차 진입 화면",
+      "aliases": [
+        "Title",
+        "Entry",
+        "System"
+      ],
+      "description": "호요버스 붕괴: 스타레일 최초 실행 시 은하열차 3D 배경 렌더링, 패치 무결성 검사, 통행증 인증 및 권역 서버 진입을 총괄하는 부모 화면 컨테이너입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "System",
+        "checklist": [
+          {
+            "id": "chk_te_1",
+            "text": "은하열차 3D 배경 씬 렌더링 및 타이틀 테마곡(BGM) 루프 재생 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_te_2",
+            "text": "우측 하단 클라이언트 빌드 버전 및 리소스 해시 정상 노출 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_te_3",
+            "text": "열차 승차 터치 시 카메라 줌인 연출 및 프레임 드랍 없는 월드 진입 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Phone_Hub",
+      "label": "Screen",
+      "name": "스마트폰 메인 메뉴 (범우주 내비게이션 허브)",
+      "aliases": [
+        "Lobby",
+        "Hub",
+        "PhoneMenu",
+        "System"
+      ],
+      "description": "인게임 좌측 상단 스마트폰(ESC) 호출 시 열리는 중심 허브 화면입니다. 캐릭터 육성, 차원 도약, 상점, 성간 평화 가이드, 가방, 소셜/우편함 등 전 도메인으로 분기합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "System",
+        "checklist": [
+          {
+            "id": "chk_ph_1",
+            "text": "스마트폰 호출 시 캐릭터별 고유 휴대폰 케이스 연출 및 그리드 메뉴 노출 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_ph_2",
+            "text": "개척자 닉네임, UID, 균형 레벨(EQ) 및 개척 경험치 바 동기화 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_ph_3",
+            "text": "하위 콘텐츠 미확인 알림(Red Dot) 발생 시 스마트폰 아이콘 상단 배지 롤업 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Character_Growth",
+      "label": "Screen",
+      "name": "캐릭터 상세 & 육성 시스템 화면",
+      "aliases": [
+        "Character",
+        "Growth",
+        "Progression"
+      ],
+      "description": "보유 캐릭터의 속성/운명의 길 확인 및 레벨 승급, 광추 장착, 행적 노드 개방, 유물 6파츠 세팅을 수행하는 성장 도메인 핵심 컨테이너입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_cg_1",
+            "text": "상단 캐릭터 초상화 리스트 전환 시 3D 모델링 및 무기 포즈 즉시 스위칭 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_cg_2",
+            "text": "상세 스탯(HP/공격력/방어력/속도/치명타/격파특수효과) 실시간 합산 일치 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_cg_3",
+            "text": "상세·광추·행적·유물·성혼 서브 탭 전환 시 카메라 줌 포커싱 자연스러움 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Inventory_Synth",
+      "label": "Screen",
+      "name": "가방(인벤토리) & 만능 합성기 화면",
+      "aliases": [
+        "Inventory",
+        "Synthesizer",
+        "Growth"
+      ],
+      "description": "광추·유물·육성 소재·소모품 보유 현황 관리, 유물 일괄 분해 및 만능 합성기(소재 3:1 합성·등가 치환·유물 레진 합성)를 포함하는 컨테이너입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_is_1",
+            "text": "탭별 보유 수량(유물 2000개 상한 등) 표시 및 정렬/필터 조건 유지 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_is_2",
+            "text": "아이템 상세 팝오버 내 배경 스토리 및 [획득처] 바로가기 목록 정상 노출 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Warp_Gacha",
+      "label": "Screen",
+      "name": "차원 도약 (워프/가챠 소환) 화면",
+      "aliases": [
+        "Warp",
+        "Gacha",
+        "Economy"
+      ],
+      "description": "별의 궤도 전용티켓/일반티켓을 소모하여 한정 캐릭터·광추 이벤트 워프 및 상시 워프를 수행하는 핵심 BM 화면 컨테이너입니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Economy",
+        "checklist": [
+          {
+            "id": "chk_wg_1",
+            "text": "워프 실행 시 은하열차 도약 연출 및 무지개(5성)/금빛(4성) 티켓 이펙트 분기 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_wg_2",
+            "text": "[v2.6 신규] 10연차 결과 요약 화면에서 중복 캐릭터 성혼/성망 자동 전환 표기 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Store_Nameless",
+      "label": "Screen",
+      "name": "상점(잔화·성망·성옥) & 무명객의 영광 화면",
+      "aliases": [
+        "Store",
+        "Shop",
+        "BattlePass",
+        "Economy"
+      ],
+      "description": "워프 페이백 재화(잔화/성망) 교환소, 오네이로스의 결정 인앱 결제, 열차 보급 허가증(월정액) 및 시즌 배틀패스를 관리하는 경제 도메인 컨테이너입니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Economy",
+        "checklist": [
+          {
+            "id": "chk_sn_1",
+            "text": "월간 상점 갱신 잔여 타이머(DD일 HH시간) 서버 UTC 기준 동기화 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_sn_2",
+            "text": "무명객의 영광(배틀패스) 주간 경험치 상한(8000pt) 도달 시 안내 문구 노출 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Interastr_Guide",
+      "label": "Screen",
+      "name": "성간 평화 가이드 (생존 인덱스 & 엔드콘텐츠)",
+      "aliases": [
+        "Guide",
+        "SurvivalIndex",
+        "Battle"
+      ],
+      "description": "일일 훈련 활약도, 개척력(스태미나) 파밍 던전(고치/침식된 터널/전쟁의 여운) 및 시뮬레이션 우주·망각의 정원 즉시 이동을 제공하는 전투 허브 화면입니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Battle",
+        "checklist": [
+          {
+            "id": "chk_ig_1",
+            "text": "개척력(240/240) 및 예비 개척력(최대 2400) 실시간 회복 카운트다운 표시 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_ig_2",
+            "text": "생존 인덱스 내 추천 육성 소재 하이라이트 및 스테이지 워프 즉시 이동 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_TurnBattle_Core",
+      "label": "Screen",
+      "name": "인게임 턴제 전투 & 비술 필드 진입 화면",
+      "aliases": [
+        "TurnBattle",
+        "Combat",
+        "Battle"
+      ],
+      "description": "4인 파티 편성, 필드 비술 선공 진입, 행동 서열(AV) 기반 턴제 전투 HUD, 필살기 난입 및 약점 격파 정산을 담당하는 코어 전투 컨테이너입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Battle",
+        "checklist": [
+          {
+            "id": "chk_tb_1",
+            "text": "필드 비술(Technique) 공격 적중 시 적 약점 속성 판정 및 전투 씬 심리스 진입 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_tb_2",
+            "text": "좌측 행동 서열 타임라인 및 우측 하단 전투 스킬 포인트(최대 5 SP) 증감 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_tb_3",
+            "text": "2배속 재생 및 자동 전투 AI 토글 상태가 다음 전투에도 유지되는지 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Screen_Social_Assignment",
+      "label": "Screen",
+      "name": "소셜 지원 · 의뢰 파견 & 우편함 화면",
+      "aliases": [
+        "Social",
+        "Support",
+        "Assignment",
+        "Mailbox"
+      ],
+      "description": "친구 목록 및 지원 캐릭터 차용, 4슬롯 의뢰 파견 보상 수령, 시스템/결제 보상 우편함을 관리하는 소셜 도메인 컨테이너입니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Social",
+        "checklist": [
+          {
+            "id": "chk_sa_1",
+            "text": "친구 UID 검색, 친구 신청 수락/거절 및 지원 캐릭터 전투 차용 목록 갱신 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_sa_2",
+            "text": "우편함 보관 상한(1000통) 도달 시 읽은 우편 일괄 삭제 및 중요 우편 잠금 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Patch_CDN",
+      "label": "Component",
+      "name": "리소스 무결성 검증 & CDN 패치 다운로드",
+      "aliases": [
+        "Patch",
+        "CDN",
+        "System"
+      ],
+      "description": "클라이언트 실행 시 원격 에셋 버전 대조, 손상 리소스 복구 및 Wi-Fi/데이터 분할 다운로드를 수행합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "System",
+        "checklist": [
+          {
+            "id": "chk_pc_1",
+            "text": "패치 에셋 MD5/해시 무결성 검증 및 중단 시 이어받기 정상 동작 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_pc_2",
+            "text": "디바이스 잔여 저장공간 부족 시 사전 안내 모달 노출 및 진행 일시정지 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Server_Gate",
+      "label": "Component",
+      "name": "권역 서버 선택(Asia/America/Europe/TW) & 열차 승차",
+      "aliases": [
+        "Server",
+        "Gate",
+        "System"
+      ],
+      "description": "권역별 게임 서버 레이턴시(Ping) 표시, 점검 상태 체크 및 은하열차 승차 진입 시퀀스를 담당합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "System",
+        "checklist": [
+          {
+            "id": "chk_sg_1",
+            "text": "권역별 서버 핑(ms) 색상 표시 및 직전 로그인 서버 자동 선택 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_sg_2",
+            "text": "점검 시간대 서버 진입 시도 시 점검 공지 모달 노출 및 열차 승차 차단 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Trailblaze_Profile",
+      "label": "Component",
+      "name": "개척자 프로필 · 균형 레벨(EQ) & 성간 내비게이션",
+      "aliases": [
+        "Profile",
+        "Navigation",
+        "System"
+      ],
+      "description": "개척자 여권(프로필/명함), 균형 시련 등급 해금 상태 및 각 행성(헤르타 정거장/야릴로-VI/선주 나부/페나코니) 내비게이션을 관리합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "System",
+        "checklist": [
+          {
+            "id": "chk_tp_1",
+            "text": "프로필 아바타·명함 스킨·지원 캐릭터 3인 설정 저장 시 즉시 반영 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_tp_2",
+            "text": "성간 내비게이션 성계도에서 층별 경계 닻(워프 포인트) 텔레포트 이동 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_System_Settings",
+      "label": "Component",
+      "name": "환경설정 (그래픽 60FPS · 오디오 · 언어 · 계정 연동)",
+      "aliases": [
+        "Settings",
+        "Option",
+        "System"
+      ],
+      "description": "해상도/60FPS 그래픽 옵션, 4개국 음성팩 다운로드, 푸시 알림 및 통행증 계정 연동을 제어합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "System",
+        "checklist": [
+          {
+            "id": "chk_ss_1",
+            "text": "렌더링 정밀도 및 30/60FPS 변경 시 클라이언트 재시작 없이 즉시 반영 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_ss_2",
+            "text": "한국어/영어/일본어/중국어 음성팩 선택 다운로드 및 미사용 음성팩 삭제 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Char_Ascension",
+      "label": "Component",
+      "name": "캐릭터 레벨업 & 균형 등급 승급 돌파",
+      "aliases": [
+        "Ascension",
+        "LevelUp",
+        "Growth"
+      ],
+      "description": "경험치 소재(여행자의 길잡이 등) 자동 채우기 및 20~70레벨 구간별 정체된 허영 소재 소모 승급 돌파를 처리합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_ca_1",
+            "text": "경험치 소재 자동 선택 시 최대 레벨 초과분 하위 소재 환급 계산 정확성 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_ca_2",
+            "text": "20/40/60레벨 승급 돌파 완료 시 상시 워프 티켓(별의 궤도 티켓) 보상 활성화 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_LightCone_Equip",
+      "label": "Component",
+      "name": "광추(Light Cone) 장착 · 승급 & 중첩(1~5단계)",
+      "aliases": [
+        "LightCone",
+        "Weapon",
+        "Growth"
+      ],
+      "description": "운명의 길 전용 무기인 광추의 장착, 레벨 승급 및 동일 광추 소모 중첩(Superimposition 1~5단계)을 처리합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_lc_1",
+            "text": "캐릭터와 동일한 운명의 길 광추 장착 시에만 고유 패시브 효과 활성화 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_lc_2",
+            "text": "동일 광추 중첩 시 잠금(Lock) 상태 재료 선택 차단 및 5단계 상한 표시 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Trace_SkillTree",
+      "label": "Component",
+      "name": "행적(Traces) 스킬 트리 개방 & 추가 능력 활성화",
+      "aliases": [
+        "Traces",
+        "SkillTree",
+        "Growth"
+      ],
+      "description": "일반 공격·전투 스킬·필살기·특성 레벨업 및 캐릭터 승급 단계에 종속된 추가 능력 노드를 개방합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_ts_1",
+            "text": "선행 승급 등급 및 상위 행적 노드 개방 시에만 하위 가지 노드 해금 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_ts_2",
+            "text": "운명의 발자취 및 전쟁의 여운 보스 소재 소모 시 스킬 배율 상승 반영 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Relic_Set6",
+      "label": "Component",
+      "name": "유물 4세트 + 차원 장신구 2세트 장착 & 강화",
+      "aliases": [
+        "Relics",
+        "Ornaments",
+        "Growth"
+      ],
+      "description": "머리·손·몸통·다리 터널 유물 4부위와 구체·매듭 차원 장신구 2부위의 세트 장착, +15 강화 및 추천 세팅을 관리합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_rs_1",
+            "text": "2세트/4세트 및 차원 장신구 2세트 조건 충족 시 세트 효과 활성화 하이라이트 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_rs_2",
+            "text": "+3/+6/+9/+12/+15 단계 도달 시 부옵션 신규 부여 및 강화 횟수 배지 표기 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Bag_Filter_Destroy",
+      "label": "Component",
+      "name": "가방 장비·소재 다중 필터링 & 유물 일괄 분해",
+      "aliases": [
+        "BagFilter",
+        "Salvage",
+        "Growth"
+      ],
+      "description": "인벤토리 내 유물 주옵션/부옵션 다중 필터, 폐기 마크 지정 및 유물 잔해/경험치 소재 일괄 분해를 수행합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_bf_1",
+            "text": "유물 부위·주옵션·부옵션 포함/제외 필터 조합 시 일치 항목 즉시 필터링 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_bf_2",
+            "text": "5성 유물 분해 시 유물 잔해(10개) 전환 및 강화 유물 경험치 환급 계산 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Omni_Synthesizer",
+      "label": "Component",
+      "name": "만능 합성기 (소재 3:1 합성 · 등가 치환 · 유물 레진 합성)",
+      "aliases": [
+        "Synthesizer",
+        "Crafting",
+        "Growth"
+      ],
+      "description": "하위 행적/승급 소재 3:1 상위 합성, 타 속성 승급 소재 등가 치환 및 자가 모델링 레진을 이용한 주옵션 지정 유물 합성을 담당합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_os_1",
+            "text": "하위 소재 3개 소모 상위 소재 1개 합성 시 보유량 기반 최대 합성 수량 계산 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_os_2",
+            "text": "자가 모델링 레진 투입 시 몸통/다리/구체/매듭 주옵션 확정 생성 동작 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Warp_Char_Event",
+      "label": "Component",
+      "name": "캐릭터 이벤트 워프 (90회 천장 & 픽업 보정)",
+      "aliases": [
+        "CharWarp",
+        "Banner",
+        "Economy"
+      ],
+      "description": "[⚡ 스펙 변경 영향도 데모] v2.6 패치로 10연차 스킵 시 미보유 5성 등장 강제 정지 연출 및 천장 카운터 UI가 개편되었습니다. 하류 잔화/성망 교환소 및 확률 팝업이 2-hop 영향권(.highlight-affected)으로 강조됩니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Economy",
+        "is_modified": true,
+        "modified_note": "v2.6 패치: 10연차 연출 스킵 시 미보유 5성 강제 정지 연출 및 배너 하단 잔여 천장 카운터 UI 신설 (재검증 후 Acknowledge 필요)",
+        "modified_at": "2026-10-27T09:00:00Z",
+        "checklist": [
+          {
+            "id": "chk_wc_1",
+            "text": "별의 궤도 전용티켓 부족 시 성옥(160개/1회) 환산 구매 확인 모달 호출",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_wc_2",
+            "text": "90회 이내 5성 확정 획득 및 픽업 50% 실패 시 차회 5성 픽업 100% 확정 보정 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_wc_3",
+            "text": "[v2.6 신규] 10연차 스킵 중 미보유 5성 획득 시 스킵 정지 및 풀스크린 스플래시 노출 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Warp_LightCone_Event",
+      "label": "Component",
+      "name": "광추 이벤트 워프 (80회 천장) & 상시 300회 선택권",
+      "aliases": [
+        "LightConeWarp",
+        "RegularWarp",
+        "Economy"
+      ],
+      "description": "한정 5성 광추 이벤트 워프(80회 천장, 75% 픽업 확률) 및 상시 뭇별의 워프 300회 달성 추가 보상 선택권을 관리합니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Economy",
+        "checklist": [
+          {
+            "id": "chk_wl_1",
+            "text": "광추 이벤트 워프 80회 천장 카운트가 캐릭터 워프와 독립적으로 집계되는지 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_wl_2",
+            "text": "상시 워프 누적 300회 달성 시 상시 5성 캐릭터 1명 선택 수령(1회 한정) 활성화 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Store_Ember_Starlight",
+      "label": "Component",
+      "name": "꺼지지 않는 잔화 · 성망 교환소 & 전용티켓 교환",
+      "aliases": [
+        "EmberShop",
+        "StarlightShop",
+        "Economy"
+      ],
+      "description": "워프 부산물로 획득한 잔화 및 성망을 소모해 월간 할인 워프 티켓(각 5매), 운명의 발자취, 상시 5성 광추를 교환합니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Economy",
+        "checklist": [
+          {
+            "id": "chk_se_1",
+            "text": "월간 잔화 상점 별의 궤도 전용티켓/일반티켓 각 5매 구매 한도 차감 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_se_2",
+            "text": "성망 600개 소모 상시 5성 광추 교환 시 재확인 팝업 및 인벤토리 즉시 지급 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Store_Oneiric_Supply",
+      "label": "Component",
+      "name": "오네이로스의 결정 초회 2배 결제 & 열차 보급 허가증",
+      "aliases": [
+        "OneiricShard",
+        "MonthlyPass",
+        "IAP",
+        "Economy"
+      ],
+      "description": "[🟡 1-Hop 연쇄 차단 데모] 선행 인앱 결제 영수증 검증 API(API_IAP_Billing_Gateway)의 504 Timeout 결함으로 인해 자동으로 Blocked된 상점 결제 컴포넌트입니다.",
+      "test_status": "Blocked",
+      "properties": {
+        "domain": "Economy",
+        "checklist": [
+          {
+            "id": "chk_so_1",
+            "text": "오네이로스의 결정 트랙별 초회 2배 보너스 배지 표기 및 성옥 1:1 환전 동작 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_so_2",
+            "text": "열차 보급 허가증 구매 시 즉시 300 결정 지급 및 잔여 기간(최대 179일) 누적 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Calyx_Cavern_Echo",
+      "label": "Component",
+      "name": "고치(행적/경험치) · 침식된 터널(유물) · 전쟁의 여운(주간보스)",
+      "aliases": [
+        "Calyx",
+        "Cavern",
+        "EchoOfWar",
+        "Battle"
+      ],
+      "description": "개척력을 소모하여 경험치/신용포인트(금빛 고치), 행적 소재(붉은 고치), 승급 소재(정체된 허영), 유물(침식된 터널), 주간보스(전쟁의 여운)를 파밍합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Battle",
+        "checklist": [
+          {
+            "id": "chk_cc_1",
+            "text": "고치 연속 전투 웨이브(1~6회) 조절 시 필요 개척력(10~60) 비례 증가 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_cc_2",
+            "text": "전쟁의 여운 주간 보상 횟수(3/3) 차감 및 소진 후 도전 불가 안내 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Simulated_Universe_MoC",
+      "label": "Component",
+      "name": "시뮬레이션 우주 · 차원 분열 & 망각의 정원(혼돈의 기억) #혼돈의기억",
+      "aliases": [
+        "SimulatedUniverse",
+        "MemoryOfChaos",
+        "혼돈의기억",
+        "Battle"
+      ],
+      "description": "주간 포인트 및 차원 장신구를 획득하는 로그라이크 시뮬레이션 우주와 2파티 턴 제한 엔드콘텐츠 혼돈의 기억/허구 이야기를 통합 관리합니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Battle",
+        "checklist": [
+          {
+            "id": "chk_sm_1",
+            "text": "시뮬레이션 우주 축복/기물 획득 및 보스 클리어 후 몰입기 장신구 추출 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_sm_2",
+            "text": "혼돈의 기억 전반/후반 2파티 편성 및 이전 시즌 최고 클리어 스테이지 빠른 해금 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Party_TurnHUD",
+      "label": "Component",
+      "name": "파티 편성 프리셋(4인) · 행동 서열 HUD & 약점 격파 판정",
+      "aliases": [
+        "PartySetup",
+        "TurnHUD",
+        "WeaknessBreak",
+        "Battle"
+      ],
+      "description": "전투 진입 전 4인 파티 프리셋 구성, 전투 중 속도 기반 행동 서열(AV) 계산, 필살기 난입 및 속성별 약점 격파 디버프 판정을 처리합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Battle",
+        "checklist": [
+          {
+            "id": "chk_pt_1",
+            "text": "파티 프리셋(1~9번) 전환, 드래그 순서 변경 및 지원 캐릭터 슬롯 편성 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_pt_2",
+            "text": "적 강인도 0 도달 시 약점 격파 행동 지연(25%) 및 속성별 추가 피해/지속 피해 적용 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Battle_Settlement",
+      "label": "Component",
+      "name": "전투 승리 정산 · 개척력 소모 & 한 번 더 도전",
+      "aliases": [
+        "Settlement",
+        "RewardDrop",
+        "Battle"
+      ],
+      "description": "전투 승리 시 개척력/몰입기 차감, 드랍 유물·소재 인벤토리 적재 및 [한 번 더 도전] 빠른 재시작 루프를 담당합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Battle",
+        "checklist": [
+          {
+            "id": "chk_bs_1",
+            "text": "정산 화면에서 획득한 5성/4성 유물 세부 부옵션 즉시 확인 및 잠금/폐기 마킹 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_bs_2",
+            "text": "[한 번 더] 클릭 시 지원 캐릭터를 유지한 채 스테이지 1웨이브로 즉시 재진입 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Support_Assignment",
+      "label": "Component",
+      "name": "친구 지원 캐릭터 설정/차용 & 의뢰 파견 일괄 수령",
+      "aliases": [
+        "SupportChar",
+        "Assignment",
+        "Social"
+      ],
+      "description": "타 유저의 지원 캐릭터를 고치/터널 전투에 차용(신용 포인트 보상 정산)하고, 4슬롯 일일 의뢰 파견 재화를 일괄 수령합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Social",
+        "checklist": [
+          {
+            "id": "chk_sp_1",
+            "text": "타 유저가 내 지원 캐릭터 차용 시 건당 신용 포인트(2000pt, 일 최대 12만) 정산 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_sp_2",
+            "text": "의뢰 파견 완료 시 [일괄 수령 및 다시 파견] 원클릭 재등록 동작 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Comp_Mailbox_Claim",
+      "label": "Component",
+      "name": "우편함 보상 일괄 수령 (구매 패키지 · 점검 성옥 · 생일 보상)",
+      "aliases": [
+        "MailboxClaim",
+        "RewardMail",
+        "Social"
+      ],
+      "description": "[🟡 2-Hop 연쇄 차단 데모] 상점 결제 컴포넌트(Comp_Store_Oneiric_Supply)가 Blocked됨에 따라 연쇄적으로 자동 Blocked된 우편함 수령 모듈입니다. 우측 인스펙터에서 [🔍 결함 원인 역추적]을 눌러 2-hop 상위 원흉 API까지 경로를 추적해 보세요.",
+      "test_status": "Blocked",
+      "properties": {
+        "domain": "Social",
+        "checklist": [
+          {
+            "id": "chk_mc_1",
+            "text": "[일괄 수령] 클릭 시 첨부 성옥·연료·신용 포인트 수령 팝업 및 읽음 상태 전환 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_mc_2",
+            "text": "패키지 및 보급 허가증 구매 보상 우편 실시간 수신 및 만료 카운트다운 표시 확인",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Popup_Common_Login",
+      "label": "Feature",
+      "name": "호요버스 통행증 & 플랫폼 로그인 팝업 #Popup",
+      "aliases": [
+        "Popup",
+        "Auth",
+        "Login",
+        "System"
+      ],
+      "description": "타이틀 화면(최초 로그인)과 환경설정(계정 전환/연동) 양쪽에서 호출되는 공용 인증 모달입니다. 진입 경로별 사전조건은 내부 체크리스트(B안)로 관리합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "System",
+        "checklist": [
+          {
+            "id": "chk_pl_1",
+            "text": "[사전조건: 타이틀 진입] 통행증/Google/Apple 인증 성공 시 팝업 자동 닫힘 및 서버 선택 활성화",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_pl_2",
+            "text": "[사전조건: 환경설정 진입] 계정 전환 또는 소셜 연동 완료 후 설정 화면 유지 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_pl_3",
+            "text": "팝업 오픈 시 배경 Dimmed 처리 및 우측 상단 닫기(X) 터치 시 안전 복귀 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Popup_Trailblaze_Power",
+      "label": "Feature",
+      "name": "개척력(스태미나) 보충 팝업 #Popup",
+      "aliases": [
+        "Popup",
+        "Stamina",
+        "TrailblazePower",
+        "Battle"
+      ],
+      "description": "성간 평화 가이드, 파밍 스테이지, 전투 정산 화면 등 어디서든 개척력(+) 클릭 또는 부족 시 호출되는 공용 스태미나 충전 모달입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Battle",
+        "checklist": [
+          {
+            "id": "chk_ptp_1",
+            "text": "예비 개척력 인출 / 연료(60pt) 소모 / 성옥 충전(일 8회 한도) 탭 전환 및 회복량 계산 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_ptp_2",
+            "text": "팝업 오픈 시 배경 Dimmed 처리 및 취소/닫기(X) 클릭 시 호출 화면으로 정확히 복귀 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Popup_Material_Source",
+      "label": "Feature",
+      "name": "육성 재료 부족 & 획득처 바로가기 팝업 #Popup",
+      "aliases": [
+        "Popup",
+        "MaterialSource",
+        "Shortcut",
+        "Growth"
+      ],
+      "description": "캐릭터 승급, 광추 강화, 행적 개방, 유물 합성 시 부족한 소재를 클릭하면 호출되며, 고치·침식된 터널·만능 합성기·잔화 상점 등으로 즉시 점프시키는 허브 모달입니다.",
+      "test_status": "Passed",
+      "properties": {
+        "domain": "Growth",
+        "checklist": [
+          {
+            "id": "chk_pms_1",
+            "text": "고치/침식된 터널/만능 합성기/잔화 교환소 등 획득처별 해금 상태 표시 및 워프 이동 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_pms_2",
+            "text": "획득처 파밍 후 뒤로가기(Return) 시 원래 보던 캐릭터/광추/행적 육성 단계로 복귀 확인",
+            "status": "Passed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Popup_Warp_Rate_History",
+      "label": "Feature",
+      "name": "워프 확률 상세 고지 & 6개월 도약 기록 팝업 #Popup",
+      "aliases": [
+        "Popup",
+        "WarpRate",
+        "Legal",
+        "Economy"
+      ],
+      "description": "차원 도약 화면에서 호출되는 법적 확률 고지 및 최근 6개월 워프 히스토리 웹뷰 팝업입니다. 상위 캐릭터 이벤트 워프(Comp_Warp_Char_Event)의 스펙 변경 영향권에 포함됩니다.",
+      "test_status": "Untested",
+      "properties": {
+        "domain": "Economy",
+        "checklist": [
+          {
+            "id": "chk_pwr_1",
+            "text": "5성/4성 기본 확률 및 천장 포함 종합 확률(%) 고지 테이블 정상 노출 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_pwr_2",
+            "text": "[다국어(I18N)] 라틴어군 번역 팽창 시 확률 표 줄바꿈 및 최근 6개월 도약 기록 페이지네이션 조회",
+            "status": "Untested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "API_IAP_Billing_Gateway",
+      "label": "System",
+      "name": "인앱 결제 영수증 검증 & 초회 보너스 지급 API",
+      "aliases": [
+        "IAP",
+        "Billing",
+        "Backend",
+        "Economy"
+      ],
+      "description": "[🔴 결함 원흉 데모] 앱스토어/구글플레이 영수증 검증 콜백 504 Gateway Timeout 결함이 발생한 백엔드 게이트웨이 노드입니다. 하류 상점 결제(Comp_Store_Oneiric_Supply)와 우편함 수령(Comp_Mailbox_Claim)을 자동 Blocked 처리합니다.",
+      "test_status": "Failed",
+      "properties": {
+        "domain": "Economy",
+        "issue_link": "https://jira.hoyoverse-qa.example/browse/HSR-4041",
+        "checklist": [
+          {
+            "id": "chk_iap_1",
+            "text": "결제 요청 시 스토어 샌드박스 결제 시트 정상 호출 및 트랜잭션 ID 발급 확인",
+            "status": "Passed"
+          },
+          {
+            "id": "chk_iap_2",
+            "text": "결제 승인 후 서버 영수증 검증 API 200 OK 응답 확인 (현재 504 Gateway Timeout 결함 발생)",
+            "status": "Failed"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Feature_Apocalyptic_Shadow",
+      "label": "Feature",
+      "name": "종말의 환영 (시즌 보스 레이드) #종말의환영",
+      "aliases": [
+        "ApocalypticShadow",
+        "Raid",
+        "종말의환영",
+        "Battle"
+      ],
+      "description": "[📌 수동 차단 고정 데모] 선행 결함이 아니라 QA 스테이징 서버의 시즌 오픈 스케줄 미적용 사유로 테스터가 직접 사유를 기입해 수동 Blocked 고정(📌)한 엔드콘텐츠 노드입니다.",
+      "test_status": "Blocked",
+      "properties": {
+        "domain": "Battle",
+        "is_manual_override": true,
+        "override_reason": "QA 스테이징 서버 v2.6 종말의 환영 시즌 스케줄 미오픈 (다음 빌드에서 고정 해제 후 검증 예정)"
+      }
+    },
+    {
+      "id": "Global_I18N_Typography",
+      "label": "Component",
+      "name": "다국어(L10N) 5대 문자군 조판 · 말줄임 & 변수({0}) 검증",
+      "aliases": [
+        "I18N",
+        "Localization",
+        "CrossCutting"
+      ],
+      "description": "[전역 배지 — 5대 문자 세트 위험군 표준 가이드]\n① 라틴/유럽어군(EN/DE/FR/RU): 원문 대비 30~50% 팽창 시 버튼 영역 침범 및 말줄임(...) 동작\n② 한·중·일(KO/JA/ZH): 금칙 줄바꿈 및 미지원 한자 글리프 두부현상(□) 여부\n③ 태국/베트남(TH/VI): 성조·복모음 상하첨자 결합 시 행간 겹침 및 상하단 잘림(Clipping)\n④ 아랍/히브리(AR/HE): RTL 레이아웃 미러링 및 숫자/영문 변수 혼용 시 순서 역전\n⑤ 동적 인자({0}, %s): 개척자 닉네임·재화 수량 치환 시 미치환 문자열 노출 방지",
+      "test_status": "Passed",
+      "properties": {
+        "is_global": "true",
+        "category": "Cross-Cutting"
+      }
+    },
+    {
+      "id": "Global_Network_Reconnect",
+      "label": "Component",
+      "name": "네트워크 단절(비행기 모드) · 핑 스파이크 & 재연결 핸들러",
+      "aliases": [
+        "Network",
+        "Reconnect",
+        "CrossCutting"
+      ],
+      "description": "[전역 배지 — 결제 구간 결함 발생 🔴] Wi-Fi/모바일 데이터 전환 및 패킷 유실 시 열차 로딩 아이콘 회전 후 세션을 자동 복구하는지 검증합니다. 상점 결제 구간에서 재연결 결함(Failed)이 발생하여 해당 노드에 붉은 동적 결함 칩이 노출됩니다.",
+      "test_status": "Blocked",
+      "properties": {
+        "is_global": "true",
+        "category": "Cross-Cutting",
+        "issue_link": "https://jira.hoyoverse-qa.example/browse/HSR-5029"
+      }
+    },
+    {
+      "id": "Global_Audio_SFX_Voice",
+      "label": "Data",
+      "name": "사운드 믹싱 (BGM · 4개국 보이스 · 필살기 SFX) & 음소거 동기화",
+      "aliases": [
+        "Audio",
+        "Sound",
+        "Voice",
+        "CrossCutting"
+      ],
+      "description": "[전역 배지] 화면 전환 시 BGM 크로스페이드, 2배속 전투 시 필살기 보이스 피치 보정, 백그라운드 전환/복귀 시 오디오 세션 복구를 검증합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "is_global": "true",
+        "category": "Cross-Cutting"
+      }
+    },
+    {
+      "id": "Global_Currency_Header",
+      "label": "Component",
+      "name": "상단 재화바 (성옥 · 신용 포인트 · 개척력 · 연료) 실시간 동기화",
+      "aliases": [
+        "Currency",
+        "EconomySync",
+        "CrossCutting"
+      ],
+      "description": "[전역 배지] 워프/상점/육성/개척력 보충 시 우측 상단 재화바 수치가 소모·획득 즉시 서버 패킷과 오차 없이 갱신되고 (+) 충전 버튼이 정상 작동하는지 검증합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "is_global": "true",
+        "category": "Cross-Cutting"
+      }
+    },
+    {
+      "id": "Global_RedDot_Badge",
+      "label": "Data",
+      "name": "레드닷(알림 마크) 조건 트리거 · 상단 허브 롤업 & 즉시 소거",
+      "aliases": [
+        "RedDot",
+        "Notification",
+        "CrossCutting"
+      ],
+      "description": "[전역 배지] 신규 획득/승급 가능/우편 도착/의뢰 완료 시 하위 컴포넌트에서 스마트폰 허브까지 레드닷이 정확히 롤업되고, 확인 즉시 잔류 버그 없이 소거되는지 검증합니다.",
+      "test_status": "Passed",
+      "properties": {
+        "is_global": "true",
+        "category": "Cross-Cutting"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "Screen_Title_Express",
+      "target": "Comp_Patch_CDN",
+      "type": "Contains",
+      "action": "타이틀 화면 내 패치 무결성 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Title_Express",
+      "target": "Comp_Server_Gate",
+      "type": "Contains",
+      "action": "타이틀 화면 내 권역 서버 게이트 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Comp_Trailblaze_Profile",
+      "type": "Contains",
+      "action": "스마트폰 허브 내 개척자 프로필/내비게이션 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Comp_System_Settings",
+      "type": "Contains",
+      "action": "스마트폰 허브 내 환경설정 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Comp_Char_Ascension",
+      "type": "Contains",
+      "action": "캐릭터 화면 내 레벨/승급 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Comp_LightCone_Equip",
+      "type": "Contains",
+      "action": "캐릭터 화면 내 광추 장착/중첩 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Comp_Trace_SkillTree",
+      "type": "Contains",
+      "action": "캐릭터 화면 내 행적 스킬트리 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Comp_Relic_Set6",
+      "type": "Contains",
+      "action": "캐릭터 화면 내 유물 6파츠 세팅 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Comp_Bag_Filter_Destroy",
+      "type": "Contains",
+      "action": "가방 화면 내 다중 필터/분해 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Comp_Omni_Synthesizer",
+      "type": "Contains",
+      "action": "가방 화면 내 만능 합성기 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Comp_Warp_Char_Event",
+      "type": "Contains",
+      "action": "차원 도약 화면 내 캐릭터 이벤트 워프 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Comp_Warp_LightCone_Event",
+      "type": "Contains",
+      "action": "차원 도약 화면 내 광추/상시 워프 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Comp_Store_Ember_Starlight",
+      "type": "Contains",
+      "action": "상점 화면 내 잔화/성망 교환소 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Comp_Store_Oneiric_Supply",
+      "type": "Contains",
+      "action": "상점 화면 내 결정 결제/보급 허가증 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Contains",
+      "action": "성간 가이드 내 고치/터널/여운 파밍 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Comp_Simulated_Universe_MoC",
+      "type": "Contains",
+      "action": "성간 가이드 내 시뮬레이션 우주/혼돈의 기억 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Contains",
+      "action": "턴제 전투 화면 내 파티 편성/행동서열 HUD 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Comp_Battle_Settlement",
+      "type": "Contains",
+      "action": "턴제 전투 화면 내 승리 정산/재도전 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Comp_Support_Assignment",
+      "type": "Contains",
+      "action": "소셜 화면 내 지원 캐릭터/의뢰 파견 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Comp_Mailbox_Claim",
+      "type": "Contains",
+      "action": "소셜 화면 내 우편함 일괄 수령 모듈 포함",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Patch_CDN",
+      "target": "Popup_Common_Login",
+      "type": "Depends_On",
+      "action": "패치 해시 무결성 통과 후 통행증 로그인 활성화",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Comp_Server_Gate",
+      "type": "Depends_On",
+      "action": "호요버스 통행증 세션 토큰 발급 후 서버 선택 활성화",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Server_Gate",
+      "target": "Screen_Phone_Hub",
+      "type": "Depends_On",
+      "action": "열차 승차 및 월드 씬 진입 후 스마트폰 허브 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Server_Gate",
+      "target": "Comp_Trailblaze_Profile",
+      "type": "Depends_On",
+      "action": "서버 세션 동기화 후 개척자 프로필/균형 레벨 로드",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Title_Express",
+      "target": "Screen_Phone_Hub",
+      "type": "Depends_On",
+      "action": "타이틀 진입 시퀀스 완료 후 인게임 허브 활성화",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Screen_Character_Growth",
+      "type": "Depends_On",
+      "action": "균형 레벨(EQ 1~6)에 따른 캐릭터/광추 성장 상한 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Screen_Inventory_Synth",
+      "type": "Depends_On",
+      "action": "개척 레벨 달성에 따른 만능 합성기 레시피 단계 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Screen_Warp_Gacha",
+      "type": "Depends_On",
+      "action": "개척 임무 프롤로그 완료 후 차원 도약 시스템 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Screen_Store_Nameless",
+      "type": "Depends_On",
+      "action": "개척 레벨 달성 후 상점 및 무명객의 영광 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Screen_Interastr_Guide",
+      "type": "Depends_On",
+      "action": "균형 레벨에 따른 생존 인덱스 스테이지 난이도 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Screen_Social_Assignment",
+      "type": "Depends_On",
+      "action": "개척자 프로필 개방 후 친구 지원 및 의뢰 파견 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Feature_Apocalyptic_Shadow",
+      "type": "Depends_On",
+      "action": "균형 레벨 및 선행 개척 임무 완료 시 종말의 환영 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Bag_Filter_Destroy",
+      "target": "Comp_Omni_Synthesizer",
+      "type": "Depends_On",
+      "action": "가방 보유 소재 및 유물 잔해 수량 실시간 참조",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Comp_Omni_Synthesizer",
+      "type": "Depends_On",
+      "action": "캐릭터 승급 등급 해금에 따른 상위 돌파 소재 등가 치환 레시피 개방",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_LightCone_Equip",
+      "target": "Comp_Omni_Synthesizer",
+      "type": "Depends_On",
+      "action": "광추 승급 단계 해금에 따른 광추 강화 소재 합성 레시피 개방",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Comp_Omni_Synthesizer",
+      "type": "Depends_On",
+      "action": "행적 스킬트리 등급 해금에 따른 상위 행적 소재(3:1) 합성 개방",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Bag_Filter_Destroy",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Depends_On",
+      "action": "가방 유물 보유 상한(2000개) 여유 확보 시 침식된 터널 파밍 허용",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Comp_LightCone_Equip",
+      "type": "Depends_On",
+      "action": "캐릭터 레벨 및 운명의 길 매칭 시너지 적용",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Comp_Trace_SkillTree",
+      "type": "Depends_On",
+      "action": "캐릭터 승급 단계(2/4/6단계) 달성 시 핵심 행적 노드 해금",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Comp_Relic_Set6",
+      "type": "Depends_On",
+      "action": "캐릭터 기본 스탯 상승분 기반 유물 % 부옵션 합산",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Depends_On",
+      "action": "승급 완료 캐릭터 기본 스탯 전투 파티 반영",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_LightCone_Equip",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Depends_On",
+      "action": "장착 광추 패시브 스킬 및 스탯 전투 파티 반영",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Depends_On",
+      "action": "개방된 행적 스킬 배율 및 비술 효과 전투 반영",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Depends_On",
+      "action": "유물 4세트 및 장신구 2세트 효과 전투 속도/격파 반영",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Depends_On",
+      "action": "만능 합성기 부족 소재 수급을 위한 고치·침식된 터널 파밍 스테이지 연동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Comp_Simulated_Universe_MoC",
+      "type": "Depends_On",
+      "action": "자가 모델링 레진 차원 장신구 세팅을 위한 시뮬레이션 우주 해금 연동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Depends_On",
+      "action": "친구 지원 캐릭터 차용 슬롯 편성 데이터 연동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Depends_On",
+      "action": "선택한 파밍 스테이지 적 약점 속성 및 웨이브 정보 전달",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Depends_On",
+      "action": "시뮬레이션 우주 축복/기물 및 혼돈의 기억 와류 버프 전달",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Party_TurnHUD",
+      "target": "Comp_Battle_Settlement",
+      "type": "Depends_On",
+      "action": "전투 모든 웨이브 적 처치 및 승리 판정 완료 시 정산 활성화",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Comp_Store_Ember_Starlight",
+      "type": "Depends_On",
+      "action": "캐릭터 워프 수행 시 꺼지지 않는 잔화/성망 페이백 적립",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Comp_Store_Ember_Starlight",
+      "type": "Depends_On",
+      "action": "광추/상시 워프 수행 시 잔화/성망 페이백 적립",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "API_IAP_Billing_Gateway",
+      "target": "Comp_Store_Oneiric_Supply",
+      "type": "Depends_On",
+      "action": "스토어 결제 영수증 검증 성공 시 결정/보급 허가증 지급 (현재 API 504 결함으로 차단)",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Comp_Mailbox_Claim",
+      "type": "Depends_On",
+      "action": "보급 허가증 및 패키지 결제 완료 시 우편함 보상 발송 (선행 차단으로 연쇄 Blocked)",
+      "test_status": "Untested",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Title_Express",
+      "target": "Popup_Common_Login",
+      "type": "Transition",
+      "action": "타이틀 화면 터치 → 통행증 로그인 모달 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Screen_Title_Express",
+      "type": "Return",
+      "action": "타이틀 로그인 모달 닫기(X) 시 타이틀 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Patch_CDN",
+      "target": "Comp_Server_Gate",
+      "type": "Transition",
+      "action": "패치 완료 후 권역 서버 선택 화면 자동 전환",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Server_Gate",
+      "target": "Comp_Patch_CDN",
+      "type": "Return",
+      "action": "로그아웃 클릭 시 패치/타이틀 초기 상태로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Comp_System_Settings",
+      "type": "Transition",
+      "action": "통행증 계정 센터 인증 완료 → 환경설정 연동 상태 갱신",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_System_Settings",
+      "target": "Popup_Common_Login",
+      "type": "Return",
+      "action": "환경설정 [계정 전환] 클릭 → 통행증 로그인 모달 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Title_Express",
+      "target": "Comp_System_Settings",
+      "type": "Transition",
+      "action": "타이틀 화면 우측 [옵션/설정] 클릭 → 그래픽·음성팩 사전 설정 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_System_Settings",
+      "target": "Screen_Title_Express",
+      "type": "Return",
+      "action": "환경설정 [로그아웃] 클릭 → 타이틀 은하열차 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Screen_Character_Growth",
+      "type": "Transition",
+      "action": "스마트폰 메뉴 [캐릭터] 클릭 → 캐릭터 상세 화면 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "우측 상단 닫기/ESC 클릭 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Screen_Inventory_Synth",
+      "type": "Transition",
+      "action": "스마트폰 메뉴 [가방/합성] 클릭 → 인벤토리 화면 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "우측 상단 닫기/ESC 클릭 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Screen_Warp_Gacha",
+      "type": "Transition",
+      "action": "스마트폰 메뉴 [차원 도약] 클릭 → 워프 소환 화면 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "우측 상단 닫기/ESC 클릭 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Screen_Store_Nameless",
+      "type": "Transition",
+      "action": "스마트폰 메뉴 [상점/무명객의 영광] 클릭 → 상점 화면 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "우측 상단 닫기/ESC 클릭 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Screen_Interastr_Guide",
+      "type": "Transition",
+      "action": "스마트폰 메뉴 [성간 평화 가이드] 클릭 → 가이드 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "우측 상단 닫기/ESC 클릭 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Screen_TurnBattle_Core",
+      "type": "Transition",
+      "action": "스마트폰 메뉴 [파티 편성] 클릭 → 4인 파티 편성 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "우측 상단 닫기/ESC 클릭 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Screen_Social_Assignment",
+      "type": "Transition",
+      "action": "스마트폰 메뉴 [의뢰/우편/지원] 클릭 → 소셜 화면 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "우측 상단 닫기/ESC 클릭 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Feature_Apocalyptic_Shadow",
+      "type": "Transition",
+      "action": "스마트폰 이벤트 배너 → [종말의 환영] 레이드 직행",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Apocalyptic_Shadow",
+      "target": "Screen_Phone_Hub",
+      "type": "Return",
+      "action": "종말의 환영 화면 닫기 시 스마트폰 허브 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Screen_Inventory_Synth",
+      "type": "Transition",
+      "action": "장착 광추/유물 [가방에서 교체] 클릭 → 인벤토리 연동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Screen_Character_Growth",
+      "type": "Return",
+      "action": "장비 교체 완료 후 캐릭터 육성 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Popup_Material_Source",
+      "type": "Transition",
+      "action": "부족한 승급 돌파 소재 클릭 → [획득처 바로가기] 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Char_Ascension",
+      "type": "Return",
+      "action": "획득처 팝업 닫기(X) 시 캐릭터 승급 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_LightCone_Equip",
+      "target": "Popup_Material_Source",
+      "type": "Transition",
+      "action": "부족한 광추 승급 소재 클릭 → [획득처 바로가기] 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_LightCone_Equip",
+      "type": "Return",
+      "action": "획득처 팝업 닫기(X) 시 광추 장착 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Popup_Material_Source",
+      "type": "Transition",
+      "action": "부족한 행적 소재 클릭 → [획득처 바로가기] 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Trace_SkillTree",
+      "type": "Return",
+      "action": "획득처 팝업 닫기(X) 시 행적 스킬트리 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Popup_Material_Source",
+      "type": "Transition",
+      "action": "부족한 유물 강화 소재 클릭 → [획득처 바로가기] 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Relic_Set6",
+      "type": "Return",
+      "action": "획득처 팝업 닫기(X) 시 유물 세팅 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Comp_Bag_Filter_Destroy",
+      "type": "Transition",
+      "action": "유물 강화 화면 [유물 분해] 바로가기 클릭",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Bag_Filter_Destroy",
+      "target": "Comp_Relic_Set6",
+      "type": "Return",
+      "action": "유물 분해 후 유물 강화 화면으로 즉시 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Comp_Omni_Synthesizer",
+      "type": "Transition",
+      "action": "유물 화면 [맞춤형 레진 합성] 바로가기 클릭",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Comp_Relic_Set6",
+      "type": "Return",
+      "action": "유물 합성 완료 후 유물 장착 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Transition",
+      "action": "획득처 팝업 [고치/침식된 터널 이동] 클릭 → 스테이지 워프",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Popup_Material_Source",
+      "type": "Return",
+      "action": "파밍 스테이지 퇴장 시 직전 육성 획득처 팝업 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Simulated_Universe_MoC",
+      "type": "Transition",
+      "action": "획득처 팝업 [시뮬레이션 우주 장신구 추출] 클릭 → 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Popup_Material_Source",
+      "type": "Return",
+      "action": "시뮬레이션 우주 퇴장 시 직전 육성 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Omni_Synthesizer",
+      "type": "Transition",
+      "action": "획득처 팝업 [만능 합성기 3:1 합성] 클릭 → 합성기 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Popup_Material_Source",
+      "type": "Return",
+      "action": "소재 합성 완료 후 직전 캐릭터 육성 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Store_Ember_Starlight",
+      "type": "Transition",
+      "action": "획득처 팝업 [잔화 교환소 구매] 클릭 → 상점 교환소 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Ember_Starlight",
+      "target": "Popup_Material_Source",
+      "type": "Return",
+      "action": "잔화 소재 구매 후 직전 육성 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Comp_Support_Assignment",
+      "type": "Transition",
+      "action": "획득처 팝업 [의뢰 파견 획득] 클릭 → 의뢰 화면 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Popup_Material_Source",
+      "type": "Return",
+      "action": "의뢰 파견 확인 후 직전 육성 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Popup_Warp_Rate_History",
+      "type": "Transition",
+      "action": "워프 화면 하단 [상세 확인 / 도약 기록] 클릭 → 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Warp_Rate_History",
+      "target": "Screen_Warp_Gacha",
+      "type": "Return",
+      "action": "확률/기록 팝업 닫기(X) 시 차원 도약 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Popup_Warp_Rate_History",
+      "type": "Transition",
+      "action": "캐릭터 이벤트 워프 [확률 상세 보기] 클릭 → 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Warp_Rate_History",
+      "target": "Comp_Warp_Char_Event",
+      "type": "Return",
+      "action": "확률 팝업 닫기(X) 시 캐릭터 이벤트 워프 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Popup_Warp_Rate_History",
+      "type": "Transition",
+      "action": "광추 이벤트 워프 [확률 상세 보기] 클릭 → 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Warp_Rate_History",
+      "target": "Comp_Warp_LightCone_Event",
+      "type": "Return",
+      "action": "확률 팝업 닫기(X) 시 광추 이벤트 워프 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Screen_Character_Growth",
+      "type": "Transition",
+      "action": "픽업 5성 캐릭터 [돋보기 상세/체험] 클릭 → 캐릭터 상세 확인",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Comp_Warp_Char_Event",
+      "type": "Return",
+      "action": "캐릭터 상세 확인 후 캐릭터 이벤트 워프 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Screen_Store_Nameless",
+      "type": "Transition",
+      "action": "전용티켓 부족 시 [상점 성망/결정 구매] 바로가기 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Comp_Warp_Char_Event",
+      "type": "Return",
+      "action": "티켓/성옥 보충 후 캐릭터 이벤트 워프로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Screen_Store_Nameless",
+      "type": "Transition",
+      "action": "광추 워프 티켓 부족 시 [상점 교환소] 바로가기 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Comp_Warp_LightCone_Event",
+      "type": "Return",
+      "action": "티켓 보충 후 광추 이벤트 워프로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Comp_Store_Ember_Starlight",
+      "type": "Transition",
+      "action": "워프 화면 하단 [잔화/성망 교환] 버튼 클릭 → 상점 교환소 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Ember_Starlight",
+      "target": "Screen_Warp_Gacha",
+      "type": "Return",
+      "action": "잔화/성망 상점에서 티켓 교환 후 [차원 도약] 화면으로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Comp_Store_Oneiric_Supply",
+      "type": "Transition",
+      "action": "워프 화면 상단 성옥 [+] 버튼 클릭 → [오네이로스의 결정 상점] 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Screen_Warp_Gacha",
+      "type": "Return",
+      "action": "오네이로스의 결정 성옥 환전 후 [차원 도약] 화면으로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Popup_Trailblaze_Power",
+      "type": "Transition",
+      "action": "가이드 상단 개척력 [+] 버튼 클릭 → 보충 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Screen_Interastr_Guide",
+      "type": "Return",
+      "action": "개척력 보충 취소/완료 후 성간 평화 가이드 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Popup_Trailblaze_Power",
+      "type": "Transition",
+      "action": "고치/터널 입장 시 개척력 부족 → 보충 팝업 자동 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Return",
+      "action": "개척력 충전 후 고치/터널 스테이지 선택 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Popup_Trailblaze_Power",
+      "type": "Transition",
+      "action": "몰입기 보상 수령 시 개척력 부족 → 보충 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Comp_Simulated_Universe_MoC",
+      "type": "Return",
+      "action": "개척력 충전 후 시뮬레이션 우주 몰입기 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Popup_Trailblaze_Power",
+      "type": "Transition",
+      "action": "오네이로스의 결정 충전 완료 후 [개척력 보충] 팝업 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Comp_Store_Oneiric_Supply",
+      "type": "Return",
+      "action": "성옥 부족 시 [오네이로스의 결정 상점]으로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Screen_TurnBattle_Core",
+      "type": "Transition",
+      "action": "생존 인덱스 스테이지 [진입] 클릭 → 전투 파티 편성 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Screen_Interastr_Guide",
+      "type": "Return",
+      "action": "전투 퇴장 시 성간 평화 가이드 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Feature_Apocalyptic_Shadow",
+      "type": "Transition",
+      "action": "망각의 정원 탭 → [종말의 환영] 시즌 보스 레이드 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Apocalyptic_Shadow",
+      "target": "Screen_Interastr_Guide",
+      "type": "Return",
+      "action": "종말의 환영에서 성간 평화 가이드 탭으로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Screen_TurnBattle_Core",
+      "type": "Transition",
+      "action": "파밍 스테이지 [도전] 클릭 → 4인 파티 편성 및 전투 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Return",
+      "action": "전투 포기/종료 시 고치·터널 스테이지 목록 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Screen_TurnBattle_Core",
+      "type": "Transition",
+      "action": "혼돈의 기억/시뮬레이션 우주 [전투 시작] → 턴제 전투 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Comp_Simulated_Universe_MoC",
+      "type": "Return",
+      "action": "전투 퇴각/종료 시 시뮬레이션 우주·혼돈의 기억 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Transition",
+      "action": "캐릭터 육성/장비 교체 완료 후 [파티 편성 슬롯] 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Party_TurnHUD",
+      "target": "Screen_Character_Growth",
+      "type": "Return",
+      "action": "파티 편성 슬롯 캐릭터 길게 누르기 → [캐릭터 육성] 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Comp_Party_TurnHUD",
+      "type": "Transition",
+      "action": "친구 지원 캐릭터 목록에서 서포터 선택 → [파티 편성 슬롯] 배치",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Party_TurnHUD",
+      "target": "Comp_Support_Assignment",
+      "type": "Return",
+      "action": "파티 편성 [지원 교체] 클릭 → 친구 지원 캐릭터 목록으로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Popup_Trailblaze_Power",
+      "type": "Transition",
+      "action": "정산 화면 [한 번 더 도전] 시 개척력 부족 → 보충 팝업 호출",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Comp_Battle_Settlement",
+      "type": "Return",
+      "action": "개척력 보충 완료 후 정산 재도전 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Comp_Battle_Settlement",
+      "type": "Transition",
+      "action": "고치/침식된 터널 보스 클리어 → [전투 승리 정산] 보상 화면 전환",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Comp_Calyx_Cavern_Echo",
+      "type": "Return",
+      "action": "정산 화면 [나가기] 클릭 → 고치/침식된 터널 스테이지 목록 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Comp_Battle_Settlement",
+      "type": "Transition",
+      "action": "가방 유물 공간 확보 후 [전투 정산 보상 수령] 화면 진입",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Screen_Inventory_Synth",
+      "type": "Return",
+      "action": "정산 드랍 유물 초과 알림 클릭 → [가방 유물 분해] 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Comp_Support_Assignment",
+      "type": "Transition",
+      "action": "가방 합성 소재 부족 확인 → [의뢰 파견] 보상 수령 화면 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Screen_Inventory_Synth",
+      "type": "Return",
+      "action": "의뢰 파견 보상 수령 후 [가방 합성 소재 확인] 화면 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Comp_Mailbox_Claim",
+      "type": "Transition",
+      "action": "차원 도약 성옥 확인 중 [우편함 보상 수령] 바로가기 이동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Mailbox_Claim",
+      "target": "Screen_Warp_Gacha",
+      "type": "Return",
+      "action": "점검 보상 성옥 우편 수령 후 [차원 도약] 화면으로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Comp_Mailbox_Claim",
+      "target": "Popup_Trailblaze_Power",
+      "type": "Transition",
+      "action": "우편함 연료 아이템 수령 후 [개척력 보충] 팝업 연동",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Comp_Mailbox_Claim",
+      "type": "Return",
+      "action": "연료 확인 후 우편함 목록 화면으로 복귀",
+      "test_status": "Passed",
+      "properties": {
+        "weight": 0
+      }
+    },
+    {
+      "source": "Screen_Title_Express",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Patch_CDN",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Server_Gate",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_System_Settings",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_LightCone_Equip",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Bag_Filter_Destroy",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Ember_Starlight",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Party_TurnHUD",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Mailbox_Claim",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Warp_Rate_History",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Apocalyptic_Shadow",
+      "target": "Global_I18N_Typography",
+      "type": "Depends_On",
+      "action": "전역 다국어(L10N) 5대 문자군 조판·말줄임 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Title_Express",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Patch_CDN",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Server_Gate",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_System_Settings",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Ember_Starlight",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Failed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Party_TurnHUD",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Mailbox_Claim",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Failed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Warp_Rate_History",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "API_IAP_Billing_Gateway",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Apocalyptic_Shadow",
+      "target": "Global_Network_Reconnect",
+      "type": "Depends_On",
+      "action": "전역 네트워크 단절·패킷 재연결 핸들러 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Title_Express",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Server_Gate",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_System_Settings",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_LightCone_Equip",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Bag_Filter_Destroy",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Ember_Starlight",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Party_TurnHUD",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Common_Login",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Apocalyptic_Shadow",
+      "target": "Global_Audio_SFX_Voice",
+      "type": "Depends_On",
+      "action": "전역 BGM·다국어 보이스·필살기 SFX 오디오 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_TurnBattle_Core",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_LightCone_Equip",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Bag_Filter_Destroy",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Ember_Starlight",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Mailbox_Claim",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Trailblaze_Power",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Popup_Material_Source",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "API_IAP_Billing_Gateway",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Apocalyptic_Shadow",
+      "target": "Global_Currency_Header",
+      "type": "Depends_On",
+      "action": "전역 상단 재화바(성옥·신용포인트·개척력) 동기화 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Phone_Hub",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Character_Growth",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Inventory_Synth",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Warp_Gacha",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Store_Nameless",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Interastr_Guide",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Screen_Social_Assignment",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trailblaze_Profile",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_System_Settings",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Char_Ascension",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_LightCone_Equip",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Trace_SkillTree",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Relic_Set6",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Bag_Filter_Destroy",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Omni_Synthesizer",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_Char_Event",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Warp_LightCone_Event",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Ember_Starlight",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Store_Oneiric_Supply",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Calyx_Cavern_Echo",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Simulated_Universe_MoC",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Party_TurnHUD",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Battle_Settlement",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Support_Assignment",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Comp_Mailbox_Claim",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    },
+    {
+      "source": "Feature_Apocalyptic_Shadow",
+      "target": "Global_RedDot_Badge",
+      "type": "Depends_On",
+      "action": "전역 레드닷(알림 배지) 롤업 및 즉시 소거 배지 부착",
+      "test_status": "Passed",
+      "properties": {}
+    }
+  ]
+}

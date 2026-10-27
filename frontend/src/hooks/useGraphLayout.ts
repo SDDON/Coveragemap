@@ -156,6 +156,12 @@ export function useGraphLayout({
           const isGlobal = isNodeGlobal(n);
           const isHiddenByFilter = isGlobal || (FILTERABLE_NODE_TYPES.has(type) && !effectiveVisibleTypesRef.current.has(type));
           const statusCls = `status-${(n.test_status || 'untested').toLowerCase()}`;
+          const isManualOverride = Boolean(n.is_manual_override || n.properties?.is_manual_override === true || n.properties?.is_manual_override === 'true');
+          const overrideReason = n.override_reason ?? (typeof n.properties?.override_reason === 'string' ? n.properties.override_reason : undefined);
+          const hydratedProps = {
+            ...(n.properties || {}),
+            ...(isManualOverride ? { is_manual_override: true, ...(overrideReason ? { override_reason: overrideReason } : {}) } : {}),
+          };
           return {
             id: n.id,
             data: {
@@ -164,7 +170,9 @@ export function useGraphLayout({
               name: n.name,
               aliases: n.aliases || [],
               test_status: (n.test_status as CoverageNodeData['test_status']) || 'Untested',
-              properties: n.properties || {},
+              is_manual_override: isManualOverride,
+              override_reason: overrideReason,
+              properties: hydratedProps,
               badges: [],
               hasChildren: false,
               isCollapsed: false,

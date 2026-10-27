@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     yield
     close_driver()
 
-app = FastAPI(title="Living Graph TC API", lifespan=lifespan)
+app = FastAPI(title="CoverageMap API", lifespan=lifespan)
 
 # 동시 reset-seed 요청 경합 방지를 위한 스레드 락
 _reset_seed_lock = threading.Lock()
