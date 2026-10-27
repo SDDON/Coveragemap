@@ -25,6 +25,7 @@ interface InspectorPanelProps {
   setSelectedEdge: Dispatch<SetStateAction<CoverageEdge | null>>;
   liveEditNode: CoverageNode | null;
   isCreatingNode: boolean;
+  setIsCreatingNode?: Dispatch<SetStateAction<boolean>>;
   editFormData: EditFormData;
   setEditFormData: Dispatch<SetStateAction<EditFormData>>;
   filterText: string;
@@ -47,9 +48,6 @@ interface InspectorPanelProps {
   tracedRootNodeId: string | null;
   setTracedRootNodeId: Dispatch<SetStateAction<string | null>>;
   rootCauseScope: { nodeIds: Set<string>; edgeIds: Set<string>; key: string };
-  scopedAuditRootId: string | null;
-  setScopedAuditRootId: Dispatch<SetStateAction<string | null>>;
-  scopedAuditScope: { nodeIds: Set<string>; edgeIds: Set<string>; totalInScope: number; matchedCount: number; key: string };
   pinnedFocusNodeId: string | null;
   setPinnedFocusNodeId: Dispatch<SetStateAction<string | null>>;
   pendingConnectSource: PendingConnectSourceState | null;
@@ -84,6 +82,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   setSelectedEdge,
   liveEditNode,
   isCreatingNode,
+  setIsCreatingNode,
   editFormData,
   setEditFormData,
   filterText,
@@ -106,9 +105,6 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   tracedRootNodeId,
   setTracedRootNodeId,
   rootCauseScope,
-  scopedAuditRootId,
-  setScopedAuditRootId,
-  scopedAuditScope,
   pinnedFocusNodeId,
   setPinnedFocusNodeId,
   pendingConnectSource,
@@ -259,7 +255,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 )}
               </h3>
 
-              {editFormData.type === 'node' && (
+              {(isCreatingNode || editFormData.type === 'node') && (
                 <EditNodeForm
                   isCreatingNode={isCreatingNode}
                   liveEditNode={liveEditNode}
@@ -279,9 +275,6 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   tracedRootNodeId={tracedRootNodeId}
                   setTracedRootNodeId={setTracedRootNodeId}
                   rootCauseScope={rootCauseScope}
-                  scopedAuditRootId={scopedAuditRootId}
-                  setScopedAuditRootId={setScopedAuditRootId}
-                  scopedAuditScope={scopedAuditScope}
                   pinnedFocusNodeId={pinnedFocusNodeId}
                   setPinnedFocusNodeId={setPinnedFocusNodeId}
                   pendingConnectSource={pendingConnectSource}
@@ -301,7 +294,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 />
               )}
 
-              {editFormData.type === 'edge' && (
+              {!isCreatingNode && editFormData.type === 'edge' && (
                 <EditEdgeForm
                   editFormData={editFormData}
                   setEditFormData={setEditFormData}
@@ -328,6 +321,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             setEdges={setEdges}
             setSelectedNode={setSelectedNode}
             setSelectedEdge={setSelectedEdge}
+            setEditFormData={setEditFormData}
+            setIsCreatingNode={setIsCreatingNode}
             setRightPanelTab={setRightPanelTab}
             toggleImpact={toggleImpact}
             fetchGlobals={fetchGlobals}

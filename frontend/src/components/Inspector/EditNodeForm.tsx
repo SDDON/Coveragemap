@@ -27,9 +27,6 @@ interface EditNodeFormProps {
   tracedRootNodeId: string | null;
   setTracedRootNodeId: Dispatch<SetStateAction<string | null>>;
   rootCauseScope: { nodeIds: Set<string>; edgeIds: Set<string>; key: string };
-  scopedAuditRootId: string | null;
-  setScopedAuditRootId: Dispatch<SetStateAction<string | null>>;
-  scopedAuditScope: { nodeIds: Set<string>; edgeIds: Set<string>; totalInScope: number; matchedCount: number; key: string };
   pinnedFocusNodeId: string | null;
   setPinnedFocusNodeId: Dispatch<SetStateAction<string | null>>;
   pendingConnectSource: PendingConnectSourceState | null;
@@ -67,9 +64,6 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
   tracedRootNodeId,
   setTracedRootNodeId,
   rootCauseScope,
-  scopedAuditRootId,
-  setScopedAuditRootId,
-  scopedAuditScope,
   pinnedFocusNodeId,
   setPinnedFocusNodeId,
   pendingConnectSource,
@@ -242,6 +236,19 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
                   );
                   setSelectedNode(null);
                   setSelectedEdge(containsEdge);
+                  setEditFormData({
+                    id: containsEdge.id,
+                    label: (containsEdge.label as string) || containsEdge.data?.type || 'Contains',
+                    name: '',
+                    aliases: [],
+                    description: '',
+                    issue_link: '',
+                    test_status: containsEdge.data?.test_status || 'Untested',
+                    edgeType: containsEdge.data?.type || (containsEdge.label as string) || 'Contains',
+                    action: containsEdge.data?.action || '',
+                    properties: { ...(containsEdge.data?.properties || {}) },
+                    type: 'edge',
+                  });
                 }}
               >
                 {t.nodeForm.changeRelation}
@@ -296,7 +303,10 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
 
         <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>{t.nodeForm.issueLink}</label>
+            <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>
+              {t.nodeForm.issueLink}
+              <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.issueLink}>?</span>
+            </label>
             <textarea 
               rows={3}
               value={(editFormData.properties?.issue_link as string) || ''} 
@@ -355,27 +365,7 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
               {tracedRootNodeId === editFormData.id ? t.rootCause.clearButton : t.rootCause.traceButton}
             </button>
           )}
-          {/* 화면(Screen/Container) 단위 다국어 스코프 감사 (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 4.1) */}
-          {!isCreatingNode && (liveEditNode?.data?.label === 'Screen' || Boolean(liveEditNode?.data?.hasChildren)) && (
-            <button
-              type="button"
-              className={`scoped-audit-btn${scopedAuditRootId === editFormData.id ? ' active' : ''}`}
-              onClick={(e) => {
-                e.preventDefault();
-                const targetId = editFormData.id;
-                const nextId = scopedAuditRootId === targetId ? null : (targetId || null);
-                if (nextId && liveEditNode?.data?.isCollapsed) {
-                  window.dispatchEvent(new CustomEvent('toggleCollapseNode', { detail: targetId }));
-                }
-                setScopedAuditRootId(nextId);
-                if (nextId) {
-                  fetch(`/api/qa/audit-cross-cutting?aspect=Localization&scope_root_id=${encodeURIComponent(nextId)}`).catch(() => {});
-                }
-              }}
-            >
-              {scopedAuditRootId === editFormData.id ? t.scopedAudit.clearButton : t.scopedAudit.startButton}
-            </button>
-          )}
+          {/* (구형 '🌐 이 화면 다국어 검증 모드' 버튼은 전역 노드(Globals) 영향도 기능과 중복되어 제거됨) */}
           {/* 특정 콘텐츠 포커스 고정 (Content Focus Pinning) */}
           {!isCreatingNode && (
             <button
@@ -427,11 +417,6 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
         {!isCreatingNode && tracedRootNodeId === editFormData.id && (
           <div className="root-cause-banner">
             {t.rootCause.banner(rootCauseScope.nodeIds.size)}
-          </div>
-        )}
-        {!isCreatingNode && scopedAuditRootId === editFormData.id && (
-          <div className="scoped-audit-banner">
-            {t.scopedAudit.banner(scopedAuditScope.matchedCount, scopedAuditScope.totalInScope)}
           </div>
         )}
         {!isCreatingNode && blockReasonDraft !== null && (
@@ -489,7 +474,12 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
       {/* D. 변경 영향도 강조 (Change Impact Ripple, AI_IMPLEMENTATION_SPEC 4.4) */}
       {!isCreatingNode && liveEditNode && (
         <div className="form-group modified-section">
-          <h4 className="inspector-section-title">{t.modified.sectionTitle}</h4>
+          <h4 className="inspector-section-title">
+            <span>
+              {t.modified.sectionTitle}
+              <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.changeImpact}>?</span>
+            </span>
+          </h4>
           {isNodeModified ? (
             <div className="modified-banner">
               <div className="modified-banner-title">
@@ -527,9 +517,18 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
           <button
             type="button"
             className={`node-clone-open-btn${showCloneBox ? ' active' : ''}`}
+            title={t.tooltip.nodeClone}
             onClick={() => setShowCloneBox(prev => !prev)}
           >
             {t.nodeClone.openButton}
+            <span
+              className="info-icon-wrapper"
+              data-tooltip-id="app-tooltip"
+              data-tooltip-content={t.tooltip.nodeClone}
+              onClick={e => e.stopPropagation()}
+            >
+              ?
+            </span>
           </button>
           {showCloneBox && (
             <div className="node-clone-box">
@@ -580,9 +579,11 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
       {/* triggerRefresh would re-run dagre layout and reset all dragged positions */}
       {/* UPDATE_NODE Undo 스냅샷 (체크리스트/변경 표시 등 properties 변경 전 상태 보관) */}
       <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-        <button className="danger" style={{ flex: 1 }} onClick={handleDelete}>
-          {t.common.delete}
-        </button>
+        {!isCreatingNode && (
+          <button className="danger" style={{ flex: 1 }} onClick={handleDelete}>
+            {t.common.delete}
+          </button>
+        )}
         <button className="primary" style={{ flex: 1 }} onClick={handleSave}>
           {t.common.save}
         </button>
@@ -592,3 +593,4 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
     </>
   );
 };
+

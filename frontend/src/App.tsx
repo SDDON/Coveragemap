@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   ReactFlow,
+  Panel,
   Controls,
   Background,
   ConnectionMode,
@@ -99,8 +100,6 @@ export default function App() {
   const [blockReasonDraft, setBlockReasonDraft] = useState<string | null>(null);
   // 결함 원인 역추적(Trace Root Cause) 활성 대상 노드 ID (AI_IMPLEMENTATION_SPEC 3.3)
   const [tracedRootNodeId, setTracedRootNodeId] = useState<string | null>(null);
-  // 화면(Screen/Container) 단위 다국어 스코프 감사 활성 루트 노드 ID (CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 4.1)
-  const [scopedAuditRootId, setScopedAuditRootId] = useState<string | null>(null);
   // 특정 콘텐츠 중심 확인을 위한 포커스 고정 노드 ID (Content Focus Pinning)
   const [pinnedFocusNodeId, setPinnedFocusNodeId] = useState<string | null>(null);
   // 그래프 전체 재조회(/api/graph) 완료 횟수 — 재조회로 className이 초기화되면 하이라이트 effect를 다시 적용하기 위함
@@ -111,6 +110,7 @@ export default function App() {
   const selectedNodeRef = useRef<CoverageNode | null>(selectedNode);
   const selectedEdgeRef = useRef<CoverageEdge | null>(selectedEdge);
   const editFormDataRef = useRef<EditFormData>(editFormData);
+  const pendingCreatePosRef = useRef<{ x: number; y: number } | null>(null);
   nodesRef.current = nodes;
   edgesRef.current = edges;
   selectedNodeRef.current = selectedNode;
@@ -140,7 +140,7 @@ export default function App() {
     isImpactIsolated, toggleImpactIsolation, focusNodeFromImpactList, hasImpactOverlay,
     toggleImpact, removeImpact, deactivateImpact, modifiedNoteDraft, setModifiedNoteDraft, handleMarkModified, handleAcknowledge,
   } = useImpactOverlay({
-    nodesRef, setNodes, setSelectedNode, setSelectedEdge, setSearchQuery, setPinnedFocusNodeId, setErrorToast, rfInstance,
+    nodesRef, setNodes, setEdges, setSelectedNode, setSelectedEdge, setEditFormData, setIsCreatingNode, setSearchQuery, setPinnedFocusNodeId, setErrorToast, rfInstance,
     pushNodeUndoSnapshot: node => pushUndo({
       type: 'UPDATE_NODE', id: node.id,
       previousData: { label: node.data?.label || 'Node', name: node.data?.name || '', aliases: node.data?.aliases || [], test_status: node.data?.test_status || 'Untested', properties: { ...(node.data?.properties || {}) } },
@@ -152,9 +152,9 @@ export default function App() {
     setEditFormData, setRightPanelTab, setIsCreatingNode,
   });
 
-  const { rootCauseScope, scopedAuditScope } = useFocusContext({
+  const { rootCauseScope } = useFocusContext({
     nodes, edges, setNodes, setEdges, selectedNode, selectedEdge, hoveredNode, hoveredEdge, maxDepth, searchQuery,
-    pinnedFocusNodeId, tracedRootNodeId, scopedAuditRootId, activeImpacts, impactFilterOperator, hasImpactOverlay, selectedDomain, graphVersion, isDraggingRef,
+    pinnedFocusNodeId, tracedRootNodeId, scopedAuditRootId: null, activeImpacts, impactFilterOperator, hasImpactOverlay, selectedDomain, graphVersion, isDraggingRef,
   });
 
   const {
@@ -163,13 +163,53 @@ export default function App() {
   } = useGraphOperations({
     nodesRef, edgesRef, selectedNodeRef, selectedEdgeRef, editFormData, setNodes, setEdges, setSelectedNode, setSelectedEdge,
     setPinnedFocusNodeId, setActiveImpacts, pushUndo, applyLocalStatusChanges, syncStatusesFromServer, triggerRefresh, unparentNodesOnContainsDelete, setErrorToast,
-    isCreatingNode, setIsCreatingNode, rfInstance, setEditFormData, filterText, setFilterText, setShowAllDomains,
+    isCreatingNode, setIsCreatingNode, rfInstance, setEditFormData, filterText, setFilterText, setShowAllDomains, pendingCreatePosRef,
   });
 
   const {
     isConnecting, connectDragRef, quickConnectOpenedAtRef, quickConnectPopover, setQuickConnectPopover, pendingConnectSource, setPendingConnectSource,
     onConnectStart, onConnectEnd, onNodeClick,
   } = useQuickConnect({ nodesRef, createEdgeBetweenNodes });
+
+  /**
+   * 상단 툴바 'Add Node' 버튼 및 캔버스 빈 공간 우클릭 '➕ 새 노드 추가' 공통 핸들러:
+   * 이전에 엣지(type: 'edge')나 노드가 선택되어 있었더라도 선택 상태를 해제하고
+   * editFormData를 새 노드 생성 초기값(type: 'node')으로 리셋하여 EditNodeForm이 즉시 표시되도록 보장합니다.
+   */
+  const startCreateNode = useCallback((screenPos?: { x: number; y: number }) => {
+    pendingCreatePosRef.current = screenPos || null;
+    if (nodesRef.current.some(n => n.selected)) {
+      const nextNds = nodesRef.current.map(n => (n.selected ? { ...n, selected: false } : n));
+      nodesRef.current = nextNds;
+      setNodes(nextNds);
+    }
+    if (edgesRef.current.some(e => e.selected)) {
+      const nextEds = edgesRef.current.map(e => (e.selected ? { ...e, selected: false } : e));
+      edgesRef.current = nextEds;
+      setEdges(nextEds);
+    }
+    selectedNodeRef.current = null;
+    selectedEdgeRef.current = null;
+    setSelectedNode(null);
+    setSelectedEdge(null);
+    setErrorToast(null);
+    setBlockReasonDraft(null);
+    setModifiedNoteDraft('');
+    setTracedRootNodeId(null);
+    setEditFormData({
+      id: '',
+      label: 'Node',
+      name: '',
+      aliases: filterText ? [filterText] : [],
+      description: '',
+      issue_link: '',
+      test_status: 'Untested',
+      properties: selectedDomain && selectedDomain !== '__unassigned__' ? { domain: selectedDomain } : {},
+      type: 'node',
+    });
+    setIsCreatingNode(true);
+    setRightPanelTab('edit');
+  }, [filterText, selectedDomain, setNodes, setEdges, setModifiedNoteDraft]);
 
   // 고정된 포커스 노드가 그래프 재로드/필터 변경으로 사라지면 고정 해제
   useEffect(() => {
@@ -251,6 +291,7 @@ export default function App() {
         const nextCount = (reroutedCountMap.get(key) || 0) + 1;
         reroutedCountMap.set(key, nextCount);
         finalEdge.id = key;
+        finalEdge.selected = !isCreatingNode && selectedEdge?.id === key;
         finalEdge.label = nextCount > 1 ? `${domainType} (×${nextCount})` : domainType;
         finalEdge.type = 'floating';
         const existing = edgeMap.get(key);
@@ -264,6 +305,7 @@ export default function App() {
               : existing.data?.test_status;
           edgeMap.set(key, {
             ...existing,
+            selected: !isCreatingNode && selectedEdge?.id === key,
             label: `${domainType} (×${nextCount})`,
             className: mergedCls,
             data: {
@@ -274,11 +316,12 @@ export default function App() {
           });
         }
       } else {
+        finalEdge.selected = !isCreatingNode && Boolean(e.selected || selectedEdge?.id === e.id);
         edgeMap.set(e.id, finalEdge);
       }
     });
     return calculateEdgeBundling(Array.from(edgeMap.values()));
-  }, [edges, nodesStructuralKey, nodesStatusKey]);
+  }, [edges, nodesStructuralKey, nodesStatusKey, selectedEdge?.id, isCreatingNode]);
 
   const onConnect = useCallback(async (conn: Connection) => {
     if (!conn.source || !conn.target || conn.source === conn.target) return;
@@ -292,12 +335,11 @@ export default function App() {
 
     setSelectedNode(prev => {
       if (prev?.id !== nextNode?.id) {
-        // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모/원인 역추적/화면 다국어 감사/노드 복제 박스)은 닫고 비웁니다.
+        // 선택 대상(id)이 바뀌면 이전 노드용 입력(차단 사유/변경 메모/원인 역추적/노드 복제 박스)은 닫고 비웁니다.
         // (React Flow는 노드 data가 바뀌어도 selection을 새 객체로 다시 알려주므로 id 기준으로만 초기화)
         setBlockReasonDraft(null);
         setModifiedNoteDraft('');
         setTracedRootNodeId(null);
-        setScopedAuditRootId(null);
       }
       return nextNode;
     });
@@ -407,7 +449,7 @@ export default function App() {
   }, [nodes, visibleEdges, hoveredGlobalBadgeId, rfInstance]);
 
   const canvasClassName = [
-    (selectedNode || selectedEdge || searchQuery.length > 0 || pinnedFocusNodeId || hoveredNode || hoveredEdge || hoveredGlobalBadgeId || scopedAuditRootId) ? 'has-selection' : '',
+    (selectedNode || selectedEdge || searchQuery.length > 0 || pinnedFocusNodeId || hoveredNode || hoveredEdge || hoveredGlobalBadgeId) ? 'has-selection' : '',
     hasImpactOverlay ? 'has-impact' : '',
     hasImpactOverlay && isImpactIsolated ? 'is-isolated' : '',
     selectedDomain ? 'domain-active' : '',
@@ -456,7 +498,7 @@ export default function App() {
           setSelectedNode(null);
           setSelectedEdge(null);
           setIsCreatingNode(false);
-          setScopedAuditRootId(null);
+          setEditFormData(prev => (prev.type === 'edge' ? { ...prev, id: '', type: 'node' } : prev));
           if (hasImpactOverlay) deactivateImpact();
           setContextMenu(null);
           window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: null }));
@@ -474,71 +516,45 @@ export default function App() {
         <Controls />
         <Background />
 
-        <TopToolbar
-          filterText={filterText}
-          showAllDomains={showAllDomains}
-          onAddNode={() => { setSelectedNode(null); setSelectedEdge(null); setErrorToast(null); setIsCreatingNode(true); }}
-          onSwitchWorkspace={() => { setFilterText(''); setShowAllDomains(false); localStorage.removeItem('savedWorkspace'); localStorage.removeItem('savedShowAll'); }}
-          onOpenPresets={() => setShowPresetManager(true)}
-          onOpenHelp={() => setShowHelp(true)}
-          onRelayout={relayoutFocused}
-          hasParentNodes={parentNodes.length > 0}
-          allParentsCollapsed={allParentsCollapsed}
-          onToggleCollapseAll={() => {
-            window.dispatchEvent(
-              new CustomEvent('toggleCollapseAllNodes', { detail: { collapsed: !allParentsCollapsed } })
-            );
-          }}
-        />
+        {/* 통합 상단 HUD 스택 (반화면 960×1080 및 HD 1920×1080 무결성 보장: 우측 인스펙터 패널 영역 침범 방지 및 2단 스택 배치) */}
+        <Panel position="top-left" className="top-hud-panel">
+          <div className="top-hud-stack">
+            <TopToolbar
+              filterText={filterText}
+              showAllDomains={showAllDomains}
+              onAddNode={() => startCreateNode()}
+              onSwitchWorkspace={() => { setFilterText(''); setShowAllDomains(false); localStorage.removeItem('savedWorkspace'); localStorage.removeItem('savedShowAll'); }}
+              onOpenPresets={() => setShowPresetManager(true)}
+              onOpenHelp={() => setShowHelp(true)}
+              onRelayout={relayoutFocused}
+              hasParentNodes={parentNodes.length > 0}
+              allParentsCollapsed={allParentsCollapsed}
+              onToggleCollapseAll={() => {
+                window.dispatchEvent(
+                  new CustomEvent('toggleCollapseAllNodes', { detail: { collapsed: !allParentsCollapsed } })
+                );
+              }}
+            />
 
-        <DomainFilterBar
-          nodes={nodes}
-          selectedDomain={selectedDomain}
-          onSelectDomain={domain => {
-            setSelectedDomain(domain);
-            if (!domain) {
-              setIsDomainIsolated(false);
-              setTimeout(() => {
-                try {
-                  rfInstance?.fitView({ padding: 0.2, duration: 400 });
-                } catch {
-                  // Ignore fitView errors
+            <DomainFilterBar
+              nodes={nodes}
+              selectedDomain={selectedDomain}
+              onSelectDomain={domain => {
+                setSelectedDomain(domain);
+                if (!domain) {
+                  setIsDomainIsolated(false);
+                  setTimeout(() => {
+                    try {
+                      rfInstance?.fitView({ padding: 0.2, duration: 400 });
+                    } catch {
+                      // Ignore fitView errors
+                    }
+                  }, 60);
+                  return;
                 }
-              }, 60);
-              return;
-            }
-            const scope = computeDomainScope(domain, nodesRef.current, edgesRef.current);
-            const targetIds = new Set<string>();
-            scope.matchedNodeIds.forEach(id => {
-              const nd = nodesRef.current.find(n => n.id === id);
-              if (!nd) return;
-              if (nd.hidden && nd.parentId) targetIds.add(nd.parentId);
-              else if (!nd.hidden) targetIds.add(id);
-            });
-            if (targetIds.size > 0) {
-              setTimeout(() => {
-                try {
-                  rfInstance?.fitView({
-                    nodes: Array.from(targetIds).map(id => ({ id })),
-                    padding: 0.25,
-                    maxZoom: 1.25,
-                    duration: 400,
-                  });
-                } catch {
-                  // Ignore fitView errors
-                }
-              }, 60);
-            }
-          }}
-          isDomainIsolated={isDomainIsolated}
-          onToggleDomainIsolate={() => {
-            setIsDomainIsolated(prev => {
-              const next = !prev;
-              if (selectedDomain) {
-                const scope = computeDomainScope(selectedDomain, nodesRef.current, edgesRef.current);
+                const scope = computeDomainScope(domain, nodesRef.current, edgesRef.current);
                 const targetIds = new Set<string>();
-                const baseSet = next ? scope.matchedNodeIds : new Set([...scope.matchedNodeIds, ...scope.hubNodeIds]);
-                baseSet.forEach(id => {
+                scope.matchedNodeIds.forEach(id => {
                   const nd = nodesRef.current.find(n => n.id === id);
                   if (!nd) return;
                   if (nd.hidden && nd.parentId) targetIds.add(nd.parentId);
@@ -558,11 +574,42 @@ export default function App() {
                     }
                   }, 60);
                 }
-              }
-              return next;
-            });
-          }}
-        />
+              }}
+              isDomainIsolated={isDomainIsolated}
+              onToggleDomainIsolate={() => {
+                setIsDomainIsolated(prev => {
+                  const next = !prev;
+                  if (selectedDomain) {
+                    const scope = computeDomainScope(selectedDomain, nodesRef.current, edgesRef.current);
+                    const targetIds = new Set<string>();
+                    const baseSet = next ? scope.matchedNodeIds : new Set([...scope.matchedNodeIds, ...scope.hubNodeIds]);
+                    baseSet.forEach(id => {
+                      const nd = nodesRef.current.find(n => n.id === id);
+                      if (!nd) return;
+                      if (nd.hidden && nd.parentId) targetIds.add(nd.parentId);
+                      else if (!nd.hidden) targetIds.add(id);
+                    });
+                    if (targetIds.size > 0) {
+                      setTimeout(() => {
+                        try {
+                          rfInstance?.fitView({
+                            nodes: Array.from(targetIds).map(id => ({ id })),
+                            padding: 0.25,
+                            maxZoom: 1.25,
+                            duration: 400,
+                          });
+                        } catch {
+                          // Ignore fitView errors
+                        }
+                      }, 60);
+                    }
+                  }
+                  return next;
+                });
+              }}
+            />
+          </div>
+        </Panel>
 
         <InspectorPanel
           rightPanelTab={rightPanelTab} setRightPanelTab={setRightPanelTab}
@@ -571,7 +618,7 @@ export default function App() {
           selectedNode={selectedNode} selectedEdge={selectedEdge}
           setSelectedNode={setSelectedNode} setSelectedEdge={setSelectedEdge}
           liveEditNode={nodes.find(n => n.id === selectedNode?.id) || selectedNode}
-          isCreatingNode={isCreatingNode} editFormData={editFormData} setEditFormData={setEditFormData}
+          isCreatingNode={isCreatingNode} setIsCreatingNode={setIsCreatingNode} editFormData={editFormData} setEditFormData={setEditFormData}
           filterText={filterText} setFilterText={setFilterText} aliases={aliases}
           searchQuery={searchQuery} setSearchQuery={setSearchQuery}
           visibleTypes={visibleTypes} setVisibleTypes={setVisibleTypes}
@@ -581,7 +628,6 @@ export default function App() {
           globalNodesList={globalNodesList} activeImpacts={activeImpacts}
           toggleImpact={toggleImpact} fetchGlobals={fetchGlobals} triggerRefresh={triggerRefresh}
           tracedRootNodeId={tracedRootNodeId} setTracedRootNodeId={setTracedRootNodeId} rootCauseScope={rootCauseScope}
-          scopedAuditRootId={scopedAuditRootId} setScopedAuditRootId={setScopedAuditRootId} scopedAuditScope={scopedAuditScope}
           pinnedFocusNodeId={pinnedFocusNodeId} setPinnedFocusNodeId={setPinnedFocusNodeId}
           pendingConnectSource={pendingConnectSource} setPendingConnectSource={setPendingConnectSource}
           blockReasonDraft={blockReasonDraft} setBlockReasonDraft={setBlockReasonDraft}
@@ -598,7 +644,7 @@ export default function App() {
       <CanvasContextMenu
         contextMenu={contextMenu}
         onClose={() => setContextMenu(null)}
-        onAddNode={() => { setSelectedNode(null); setSelectedEdge(null); setIsCreatingNode(true); }}
+        onAddNode={pos => startCreateNode(pos)}
         onFitView={() => { if (rfInstance) rfInstance.fitView({ padding: 0.2, duration: 800 }); }}
         onRefresh={triggerRefresh}
       />

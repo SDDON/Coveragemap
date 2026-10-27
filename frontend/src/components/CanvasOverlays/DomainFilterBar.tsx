@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { Panel } from '@xyflow/react';
 import type { CoverageNode } from '../../types/graph';
 import { getEffectiveNodeDomain, getDomainMeta } from '../../utils/graphScopes';
 import { t } from '../../locales/koKR';
@@ -68,9 +67,19 @@ export const DomainFilterBar: React.FC<DomainFilterBarProps> = ({
   }
 
   return (
-    <Panel position="top-center" className="domain-filter-bar-panel">
+    <div className="domain-filter-bar-panel">
       <div className="domain-filter-bar">
-        <span className="domain-bar-label">{t.domain.barLabel}</span>
+        <span className="domain-bar-label">
+          {t.domain.barLabel}
+          <span
+            className="info-icon-wrapper"
+            data-tooltip-id="app-tooltip"
+            data-tooltip-place="bottom"
+            data-tooltip-content={t.tooltip.domainBar}
+          >
+            ?
+          </span>
+        </span>
         <div className="domain-filter-chips">
           <button
             type="button"
@@ -112,6 +121,7 @@ export const DomainFilterBar: React.FC<DomainFilterBarProps> = ({
           </button>
         )}
       </div>
-    </Panel>
+    </div>
   );
 };
+

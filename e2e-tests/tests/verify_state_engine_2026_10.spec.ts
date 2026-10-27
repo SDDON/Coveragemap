@@ -283,21 +283,19 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(badgePill.locator('.badge-tooltip')).toContainText('🟢');
     await expect(badgePill.locator('.badge-tooltip')).toContainText('독일어 말줄임(...) 처리 확인');
 
-    // 3. Select parent container (ids.root) -> Edit panel has unified Checklist + Issue Link (no Verification Guide textarea)
+    // 3. Select parent container (ids.root) -> Edit panel has unified Checklist + Issue Link (no Verification Guide textarea and no redundant .scoped-audit-btn)
     await selectNode(page, ids.root);
     await expect(page.locator('.details-panel label', { hasText: 'Verification Guide (Description)' })).toHaveCount(0);
-    const scopedBtn = page.locator('.scoped-audit-btn');
-    await expect(scopedBtn).toBeVisible();
-    const auditPromise = page.waitForResponse(res => res.url().includes('/api/qa/audit-cross-cutting') && res.url().includes('scope_root_id='));
-    await scopedBtn.click();
-    const auditRes = await auditPromise;
+    await expect(page.locator('.scoped-audit-btn')).toHaveCount(0);
+    await expect(page.locator('.scoped-audit-banner')).toHaveCount(0);
+
+    // Backend /api/qa/audit-cross-cutting endpoint remains available for MCP & QA automation
+    const auditRes = await request.get(`/api/qa/audit-cross-cutting?aspect=Localization&scope_root_id=${ids.root}`);
     expect(auditRes.ok()).toBeTruthy();
 
-    await expect(page.locator('.scoped-audit-banner')).toBeVisible();
-    // Parent (ids.root) and i18n child (ids.settings) are .active, while non-i18n sibling (ids.child) is .de-emphasized
-    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
-    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bactive\b/);
-    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bde-emphasized\b/);
+    // Hovering the global Localization badge highlights connected nodes with .hovered-global-neighbor
+    await badgePill.hover({ force: true });
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bhovered-global-neighbor\b/);
 
     // 4. Mark the Localization badge Failed -> dynamic fault chip appears on ids.settings
     const markFailBtn = badgePill.locator('button[title="Mark Failed"]');
@@ -1246,9 +1244,133 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(nodeLocator(page, clonedNodeId)).toBeVisible({ timeout: 10000 });
     await expect(nodeLocator(page, clonedNodeId)).toContainText('Sub_Hero_Slot #골드던전');
   });
+
+  test('T. Half-Screen (960×1080) Top HUD Zero-Overlap, Add Node after Edge Selection & Right-Click, and HelpModal Changelog & Inline Tooltips', async ({ page, request }) => {
+    // Seed domain property on root and child so DomainFilterBar is rendered with multiple domain chips
+    await request.put(`/api/nodes/${ids.root}`, {
+      data: { label: 'Feature', name: 'Game Testing Root', aliases: ['root_alias'], properties: { domain: '전투' } },
+    });
+    await request.put(`/api/nodes/${ids.child}`, {
+      data: { label: 'Feature', name: 'Game Testing Child', aliases: ['child_alias'], properties: { domain: '성장' } },
+    });
+    await request.put(`/api/nodes/${ids.settings}`, {
+      data: { label: 'Screen', name: 'Game_Settings', aliases: ['settings'], properties: { domain: '경제' } },
+    });
+    const globalId = await (
+      await request.post('/api/nodes', {
+        data: { label: 'Component', name: 'Global_HUD_Check', aliases: ['global'], properties: { is_global: 'true' } },
+      })
+    ).json();
+    await request.post('/api/edges', {
+      data: { source: ids.settings, target: globalId, type: 'Depends_On', test_status: 'Untested', properties: {} },
+    });
+
+    const graphReload = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await graphReload;
+    await page.waitForTimeout(400);
+
+    // 1. Resize viewport to half-screen (960×1080) and verify 0px bounding-box overlap among TopToolbar, DomainFilterBar, and InspectorPanel
+    await page.setViewportSize({ width: 960, height: 1080 });
+    await page.waitForTimeout(300);
+
+    const topToolbar = page.locator('.top-toolbar');
+    const domainBar = page.locator('.domain-filter-bar');
+    const inspectorPanel = page.locator('.details-panel');
+    await expect(topToolbar).toBeVisible();
+    await expect(domainBar).toBeVisible();
+    await expect(inspectorPanel).toBeVisible();
+
+    const toolbarBox = await topToolbar.boundingBox();
+    const domainBox = await domainBar.boundingBox();
+    const inspectorBox = await inspectorPanel.boundingBox();
+    expect(toolbarBox).not.toBeNull();
+    expect(domainBox).not.toBeNull();
+    expect(inspectorBox).not.toBeNull();
+
+    const boxesOverlap = (
+      a: { x: number; y: number; width: number; height: number },
+      b: { x: number; y: number; width: number; height: number }
+    ) => {
+      const noHorizontalOverlap = a.x + a.width <= b.x + 1 || b.x + b.width <= a.x + 1;
+      const noVerticalOverlap = a.y + a.height <= b.y + 1 || b.y + b.height <= a.y + 1;
+      return !(noHorizontalOverlap || noVerticalOverlap);
+    };
+
+    expect(boxesOverlap(toolbarBox!, domainBox!)).toBe(false);
+    expect(boxesOverlap(toolbarBox!, inspectorBox!)).toBe(false);
+    expect(boxesOverlap(domainBox!, inspectorBox!)).toBe(false);
+
+    // Verify TopToolbar semantic CSS classes (.toolbar-btn-presets distinct sky-blue color & .toolbar-btn-help circular style)
+    const presetsBtn = topToolbar.locator('.toolbar-btn-presets');
+    const helpBtn = topToolbar.locator('.toolbar-btn-help');
+    await expect(presetsBtn).toHaveCSS('background-color', 'rgb(2, 132, 199)');
+    await expect(helpBtn).toHaveCSS('border-radius', '50%');
+
+    // 2. Select an edge, modify EditEdgeForm without saving, then click 'Add Node' in TopToolbar -> EditNodeForm (#nodeName) must appear cleanly
+    await page.locator('.react-flow__controls-fitview').click();
+    await page.waitForTimeout(300);
+    const edgeInteraction = page.locator('.react-flow__edge:not(.edge-contains) .react-flow__edge-interaction').first();
+    await edgeInteraction.click({ force: true });
+    await expect(page.locator('.details-panel h3').first()).toContainText('연결선(Edge) 편집');
+    await expect(page.locator('#edgeType')).toBeVisible();
+    await page.locator('#edgeType').selectOption('Return');
+    await page.locator('#edgeAction').fill('Unsaved_Edge_Trigger');
+
+    await topToolbar.getByRole('button', { name: 'Add Node' }).click();
+    await expect(page.locator('.details-panel h3').first()).toContainText('Add Node');
+    await expect(page.locator('#nodeName')).toBeVisible();
+    await expect(page.locator('#edgeType')).toHaveCount(0);
+
+    await page.locator('#nodeName').fill('Created_After_Edge_Toolbar');
+    const createToolbarNodeRes = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await page.locator('.details-panel button.primary', { hasText: 'Save' }).click();
+    const createdToolbarNodeId = await (await createToolbarNodeRes).json();
+    await expect(nodeLocator(page, createdToolbarNodeId)).toBeVisible();
+
+    // 3. Select an edge again, then right-click canvas pane and click '➕ 새 노드 추가' -> context menu closes and EditNodeForm (#nodeName) appears
+    await edgeInteraction.click({ force: true });
+    await expect(page.locator('.details-panel h3').first()).toContainText('연결선(Edge) 편집');
+
+    await page.locator('.react-flow__pane').click({ button: 'right', position: { x: 260, y: 500 } });
+    const contextMenu = page.locator('.context-menu');
+    await expect(contextMenu).toBeVisible();
+    await contextMenu.locator('.context-menu-item', { hasText: '새 노드 추가' }).click();
+    await expect(contextMenu).toBeHidden();
+    await expect(page.locator('.details-panel h3').first()).toContainText('Add Node');
+    await expect(page.locator('#nodeName')).toBeVisible();
+
+    await page.locator('#nodeName').fill('Created_After_Edge_ContextMenu');
+    const createCtxNodeRes = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await page.locator('.details-panel button.primary', { hasText: 'Save' }).click();
+    const createdCtxNodeId = await (await createCtxNodeRes).json();
+    await expect(nodeLocator(page, createdCtxNodeId)).toBeVisible();
+
+    // 4. Select an edge (editFormData.type = 'edge'), activate Global Impact and click a node in Impact Navigator drawer -> must switch to EditNodeForm for that node
+    await edgeInteraction.click({ force: true });
+    await expect(page.locator('#edgeType')).toBeVisible();
+    await page.locator('.panel-tab-btn', { hasText: 'Globals' }).click();
+    const impactBtn = page.locator('.impact-toggle-btn').first();
+    await impactBtn.click();
+    const listToggleBtn = page.locator('.impact-list-toggle-btn');
+    await expect(listToggleBtn).toBeVisible();
+    await listToggleBtn.click();
+    const firstImpactItem = page.locator('.impact-navigator-item').first();
+    await expect(firstImpactItem).toBeVisible();
+    await firstImpactItem.click();
+    await expect(page.locator('#nodeName')).toBeVisible();
+    await expect(page.locator('#edgeType')).toHaveCount(0);
+    await expect(page.locator('#nodeName')).toHaveValue('Game_Settings');
+    await page.locator('.impact-close-btn').click();
+
+    // 5. Verify inline '?' tooltips exist and HelpModal Changelog tab displays version history
+    await expect(domainBar.locator('[data-tooltip-id="app-tooltip"]')).toBeVisible();
+    await topToolbar.locator('.toolbar-btn-help').click();
+    const changelogTabBtn = page.getByRole('button', { name: /변경 이력/ });
+    await expect(changelogTabBtn).toBeVisible();
+    await changelogTabBtn.click();
+    await expect(page.getByText('v0.5.1')).toBeVisible();
+    await expect(page.getByText('v0.5.0')).toBeVisible();
+  });
 });
-
-
-
-
 

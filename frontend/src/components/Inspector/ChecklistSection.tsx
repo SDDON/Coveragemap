@@ -24,7 +24,10 @@ export const ChecklistSection: React.FC<ChecklistSectionProps> = ({
   return (
     <div className="form-group checklist-section">
       <h4 className="inspector-section-title">
-        {t.checklist.title}
+        <span>
+          {t.checklist.title}
+          <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.checklist}>?</span>
+        </span>
         {overall && <span className="checklist-summary">{STATUS_ICON[overall]} {passedCount}/{items.length}</span>}
       </h4>
       {items.length === 0 && <p className="inspector-hint">{t.checklist.empty}</p>}

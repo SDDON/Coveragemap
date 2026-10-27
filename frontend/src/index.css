@@ -1776,16 +1776,17 @@ select option {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  max-width: min(920px, calc(100vw - 420px));
+  max-width: 100%;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 0;
   padding: 5px 12px;
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1.5px solid #cbd5e1;
-  border-radius: 999px;
+  border-radius: 16px;
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
+  box-sizing: border-box;
 }
 .domain-bar-label {
   font-size: 0.78rem;
@@ -1799,6 +1800,8 @@ select option {
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
+  max-height: 68px;
+  overflow-y: auto;
 }
 .domain-chip,
 .domain-chip-btn {
@@ -2082,3 +2085,162 @@ select option {
   font-weight: 700;
 }
 
+/* ============================================
+   Unified Top HUD Stack & Half-Screen (960×1080) Responsive Policy (2026-10)
+   - 상단 좌측 HUD(.top-hud-panel) 내부에 TopToolbar(Row 1)와 DomainFilterBar(Row 2)를 수직 스택 배치
+   - 우측 InspectorPanel(.details-panel) 영역을 침범하지 않도록 max-width를 동적 제한하여
+     HD(1920×1080) 및 반화면(960×1080) 모두에서 0px 겹침(Zero-Overlap) 보장
+   ============================================ */
+.react-flow__panel.top-hud-panel {
+  margin: 16px !important;
+  max-width: calc(100vw - 400px);
+  pointer-events: none;
+  z-index: var(--z-floating-panel);
+}
+
+.top-hud-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  pointer-events: none;
+}
+
+.top-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+  pointer-events: auto;
+}
+
+.domain-filter-bar-panel {
+  max-width: 100%;
+  pointer-events: auto;
+}
+
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.toolbar-btn-bold {
+  font-weight: 700;
+}
+
+.toolbar-btn-presets {
+  background-color: #0284c7 !important;
+  border-color: #0369a1 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.toolbar-btn-presets:hover {
+  background-color: #0369a1 !important;
+}
+
+.toolbar-btn-help {
+  padding: 6px 11px;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.toolbar-workspace-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 20px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.toolbar-workspace-label {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.toolbar-workspace-value {
+  font-size: 0.85rem;
+  color: #0284c7;
+  font-weight: 700;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 반화면(960×1080 등 <= 1200px) 반응형 컴팩트 모드 */
+@media (max-width: 1200px) {
+  .react-flow__panel.details-panel {
+    width: 300px !important;
+    max-width: 300px !important;
+    margin: 12px !important;
+    max-height: calc(100vh - 24px) !important;
+  }
+
+  .react-flow__panel.top-hud-panel {
+    margin: 12px !important;
+    max-width: calc(100vw - 340px) !important;
+  }
+
+  .top-hud-stack {
+    gap: 6px;
+  }
+
+  .top-toolbar {
+    gap: 5px;
+  }
+
+  .toolbar-btn {
+    padding: 5px 9px;
+    font-size: 0.78rem;
+    gap: 4px;
+  }
+
+  .toolbar-btn-help {
+    padding: 5px 9px;
+  }
+
+  .toolbar-workspace-pill {
+    padding: 4px 10px;
+    gap: 5px;
+  }
+
+  .toolbar-workspace-label {
+    display: none;
+  }
+
+  .toolbar-workspace-value {
+    font-size: 0.78rem;
+    max-width: 130px;
+  }
+
+  .domain-filter-bar {
+    padding: 4px 10px;
+    gap: 5px;
+    border-radius: 14px;
+  }
+
+  .domain-chip,
+  .domain-chip-btn {
+    padding: 3px 8px !important;
+    font-size: 0.74rem !important;
+  }
+}

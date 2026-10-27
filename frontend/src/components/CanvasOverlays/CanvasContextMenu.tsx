@@ -4,7 +4,7 @@ import { t } from '../../locales/koKR';
 export interface CanvasContextMenuProps {
   contextMenu: { x: number; y: number; show: boolean } | null;
   onClose: () => void;
-  onAddNode: () => void;
+  onAddNode: (pos?: { x: number; y: number }) => void;
   onFitView: () => void;
   onRefresh: () => void;
 }
@@ -19,17 +19,20 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
 }) => {
   if (!contextMenu?.show) return null;
 
+  const clampedLeft = typeof window !== 'undefined' ? Math.max(8, Math.min(contextMenu.x, window.innerWidth - 180)) : contextMenu.x;
+  const clampedTop = typeof window !== 'undefined' ? Math.max(8, Math.min(contextMenu.y, window.innerHeight - 150)) : contextMenu.y;
+
   return (
     <div
       className="context-menu"
-      style={{ top: contextMenu.y, left: contextMenu.x }}
+      style={{ top: clampedTop, left: clampedLeft }}
       onMouseLeave={onClose}
     >
       <div
         className="context-menu-item"
         onClick={() => {
-          onAddNode();
-          // contextMenu.show is still true to let initialPos capture its position
+          onAddNode({ x: contextMenu.x, y: contextMenu.y });
+          onClose();
         }}
       >
         {t.contextMenu.addNode}
@@ -56,3 +59,4 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
     </div>
   );
 };
+

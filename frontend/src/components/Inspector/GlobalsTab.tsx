@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import type { CoverageNode, CoverageEdge, ApiNode } from '../../types/graph';
-import type { ActiveImpactItem } from '../../types/ui';
+import type { ActiveImpactItem, EditFormData } from '../../types/ui';
 import { api } from '../../api/client';
 import { t } from '../../locales/koKR';
 
@@ -14,6 +14,8 @@ interface GlobalsTabProps {
   setEdges: Dispatch<SetStateAction<CoverageEdge[]>>;
   setSelectedNode: Dispatch<SetStateAction<CoverageNode | null>>;
   setSelectedEdge: Dispatch<SetStateAction<CoverageEdge | null>>;
+  setEditFormData?: Dispatch<SetStateAction<EditFormData>>;
+  setIsCreatingNode?: Dispatch<SetStateAction<boolean>>;
   setRightPanelTab: Dispatch<SetStateAction<'view' | 'edit' | 'globals'>>;
   toggleImpact: (globalNodeId: string, globalNodeName: string) => Promise<void>;
   fetchGlobals: () => Promise<void>;
@@ -31,6 +33,8 @@ export const GlobalsTab: React.FC<GlobalsTabProps> = ({
   setEdges,
   setSelectedNode,
   setSelectedEdge,
+  setEditFormData,
+  setIsCreatingNode,
   setRightPanelTab,
   toggleImpact,
   fetchGlobals,
@@ -62,8 +66,20 @@ export const GlobalsTab: React.FC<GlobalsTabProps> = ({
       };
       setNodes(nds => (nds.some(n => n.selected) ? nds.map(n => (n.selected ? { ...n, selected: false } : n)) : nds));
       setEdges(eds => (eds.some(ed => ed.selected) ? eds.map(ed => (ed.selected ? { ...ed, selected: false } : ed)) : eds));
+      setIsCreatingNode?.(false);
       setSelectedEdge(null);
       setSelectedNode(globalNodeObj);
+      setEditFormData?.({
+        id: globalNodeObj.id,
+        label: globalNodeObj.data.label || 'Component',
+        name: globalNodeObj.data.name || '',
+        aliases: globalNodeObj.data.aliases || [],
+        description: data.description || g.description || '',
+        issue_link: data.issue_link || g.issue_link || '',
+        test_status: globalNodeObj.data.test_status || 'Untested',
+        properties: { ...(globalNodeObj.data.properties || {}), is_global: 'true' },
+        type: 'node',
+      });
       window.dispatchEvent(new CustomEvent('selectBadgeNode', { detail: globalNodeObj.id }));
       setRightPanelTab('edit');
     } catch (err: unknown) {

@@ -40,6 +40,7 @@ export interface UseGraphOperationsProps {
   filterText?: string;
   setFilterText?: Dispatch<SetStateAction<string>>;
   setShowAllDomains?: Dispatch<SetStateAction<boolean>>;
+  pendingCreatePosRef?: MutableRefObject<{ x: number; y: number } | null>;
 }
 
 export function useGraphOperations({
@@ -67,6 +68,7 @@ export function useGraphOperations({
   filterText,
   setFilterText,
   setShowAllDomains,
+  pendingCreatePosRef,
 }: UseGraphOperationsProps) {
   /**
    * 캔버스 드래그 연결(onConnect), Quick Connect 팝오버(Pattern A), 2-Step 클릭 연결(Pattern B)이
@@ -307,6 +309,21 @@ export function useGraphOperations({
    * - 낙관적 업데이트를 먼저 적용(로컬 연쇄 전파 포함)한 뒤 저장하고, 저장 후 서버 상태로 재동기화합니다.
    */
   const handleSaveStatus = useCallback(async (status: StatusName, overrideOptions?: { reason?: string }) => {
+    if (isCreatingNode) {
+      if (setEditFormData) {
+        const isOverride = Boolean(overrideOptions?.reason);
+        setEditFormData(prev => ({
+          ...prev,
+          test_status: status,
+          properties: {
+            ...(prev.properties || {}),
+            is_manual_override: isOverride,
+            override_reason: overrideOptions?.reason || undefined,
+          },
+        }));
+      }
+      return;
+    }
     const selectedNode = selectedNodeRef.current;
     if (!selectedNode) {
       const selectedEdge = selectedEdgeRef.current;
@@ -373,7 +390,7 @@ export function useGraphOperations({
       setEdges(prevEdges);
       setErrorToast(extractErrorMessage(err));
     }
-  }, [selectedNodeRef, selectedEdgeRef, editFormData, nodesRef, edgesRef, setNodes, setEdges, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast]);
+  }, [isCreatingNode, setEditFormData, selectedNodeRef, selectedEdgeRef, editFormData, nodesRef, edgesRef, setNodes, setEdges, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast]);
 
   /**
    * C. B안 노드 내부 체크리스트 저장 (TESTCASE 스펙 3.3)
@@ -581,25 +598,32 @@ export function useGraphOperations({
         const payloadAliases = Array.isArray(editFormData.aliases)
           ? editFormData.aliases
           : (typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map(s => s.trim()).filter(Boolean) : []);
+        const statusName = (editFormData.test_status as StatusName) || 'Untested';
         const newId = await api.nodes.createNode({
           label: editFormData.label || 'Node',
           name: editFormData.name || '',
           aliases: payloadAliases,
           description: editFormData.description || '',
           issue_link: editFormData.issue_link || '',
-          test_status: editFormData.test_status || 'Untested',
+          test_status: statusName,
           properties: editFormData.properties || {},
         });
         pushUndo({ type: 'CREATE_NODE', id: newId });
 
-        let initialPos = { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 50 };
+        const targetScreenPos = pendingCreatePosRef?.current || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        let initialPos = { x: targetScreenPos.x - 100, y: targetScreenPos.y - 50 };
         if (rfInstance) {
-          initialPos = rfInstance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+          initialPos = rfInstance.screenToFlowPosition(targetScreenPos);
+        }
+        if (pendingCreatePosRef) {
+          pendingCreatePosRef.current = null;
         }
         const newNode: CoverageNode = {
           id: newId,
           type: 'custom',
           position: initialPos,
+          selected: true,
+          className: `status-${statusName.toLowerCase()}`,
           data: {
             id: newId,
             label: editFormData.label || 'Node',
@@ -607,14 +631,33 @@ export function useGraphOperations({
             aliases: payloadAliases,
             description: editFormData.description || '',
             issue_link: editFormData.issue_link || '',
-            test_status: editFormData.test_status || 'Untested',
+            test_status: statusName,
             properties: editFormData.properties || {},
             badges: [],
           },
         };
-        setNodes(nds => [...nds, newNode]);
+        const nextNodes = [...nodesRef.current.map(n => (n.selected ? { ...n, selected: false } : n)), newNode];
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+        selectedNodeRef.current = newNode;
         if (setIsCreatingNode) setIsCreatingNode(false);
         setSelectedNode(newNode);
+        if (setEditFormData) {
+          setEditFormData(prev => ({ ...prev, id: newId, type: 'node' }));
+        }
+        if (filterText && setFilterText) {
+          const fl = filterText.toLowerCase();
+          const matchesCurrentFilter =
+            (newNode.data.name || '').toLowerCase().includes(fl) ||
+            (newNode.data.label || '').toLowerCase().includes(fl) ||
+            (newNode.data.aliases || []).some(a => String(a).toLowerCase().includes(fl));
+          if (!matchesCurrentFilter) {
+            if (setShowAllDomains) setShowAllDomains(true);
+            setFilterText('');
+          }
+        } else if (!filterText && setShowAllDomains) {
+          setShowAllDomains(true);
+        }
         triggerRefresh();
       } catch (err: unknown) {
         setErrorToast(extractErrorMessage(err));
@@ -728,7 +771,7 @@ export function useGraphOperations({
         setErrorToast(extractErrorMessage(err));
       }
     }
-  }, [editFormData, isCreatingNode, setIsCreatingNode, rfInstance, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, syncStatusesFromServer, setErrorToast, setEdges]);
+  }, [editFormData, isCreatingNode, setIsCreatingNode, rfInstance, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, syncStatusesFromServer, setErrorToast, setEdges, pendingCreatePosRef, setEditFormData, filterText, setFilterText, setShowAllDomains]);
 
   return {
     createEdgeBetweenNodes,

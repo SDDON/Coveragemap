@@ -22,7 +22,10 @@ export const EditEdgeForm: React.FC<EditEdgeFormProps> = ({
   return (
     <>
       <div className="form-group">
-        <label htmlFor="edgeType" className="form-label">{t.inspector.edgeType}</label>
+        <label htmlFor="edgeType" className="form-label">
+          {t.inspector.edgeType}
+          <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.edgeType}>?</span>
+        </label>
         {/* data.type도 함께 갱신해야 전파 엔진(edgeTypeOf)이 바뀐 타입(예: Return 전환)을 인식합니다. */}
         <select
           id="edgeType"
@@ -39,8 +42,12 @@ export const EditEdgeForm: React.FC<EditEdgeFormProps> = ({
         </select>
       </div>
       <div className="form-group">
-        <label className="form-label">{t.inspector.actionTrigger}</label>
+        <label htmlFor="edgeAction" className="form-label">
+          {t.inspector.actionTrigger}
+          <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.actionTrigger}>?</span>
+        </label>
         <input
+          id="edgeAction"
           type="text"
           value={editFormData.action || ''}
           onChange={e => setEditFormData({ ...editFormData, action: e.target.value })}

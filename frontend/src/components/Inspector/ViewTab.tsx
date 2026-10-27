@@ -132,6 +132,7 @@ export const ViewTab: React.FC<ViewTabProps> = ({
       <div className="form-group" style={{ marginTop: '12px' }}>
         <label className="form-label" style={{ marginBottom: '6px' }}>
           {t.inspector.overviewModeLabel}
+          <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.overviewMode}>?</span>
         </label>
         <button
           type="button"

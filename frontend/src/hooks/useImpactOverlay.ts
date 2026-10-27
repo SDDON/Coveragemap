@@ -2,15 +2,18 @@ import { useState, useCallback, useEffect } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import type { ReactFlowInstance } from '@xyflow/react';
 import type { CoverageNode, CoverageEdge } from '../types/graph';
-import type { ActiveImpactItem, ImpactFilterOperator } from '../types/ui';
+import type { ActiveImpactItem, ImpactFilterOperator, EditFormData } from '../types/ui';
 import { api } from '../api/client';
 import { t } from '../locales/koKR';
 
 interface UseImpactOverlayProps {
   nodesRef: MutableRefObject<CoverageNode[]>;
   setNodes: Dispatch<SetStateAction<CoverageNode[]>>;
+  setEdges?: Dispatch<SetStateAction<CoverageEdge[]>>;
   setSelectedNode: Dispatch<SetStateAction<CoverageNode | null>>;
   setSelectedEdge: Dispatch<SetStateAction<CoverageEdge | null>>;
+  setEditFormData?: Dispatch<SetStateAction<EditFormData>>;
+  setIsCreatingNode?: Dispatch<SetStateAction<boolean>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
   setPinnedFocusNodeId: Dispatch<SetStateAction<string | null>>;
   pushNodeUndoSnapshot: (node: CoverageNode) => void;
@@ -22,8 +25,11 @@ interface UseImpactOverlayProps {
 export function useImpactOverlay({
   nodesRef,
   setNodes,
+  setEdges,
   setSelectedNode,
   setSelectedEdge,
+  setEditFormData,
+  setIsCreatingNode,
   setSearchQuery,
   setPinnedFocusNodeId,
   pushNodeUndoSnapshot,
@@ -131,6 +137,7 @@ export function useImpactOverlay({
       // Deselect everything else
       setSelectedNode(null);
       setSelectedEdge(null);
+      setIsCreatingNode?.(false);
       setSearchQuery('');
       setPinnedFocusNodeId(null);
       if (nextImpactsSnapshot.length > 0) {
@@ -141,7 +148,7 @@ export function useImpactOverlay({
       console.error('Failed to activate impact mode', message);
       setErrorToast(message || 'Failed to activate impact mode');
     }
-  }, [activeImpacts, impactFilterOperator, fitToActiveImpacts, setSelectedNode, setSelectedEdge, setSearchQuery, setPinnedFocusNodeId, setErrorToast]);
+  }, [activeImpacts, impactFilterOperator, fitToActiveImpacts, setSelectedNode, setSelectedEdge, setIsCreatingNode, setSearchQuery, setPinnedFocusNodeId, setErrorToast]);
 
   const removeImpact = useCallback((globalNodeId: string) => {
     setActiveImpacts(prev => {
@@ -193,8 +200,22 @@ export function useImpactOverlay({
         window.dispatchEvent(new CustomEvent('toggleCollapseNode', { detail: parent.id }));
       }
     }
+    setNodes(nds => nds.map(n => (n.id === nodeId ? { ...n, selected: true } : n.selected ? { ...n, selected: false } : n)));
+    setEdges?.(eds => (eds.some(e => e.selected) ? eds.map(e => (e.selected ? { ...e, selected: false } : e)) : eds));
+    setIsCreatingNode?.(false);
     setSelectedNode(target);
     setSelectedEdge(null);
+    setEditFormData?.({
+      id: target.id,
+      label: target.data?.label || 'Node',
+      name: target.data?.name || '',
+      aliases: target.data?.aliases || [],
+      description: target.data?.description || '',
+      issue_link: target.data?.issue_link || '',
+      test_status: target.data?.test_status || 'Untested',
+      properties: { ...(target.data?.properties || {}) },
+      type: 'node',
+    });
     setTimeout(() => {
       try {
         rfInstance?.fitView({
@@ -207,7 +228,7 @@ export function useImpactOverlay({
         // Ignore fitView errors
       }
     }, 80);
-  }, [nodesRef, setSelectedNode, setSelectedEdge, rfInstance]);
+  }, [nodesRef, setNodes, setEdges, setIsCreatingNode, setSelectedNode, setSelectedEdge, setEditFormData, rfInstance]);
 
   /** D. 변경 표시 (Mark Modified): 기획/UI 변경이 발생한 노드에 보라색 펄스 + 하류 영향권 표시 */
   const handleMarkModified = useCallback(async (nodeId: string | undefined) => {
