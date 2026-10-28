@@ -195,13 +195,25 @@ export function useGraphOperations({
   }, [edgesRef, nodesRef, pushUndo, setErrorToast, setNodes, setEdges, applyLocalStatusChanges, setPinnedFocusNodeId, syncStatusesFromServer]);
 
   const onEdgesDelete = useCallback(async (deleted: CoverageEdge[]) => {
+    const resolvedDeleted: CoverageEdge[] = [];
     for (const e of deleted) {
+      const underlyingIds = e.data?.underlyingEdgeIds;
+      if (Array.isArray(underlyingIds) && underlyingIds.length > 0) {
+        const realMatches = edgesRef.current.filter(re => underlyingIds.includes(re.id));
+        if (realMatches.length > 0) {
+          resolvedDeleted.push(...realMatches);
+          continue;
+        }
+      }
+      resolvedDeleted.push(e);
+    }
+    for (const e of resolvedDeleted) {
       try {
         await api.edges.deleteEdge(e.id);
         pushUndo({
           type: 'DELETE_EDGE',
           id: e.id,
-          edgeData: { source: e.source, target: e.target, type: e.label || e.data?.type || 'RELATED', test_status: e.data?.test_status || 'Untested', properties: e.data?.properties || {} },
+          edgeData: { source: e.source, target: e.target, type: e.label || e.data?.type || 'RELATED', action: e.data?.action, test_status: e.data?.test_status || 'Untested', properties: e.data?.properties || {} },
         });
       } catch (err: unknown) {
         setErrorToast(extractErrorMessage(err));
@@ -210,11 +222,12 @@ export function useGraphOperations({
     }
     // ReactFlow already removes edges from local state via onEdgesChange
     // 삭제된 엣지의 타겟 노드를 재계산하고 하류로 전파 (낙관적) → 서버 결과로 재동기화
-    const deletedEdgeIds = new Set(deleted.map(e => e.id));
+    const deletedEdgeIds = new Set(resolvedDeleted.map(e => e.id));
     const remainingEdges = edgesRef.current.filter(e => !deletedEdgeIds.has(e.id));
-    applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, remainingEdges, Array.from(new Set(deleted.map(e => e.target)))));
-    if (deleted.length > 0) syncStatusesFromServer();
-    const deletedContains = deleted.filter(e => {
+    setEdges(remainingEdges);
+    applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, remainingEdges, Array.from(new Set(resolvedDeleted.map(e => e.target)))));
+    if (resolvedDeleted.length > 0) syncStatusesFromServer();
+    const deletedContains = resolvedDeleted.filter(e => {
       const et = String(e.data?.type || e.label || '').toLowerCase();
       return et === 'contains' || et === 'has';
     });
@@ -231,7 +244,7 @@ export function useGraphOperations({
       pushUndo({
         type: 'DELETE_EDGE',
         id: containsEdge.id,
-        edgeData: { source: containsEdge.source, target: containsEdge.target, type: containsEdge.label || containsEdge.data?.type || 'Contains', test_status: containsEdge.data?.test_status || 'Untested', properties: containsEdge.data?.properties || {} },
+        edgeData: { source: containsEdge.source, target: containsEdge.target, type: containsEdge.label || containsEdge.data?.type || 'Contains', action: containsEdge.data?.action, test_status: containsEdge.data?.test_status || 'Untested', properties: containsEdge.data?.properties || {} },
       });
       const nextEds = edgesRef.current.filter(e => e.id !== containsEdge.id);
       setEdges(nextEds);
@@ -281,26 +294,34 @@ export function useGraphOperations({
       }
     } else if (editFormData.type === 'edge') {
       const targetId = editFormData.id;
-      const targetEdge = edgesRef.current.find(e => e.id === targetId);
+      const targetEdge = edgesRef.current.find(e => e.id === targetId) || (selectedEdgeRef.current?.id === targetId ? selectedEdgeRef.current : undefined);
       if (!targetId || !targetEdge) return;
+      const underlyingIds = Array.isArray(targetEdge.data?.underlyingEdgeIds) && targetEdge.data.underlyingEdgeIds.length > 0
+        ? targetEdge.data.underlyingEdgeIds
+        : [targetId];
+      const realEdges = edgesRef.current.filter(e => underlyingIds.includes(e.id));
+      const edgesToDelete = realEdges.length > 0 ? realEdges : [targetEdge];
       try {
-        await api.edges.deleteEdge(targetId);
-        pushUndo({
-          type: 'DELETE_EDGE',
-          id: targetId,
-          edgeData: { source: targetEdge.source, target: targetEdge.target, type: targetEdge.label || targetEdge.data?.type || 'RELATED', test_status: targetEdge.data?.test_status || 'Untested', properties: targetEdge.data?.properties || {} },
-        });
-        const nextEds = edgesRef.current.filter(e => e.id !== targetId);
+        for (const re of edgesToDelete) {
+          await api.edges.deleteEdge(re.id);
+          pushUndo({
+            type: 'DELETE_EDGE',
+            id: re.id,
+            edgeData: { source: re.source, target: re.target, type: re.label || re.data?.type || 'RELATED', action: re.data?.action, test_status: re.data?.test_status || 'Untested', properties: re.data?.properties || {} },
+          });
+        }
+        const deletedIdSet = new Set(edgesToDelete.map(re => re.id));
+        const nextEds = edgesRef.current.filter(e => !deletedIdSet.has(e.id));
         setEdges(nextEds);
         // 입력 엣지가 사라진 타겟을 재계산하고 하류로 연쇄 전파 (낙관적) → 서버 결과로 재동기화
-        applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, [targetEdge.target]));
+        applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, Array.from(new Set(edgesToDelete.map(re => re.target)))));
         setSelectedEdge(null);
         syncStatusesFromServer();
       } catch (err: unknown) {
         setErrorToast(extractErrorMessage(err));
       }
     }
-  }, [editFormData, nodesRef, pushUndo, edgesRef, applyLocalStatusChanges, setNodes, setEdges, setSelectedNode, setPinnedFocusNodeId, setActiveImpacts, syncStatusesFromServer, setErrorToast, setSelectedEdge]);
+  }, [editFormData, nodesRef, pushUndo, edgesRef, selectedEdgeRef, applyLocalStatusChanges, setNodes, setEdges, setSelectedNode, setPinnedFocusNodeId, setActiveImpacts, syncStatusesFromServer, setErrorToast, setSelectedEdge]);
 
   /**
    * 상태 마킹 저장 (Mark Passed / Failed / Reset / Blocked)
@@ -329,14 +350,67 @@ export function useGraphOperations({
       const selectedEdge = selectedEdgeRef.current;
       if (selectedEdge) {
         const edgeId = selectedEdge.id;
+        const isProxyEdge = Array.isArray(selectedEdge.data?.underlyingEdgeIds) && selectedEdge.data.underlyingEdgeIds.length > 0;
+        const underlyingIds = isProxyEdge ? selectedEdge.data!.underlyingEdgeIds! : [edgeId];
         try {
           const edgeType = editFormData.edgeType || selectedEdge.data?.type || (typeof selectedEdge.label === 'string' ? selectedEdge.label : 'Transition');
-          await api.edges.updateEdge(edgeId, {
-            type: edgeType,
-            action: editFormData.action,
-            test_status: status,
+          const nextAction = editFormData.action !== undefined ? editFormData.action : (selectedEdge.data?.action || '');
+          const idReplacementMap = new Map<string, string>();
+          for (const uid of underlyingIds) {
+            const res = await api.edges.updateEdge(uid, {
+              type: edgeType,
+              action: nextAction,
+              test_status: status,
+            });
+            idReplacementMap.set(uid, res?.new_id || uid);
+          }
+          const isContains = edgeType.toLowerCase() === 'contains' || edgeType.toLowerCase() === 'has';
+          const affectedTargets = new Set<string>([selectedEdge.target]);
+          const nextEds = edgesRef.current.map(e => {
+            const mappedId = idReplacementMap.get(e.id);
+            if (!mappedId) return e;
+            affectedTargets.add(e.target);
+            const baseCls = (e.className || '').replace(/\b(edge-contains|status-[a-z-]+)\b/g, '').trim();
+            const nextCls = `${baseCls} status-${status.toLowerCase()}${isContains ? ' edge-contains' : ''}`.trim();
+            return {
+              ...e,
+              id: mappedId,
+              label: edgeType,
+              className: nextCls,
+              data: {
+                ...e.data,
+                type: edgeType,
+                action: nextAction,
+                test_status: status,
+              },
+            };
           });
-          setEdges(eds => eds.map(e => e.id === edgeId ? { ...e, data: { ...e.data, test_status: status } } : e));
+          setEdges(nextEds);
+          const newEdgeId = isProxyEdge
+            ? `${selectedEdge.source}-${selectedEdge.target}-${edgeType}`
+            : (idReplacementMap.get(edgeId) || edgeId);
+          const updatedEdge = isProxyEdge
+            ? {
+                ...selectedEdge,
+                id: newEdgeId,
+                label: underlyingIds.length > 1 ? `${edgeType} (×${underlyingIds.length})` : edgeType,
+                data: {
+                  ...selectedEdge.data,
+                  type: edgeType,
+                  action: nextAction,
+                  test_status: status,
+                  underlyingEdgeIds: Array.from(idReplacementMap.values()),
+                },
+              }
+            : nextEds.find(e => e.id === newEdgeId);
+          if (updatedEdge) {
+            selectedEdgeRef.current = updatedEdge;
+            setSelectedEdge(updatedEdge);
+          }
+          if (setEditFormData) {
+            setEditFormData(prev => (prev.type === 'edge' ? { ...prev, id: newEdgeId, test_status: status, edgeType, action: nextAction } : prev));
+          }
+          applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, Array.from(affectedTargets)));
           syncStatusesFromServer();
         } catch (err: unknown) {
           setErrorToast(extractErrorMessage(err));
@@ -390,7 +464,7 @@ export function useGraphOperations({
       setEdges(prevEdges);
       setErrorToast(extractErrorMessage(err));
     }
-  }, [isCreatingNode, setEditFormData, selectedNodeRef, selectedEdgeRef, editFormData, nodesRef, edgesRef, setNodes, setEdges, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast]);
+  }, [isCreatingNode, setEditFormData, selectedNodeRef, selectedEdgeRef, setSelectedEdge, editFormData, nodesRef, edgesRef, setNodes, setEdges, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast]);
 
   /**
    * C. B안 노드 내부 체크리스트 저장 (TESTCASE 스펙 3.3)
@@ -742,36 +816,97 @@ export function useGraphOperations({
       const targetId = editFormData.id;
       const targetEdge = edgesRef.current.find(e => e.id === targetId) || (selectedEdgeRef.current?.id === targetId ? selectedEdgeRef.current : undefined);
       if (!targetId || !targetEdge) return;
-      pushUndo({
-        type: 'UPDATE_EDGE',
-        id: targetId,
-        oldData: { type: targetEdge.data?.type || targetEdge.label || 'Transition', test_status: targetEdge.data?.test_status || 'Untested', action: targetEdge.data?.action },
-      });
+      const isProxyEdge = Array.isArray(targetEdge.data?.underlyingEdgeIds) && targetEdge.data.underlyingEdgeIds.length > 0;
+      const underlyingIds = isProxyEdge ? targetEdge.data!.underlyingEdgeIds! : [targetId];
+      const prevEdgeData = {
+        type: targetEdge.data?.type || targetEdge.label || 'Transition',
+        test_status: targetEdge.data?.test_status || 'Untested',
+        action: targetEdge.data?.action || '',
+      };
       // Snapshot for rollback
       // 1) 낙관적 업데이트: 엣지 상태 및 타입 반영 + 타겟 노드 재계산/하류 전파
       // data.type도 함께 갱신해야 전파 엔진(edgeTypeOf)이 바뀐 타입(예: Return 전환)을 인식합니다.
       // 타입/상태가 바뀐 엣지의 타겟을 재계산하고 하류로 전파 (낙관적) → 서버 결과로 재동기화
       try {
+        const prevTypeLower = String(prevEdgeData.type).toLowerCase();
+        const wasContains = prevTypeLower === 'contains' || prevTypeLower === 'has';
         const nextEdgeType: string = editFormData.edgeType || targetEdge.data?.type || (typeof targetEdge.label === 'string' ? targetEdge.label : 'Transition');
+        const nextTypeLower = nextEdgeType.toLowerCase();
+        const isNowContains = nextTypeLower === 'contains' || nextTypeLower === 'has';
         const nextEdgeStatus: StatusName = ((editFormData.status as StatusName) || (editFormData.test_status as StatusName) || targetEdge.data?.test_status || 'Untested');
-        await api.edges.updateEdge(targetId, { type: nextEdgeType, action: editFormData.action, test_status: nextEdgeStatus });
-        setEdges(eds => eds.map(e => (e.id === targetId ? {
-          ...e,
-          label: nextEdgeType,
-          data: {
-            ...e.data,
-            type: nextEdgeType,
-            action: editFormData.action || e.data?.action,
-            test_status: nextEdgeStatus,
-          },
-        } : e)));
+        const nextAction = editFormData.action !== undefined ? editFormData.action : (targetEdge.data?.action || '');
+
+        const idReplacementMap = new Map<string, string>();
+        for (const uid of underlyingIds) {
+          const res = await api.edges.updateEdge(uid, { type: nextEdgeType, action: nextAction, test_status: nextEdgeStatus });
+          const mappedNewId = res?.new_id || uid;
+          idReplacementMap.set(uid, mappedNewId);
+          pushUndo({
+            type: 'UPDATE_EDGE',
+            id: mappedNewId,
+            previousData: prevEdgeData,
+            oldData: prevEdgeData,
+          });
+        }
+
+        const affectedTargets = new Set<string>([targetEdge.target]);
+        const nextEds = edgesRef.current.map(e => {
+          const mappedId = idReplacementMap.get(e.id);
+          if (!mappedId) return e;
+          affectedTargets.add(e.target);
+          const baseCls = (e.className || '').replace(/\b(edge-contains|status-[a-z-]+)\b/g, '').trim();
+          const nextCls = `${baseCls} status-${nextEdgeStatus.toLowerCase()}${isNowContains ? ' edge-contains' : ''}`.trim();
+          return {
+            ...e,
+            id: mappedId,
+            label: nextEdgeType,
+            className: nextCls,
+            data: {
+              ...e.data,
+              type: nextEdgeType,
+              action: nextAction,
+              test_status: nextEdgeStatus,
+            },
+          };
+        });
+        setEdges(nextEds);
+        const newEdgeId = isProxyEdge
+          ? `${targetEdge.source}-${targetEdge.target}-${nextEdgeType}`
+          : (idReplacementMap.get(targetId) || targetId);
+        const updatedEdge = isProxyEdge
+          ? {
+              ...targetEdge,
+              id: newEdgeId,
+              label: underlyingIds.length > 1 ? `${nextEdgeType} (×${underlyingIds.length})` : nextEdgeType,
+              data: {
+                ...targetEdge.data,
+                type: nextEdgeType,
+                action: nextAction,
+                test_status: nextEdgeStatus,
+                underlyingEdgeIds: Array.from(idReplacementMap.values()),
+              },
+            }
+          : nextEds.find(e => e.id === newEdgeId);
+        if (updatedEdge) {
+          selectedEdgeRef.current = updatedEdge;
+          setSelectedEdge(updatedEdge);
+        }
+        if (setEditFormData) {
+          setEditFormData(prev => (prev.type === 'edge' ? { ...prev, id: newEdgeId, label: nextEdgeType, edgeType: nextEdgeType, action: nextAction, test_status: nextEdgeStatus } : prev));
+        }
+        if (wasContains && !isNowContains) {
+          unparentNodesOnContainsDelete([targetEdge], nextEds);
+        } else if (!wasContains && isNowContains) {
+          triggerRefresh();
+        }
+        applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, nextEds, Array.from(affectedTargets)));
         // 2) 저장 → 서버 결과로 재동기화
         syncStatusesFromServer();
       } catch (err: unknown) {
         setErrorToast(extractErrorMessage(err));
       }
     }
-  }, [editFormData, isCreatingNode, setIsCreatingNode, rfInstance, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, syncStatusesFromServer, setErrorToast, setEdges, pendingCreatePosRef, setEditFormData, filterText, setFilterText, setShowAllDomains]);
+  }, [editFormData, isCreatingNode, setIsCreatingNode, rfInstance, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, setSelectedEdge, unparentNodesOnContainsDelete, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast, setEdges, pendingCreatePosRef, setEditFormData, filterText, setFilterText, setShowAllDomains]);
 
   return {
     createEdgeBetweenNodes,

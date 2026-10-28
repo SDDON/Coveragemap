@@ -153,6 +153,7 @@ export const api = {
       source: string;
       target: string;
       type: string;
+      action?: string;
       test_status: string;
       properties?: Record<string, unknown>;
     }): Promise<string> {

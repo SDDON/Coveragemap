@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CoverageNode, CoverageEdge, QuickConnectPopoverState } from '../../types';
+import { NODE_LABEL_OPTIONS, EDGE_TYPE_OPTIONS } from '../../utils/constants';
 import { t } from '../../locales/koKR';
 
 export interface QuickConnectPopoverProps {
@@ -13,8 +14,6 @@ export interface QuickConnectPopoverProps {
   onCreateAndConnect?: (newNodeName: string, newNodeLabel: string) => void;
   onPickOnCanvas: () => void;
 }
-
-const NODE_LABEL_OPTIONS = ['Screen', 'Component', 'Feature', 'Popup', 'TestCase', 'Data'];
 
 /* Pattern A: 빈 캔버스에 연결선 드롭 시 열리는 Quick Connect 검색 팝오버 (기연결 배지 표시 + 인라인 새 노드 생성 및 즉시 연결 지원) */
 export const QuickConnectPopover: React.FC<QuickConnectPopoverProps> = ({
@@ -88,8 +87,6 @@ export const QuickConnectPopover: React.FC<QuickConnectPopoverProps> = ({
     return null;
   };
 
-  const edgeTypes = ['Transition', 'Contains', 'Depends_On', 'Tests', 'Return'];
-
   return (
     <div
       className="quick-connect-popover"
@@ -107,11 +104,12 @@ export const QuickConnectPopover: React.FC<QuickConnectPopoverProps> = ({
           ✕
         </button>
       </div>
-      <div className="quick-connect-type-pills" aria-label={t.quickConnect.edgeTypeLabel}>
-        {edgeTypes.map(et => (
+      <div className="quick-connect-type-pills" data-testid="quick-connect-edge-type" aria-label={t.quickConnect.edgeTypeLabel}>
+        {EDGE_TYPE_OPTIONS.map(et => (
           <button
             key={et}
             type="button"
+            title={t.edgeType[et]}
             className={`quick-connect-type-pill${popover.edgeType === et ? ' active' : ''}`}
             onClick={() => onSelectEdgeType(et)}
           >
@@ -143,13 +141,14 @@ export const QuickConnectPopover: React.FC<QuickConnectPopoverProps> = ({
       {trimmedSearch.length > 0 && onCreateAndConnect && (
         <div className="quick-connect-create-row">
           <select
+            data-testid="quick-connect-label"
             className="quick-connect-label-select"
             title={t.quickConnect.newNodeLabelSelectTitle}
             value={newNodeLabel}
             onChange={e => setNewNodeLabel(e.target.value)}
           >
             {NODE_LABEL_OPTIONS.map(lbl => (
-              <option key={lbl} value={lbl}>{lbl}</option>
+              <option key={lbl} value={lbl}>{t.nodeLabel[lbl] || lbl}</option>
             ))}
           </select>
           <button

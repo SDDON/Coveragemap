@@ -180,6 +180,7 @@ export function useUndoStack({
             source: edge.source === oldId ? newId : edge.source,
             target: edge.target === oldId ? newId : edge.target,
             type: edge.label || edge.data?.type || 'RELATED',
+            action: edge.data?.action,
             test_status: edge.data?.test_status || 'Untested',
             properties: edge.data?.properties || {}
           };
@@ -215,16 +216,17 @@ export function useUndoStack({
           setEditFormData({});
         }
       } else if (action.type === 'UPDATE_EDGE') {
+        const prevData = action.previousData || action.oldData || {};
         const currentEdge = edgesRef.current.find(e => e.id === action.id);
         const prevType = String(currentEdge?.data?.type || currentEdge?.label || '').toLowerCase();
-        const nextType = String(action.previousData?.type || prevType).toLowerCase();
+        const nextType = String(prevData.type || prevType).toLowerCase();
         const wasContains = prevType === 'contains' || prevType === 'has';
         const isNowContains = nextType === 'contains' || nextType === 'has';
 
         const res = await fetch(`/api/edges/${encodeURIComponent(action.id!)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(action.previousData)
+          body: JSON.stringify(prevData)
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
@@ -242,7 +244,7 @@ export function useUndoStack({
           remapUndoStackId(actionHistory.current, action.id!, newId, 'edge');
         }
 
-        const restoredEdgeStatus = String(action.previousData?.test_status || currentEdge?.data?.test_status || 'untested').toLowerCase();
+        const restoredEdgeStatus = String(prevData.test_status || currentEdge?.data?.test_status || 'untested').toLowerCase();
         const nextEds = edgesRef.current.map(e => {
           if (e.id !== action.id) return e;
           const baseCls = (e.className || '').replace(/\b(edge-contains|status-[a-z-]+)\b/g, '').trim();
@@ -251,12 +253,12 @@ export function useUndoStack({
           return {
             ...e,
             id: newId,
-            label: (action.previousData?.type as string) || e.label,
+            label: (prevData.type as string) || e.label,
             className: nextCls || undefined,
             data: {
               ...e.data,
-              ...action.previousData,
-              test_status: ((action.previousData?.test_status as StatusName) || e.data?.test_status || 'Untested'),
+              ...prevData,
+              test_status: ((prevData.test_status as StatusName) || e.data?.test_status || 'Untested'),
             }
           };
         });

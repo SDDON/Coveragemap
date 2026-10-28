@@ -9,7 +9,9 @@ import {
   computeDomainScope,
   getEffectiveNodeDomain,
   getDomainMeta,
+  getEdgesKey,
 } from '../utils/graphScopes';
+import { t } from '../locales/koKR';
 
 export interface UseFocusContextProps {
   nodes: CoverageNode[];
@@ -59,11 +61,8 @@ export function useFocusContext({
     () => nodes.map(n => `${n.id}:${n.data?.isCollapsed ? 1 : 0}`).join(','),
     [nodes]
   );
-  // 엣지 추가/삭제/타입 변경 키 — 엣지 연결 즉시 Focus+Context 하이라이트(active, incoming/outgoing, highlight-edge) 재계산 트리거
-  const edgesKey = useMemo(
-    () => edges.map(e => `${e.id}:${e.source}->${e.target}:${e.data?.type || e.label || ''}`).join(','),
-    [edges]
-  );
+  // 엣지 추가/삭제/타입/액션/속성 변경 키 — 엣지 연결 및 편집 즉시 Focus+Context 하이라이트 재계산 트리거
+  const edgesKey = useMemo(() => getEdgesKey(edges), [edges]);
 
   const affectedScope = useMemo(() => computeAffectedScope(nodes, edges), [nodes, edges]);
   const rootCauseScope = useMemo(() => computeRootCauseScope(tracedRootNodeId, nodes, edges), [tracedRootNodeId, nodes, edges]);
@@ -102,25 +101,77 @@ export function useFocusContext({
       return { newSource, newTarget, proxyId };
     };
 
-    const searchSeeds = searchQuery
+    const trimmedQuery = searchQuery.trim();
+    const searchSeeds = trimmedQuery
       ? nodes.filter(n => {
           const name = (n.data?.name || '').toLowerCase();
-          const label = (n.data?.label || '').toLowerCase();
+          const rawLabel = n.data?.label || '';
+          const label = rawLabel.toLowerCase();
+          const localizedLabel = (t.nodeLabel[rawLabel as keyof typeof t.nodeLabel] || '').toLowerCase();
+          const desc = String(n.data?.description ?? n.data?.properties?.description ?? '').toLowerCase();
           const nodeAliases = (n.data?.aliases || []).map((a: string) => a.toLowerCase());
           const effDomain = getEffectiveNodeDomain(n, nodes);
           const domainLabel = effDomain ? getDomainMeta(effDomain).displayLabel.toLowerCase() : '';
-          const q = searchQuery.trim().toLowerCase();
+          const q = trimmedQuery.toLowerCase();
           const qClean = q.replace(/^#+/, '').trim();
+          const propsObj = n.data?.properties || {};
+          const propsMatched = Object.entries(propsObj).some(([k, v]) => {
+            if (['checklist', 'x', 'y', 'is_global', 'is_manual_override', 'is_modified'].includes(k)) return false;
+            if (v === null || v === undefined || typeof v === 'object') return false;
+            return k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q);
+          });
+          const checklistArr = Array.isArray(propsObj.checklist) ? propsObj.checklist : [];
+          const checklistMatched = checklistArr.some(item => String(item?.text || '').toLowerCase().includes(q));
           return (
             name.includes(q) ||
             label.includes(q) ||
+            localizedLabel.includes(q) ||
+            desc.includes(q) ||
             nodeAliases.some((a: string) => a.includes(q) || (qClean.length > 0 && a.replace(/^#+/, '').includes(qClean))) ||
             (qClean.length > 0 && effDomain.toLowerCase().includes(qClean)) ||
-            (qClean.length > 0 && domainLabel.includes(qClean))
+            (qClean.length > 0 && domainLabel.includes(qClean)) ||
+            propsMatched ||
+            checklistMatched
           );
         })
       : [];
     const searchSeedIds = new Set(searchSeeds.map(s => s.id));
+
+    const searchMatchedEdges = trimmedQuery
+      ? edges.filter(e => {
+          const q = trimmedQuery.toLowerCase();
+          const qClean = q.replace(/^#+/, '').trim();
+          const rawType = String(e.data?.type || '');
+          const rawLabel = String(e.label || '');
+          const typeLower = rawType.toLowerCase();
+          const labelLower = rawLabel.toLowerCase();
+          const localizedType = (t.edgeType[(rawType || rawLabel) as keyof typeof t.edgeType] || '').toLowerCase();
+          const actionStr = String(e.data?.action || (typeof e.data?.properties?.action === 'string' ? e.data.properties.action : '') || '').toLowerCase();
+          const statusStr = String(e.data?.test_status || '').toLowerCase();
+          const propsObj = e.data?.properties || {};
+          const propsMatched = Object.entries(propsObj).some(([k, v]) => {
+            if (v === null || v === undefined) return false;
+            const valStr = typeof v === 'object' ? JSON.stringify(v) : String(v);
+            return (
+              k.toLowerCase().includes(q) ||
+              valStr.toLowerCase().includes(q) ||
+              (qClean.length > 0 && (k.toLowerCase().includes(qClean) || valStr.toLowerCase().includes(qClean)))
+            );
+          });
+          return (
+            typeLower.includes(q) ||
+            labelLower.includes(q) ||
+            localizedType.includes(q) ||
+            actionStr.includes(q) ||
+            statusStr.includes(q) ||
+            (qClean.length > 0 &&
+              (typeLower.includes(qClean) || labelLower.includes(qClean) || localizedType.includes(qClean) || actionStr.includes(qClean) || statusStr.includes(qClean))) ||
+            propsMatched
+          );
+        })
+      : [];
+    const searchMatchedEdgeIds = new Set(searchMatchedEdges.map(e => e.id));
+    const hasSearchMatch = searchSeeds.length > 0 || searchMatchedEdges.length > 0;
     const hasPinnedFocus = Boolean(pinnedFocusNodeId && nodes.some(n => n.id === pinnedFocusNodeId));
     const isSelectedGlobal = selectedNode?.data?.properties?.is_global === 'true';
 
@@ -148,15 +199,53 @@ export function useFocusContext({
         if (id !== scopedAuditRootId) outgoing.add(id);
       });
       scopedAuditScope.edgeIds.forEach(eid => edgeHighlights.add(eid));
-    } else if (hasPinnedFocus || searchSeeds.length > 0) {
+    } else if (hasPinnedFocus || hasSearchMatch) {
       const baseSeeds: string[] = [];
       if (hasPinnedFocus && pinnedFocusNodeId) baseSeeds.push(pinnedFocusNodeId);
-      for (const s of searchSeeds) if (!baseSeeds.includes(s.id)) baseSeeds.push(s.id);
-      const scope = computeContentFocusScope(baseSeeds, nodes, edges, maxDepth);
-      scope.activeNodes.forEach(id => activeNodes.add(id));
-      scope.incoming.forEach(id => incoming.add(id));
-      scope.outgoing.forEach(id => outgoing.add(id));
-      scope.edgeHighlights.forEach(eid => edgeHighlights.add(eid));
+      for (const s of searchSeeds) {
+        if (!baseSeeds.includes(s.id)) baseSeeds.push(s.id);
+        if (String(s.data?.properties?.is_global ?? s.data?.is_global ?? '').toLowerCase() === 'true') {
+          addGlobalHolders(s.id);
+        }
+      }
+      if (baseSeeds.length > 0) {
+        const scope = computeContentFocusScope(baseSeeds, nodes, edges, maxDepth);
+        scope.activeNodes.forEach(id => activeNodes.add(id));
+        scope.incoming.forEach(id => incoming.add(id));
+        scope.outgoing.forEach(id => outgoing.add(id));
+        scope.edgeHighlights.forEach(eid => edgeHighlights.add(eid));
+      }
+
+      if (searchMatchedEdges.length > 0) {
+        searchMatchedEdges.forEach(me => {
+          edgeHighlights.add(me.id);
+          activeNodes.add(me.source);
+          activeNodes.add(me.target);
+          const pInfo = getProxyEdgeInfo(me);
+          activeNodes.add(pInfo.newSource);
+          activeNodes.add(pInfo.newTarget);
+          const sParentId = nodeCollapseMap.get(me.source)?.parentId;
+          const tParentId = nodeCollapseMap.get(me.target)?.parentId;
+          if (sParentId) {
+            activeNodes.add(sParentId);
+            edges.forEach(ce => {
+              const et = String(ce.data?.type || ce.label || '').toLowerCase();
+              if ((et === 'contains' || et === 'has') && ce.source === sParentId && ce.target === me.source) {
+                edgeHighlights.add(ce.id);
+              }
+            });
+          }
+          if (tParentId) {
+            activeNodes.add(tParentId);
+            edges.forEach(ce => {
+              const et = String(ce.data?.type || ce.label || '').toLowerCase();
+              if ((et === 'contains' || et === 'has') && ce.source === tParentId && ce.target === me.target) {
+                edgeHighlights.add(ce.id);
+              }
+            });
+          }
+        });
+      }
 
       // 상태 마킹 시 포커스 유지 규칙:
       // pinnedFocusNodeId 또는 searchQuery 활성 상태에서는 주변 노드/엣지를 클릭해 selectedNode/selectedEdge가 바뀌어도
@@ -216,7 +305,7 @@ export function useFocusContext({
 
     // Add hovered elements to active set (호버 시 또는 드래그 연결 직후 커서가 타겟 노드에 머물 때 연결 엣지 및 1-홉 이웃 노드가 즉시 활성 표시되도록 포함)
     if (hoveredNode && !selectedNode) {
-      if (!selectedEdge && !hasPinnedFocus && searchSeeds.length === 0 && !scopedAuditRootId) {
+      if (!selectedEdge && !hasPinnedFocus && !hasSearchMatch && !scopedAuditRootId) {
         const hScope = computeContentFocusScope([hoveredNode], nodes, edges, 1);
         hScope.activeNodes.forEach(id => activeNodes.add(id));
         hScope.incoming.forEach(id => incoming.add(id));
@@ -305,7 +394,7 @@ export function useFocusContext({
           if (incoming.has(n.id)) cls += ' highlight-incoming';
         } else if (relatedNodes.has(n.id)) {
           cls += ' related';
-        } else if (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId) {
+        } else if (selectedNode || selectedEdge || hasSearchMatch || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId) {
           cls += ' de-emphasized';
         }
 
@@ -351,13 +440,19 @@ export function useFocusContext({
 
         // Impact mode edge classes
         if (isImpactEdge) cls += ' impact-edge';
-        else if (!hasImpactOverlay && (edgeHighlights.has(e.id) || hoveredEdge === e.id || isRootCauseEdge)) cls += ' active highlight-edge';
+        else if (!hasImpactOverlay && (edgeHighlights.has(e.id) || hoveredEdge === e.id || isRootCauseEdge)) {
+          cls += ' active highlight-edge';
+          if (searchMatchedEdgeIds.has(e.id)) cls += ' highlight-search-match';
+        }
         else if (!hasImpactOverlay && relatedEdges.has(e.id)) cls += ' related';
-        else if (!hasImpactOverlay && (selectedNode || selectedEdge || searchSeeds.length > 0 || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId)) cls += ' de-emphasized';
+        else if (!hasImpactOverlay && (selectedNode || selectedEdge || hasSearchMatch || hasPinnedFocus || hoveredNode || hoveredEdge || scopedAuditRootId)) cls += ' de-emphasized';
 
         // 논리 도메인 필터링 간선 클래스 (PROPOSAL_TAG_BASED_DOMAIN_GROUPING 4.1)
         if (selectedDomain && domainScope.domainEdgeIds.has(e.id)) {
           cls += ' domain-edge';
+        }
+        if (selectedDomain && domainScope.domainInternalEdgeIds.has(e.id)) {
+          cls += ' domain-internal-edge';
         }
 
         // 결함 원인 역추적 엣지 강조

@@ -7,6 +7,7 @@ import {
   Background,
   ConnectionMode,
   Connection,
+  EdgeChange,
   ReactFlowInstance,
   useNodesState,
   useEdgesState,
@@ -291,11 +292,16 @@ export default function App() {
         const nextCount = (reroutedCountMap.get(key) || 0) + 1;
         reroutedCountMap.set(key, nextCount);
         finalEdge.id = key;
-        finalEdge.selected = !isCreatingNode && selectedEdge?.id === key;
+        finalEdge.selected = !isCreatingNode && Boolean(e.selected || selectedEdge?.id === key);
         finalEdge.label = nextCount > 1 ? `${domainType} (×${nextCount})` : domainType;
         finalEdge.type = 'floating';
         const existing = edgeMap.get(key);
         if (!existing) {
+          finalEdge.data = {
+            ...(e.data || { test_status: 'Untested' }),
+            type: domainType,
+            underlyingEdgeIds: [e.id],
+          };
           edgeMap.set(key, finalEdge);
         } else {
           const mergedCls = mergeEdgeClasses(existing.className || '', finalEdge.className || '');
@@ -303,15 +309,19 @@ export default function App() {
             statusRank(finalEdge.data?.test_status) > statusRank(existing.data?.test_status)
               ? finalEdge.data?.test_status
               : existing.data?.test_status;
+          const prevUnderlying = existing.data?.underlyingEdgeIds || [existing.id];
+          const nextUnderlying = prevUnderlying.includes(e.id) ? prevUnderlying : [...prevUnderlying, e.id];
           edgeMap.set(key, {
             ...existing,
-            selected: !isCreatingNode && selectedEdge?.id === key,
+            selected: !isCreatingNode && Boolean(existing.selected || e.selected || selectedEdge?.id === key),
             label: `${domainType} (×${nextCount})`,
             className: mergedCls,
             data: {
               ...(existing.data || {}),
               type: domainType,
+              action: existing.data?.action || finalEdge.data?.action,
               test_status: worstStatus || 'Untested',
+              underlyingEdgeIds: nextUnderlying,
             },
           });
         }
@@ -322,6 +332,24 @@ export default function App() {
     });
     return calculateEdgeBundling(Array.from(edgeMap.values()));
   }, [edges, nodesStructuralKey, nodesStatusKey, selectedEdge?.id, isCreatingNode]);
+
+  const handleEdgesChange = useCallback((changes: EdgeChange<CoverageEdge>[]) => {
+    const mappedChanges: EdgeChange<CoverageEdge>[] = [];
+    for (const c of changes) {
+      if (c.type === 'select') {
+        const vEdge = visibleEdges.find(ve => ve.id === c.id);
+        const uIds = vEdge?.data?.underlyingEdgeIds;
+        if (Array.isArray(uIds) && uIds.length > 0) {
+          for (const uid of uIds) {
+            mappedChanges.push({ ...c, id: uid });
+          }
+          continue;
+        }
+      }
+      mappedChanges.push(c);
+    }
+    onEdgesChange(mappedChanges);
+  }, [onEdgesChange, visibleEdges]);
 
   const onConnect = useCallback(async (conn: Connection) => {
     if (!conn.source || !conn.target || conn.source === conn.target) return;
@@ -410,6 +438,138 @@ export default function App() {
     [parentNodes]
   );
 
+  // 도메인 칩 선택 및 격리 모드 전환 시 상단 HUD / 우측 Inspector 패널 가림 영역을 제외하고
+  // 대상 도메인 노드들의 절대 좌표 바운딩 박스를 유효 캔버스 중앙에 정확히 배치합니다.
+  const focusDomainCamera = useCallback((domain: string | null) => {
+    setTimeout(() => {
+      if (!rfInstance) return;
+      try {
+        const currentNodes = nodesRef.current;
+        const nodeById = new Map<string, CoverageNode>();
+        currentNodes.forEach(n => nodeById.set(n.id, n));
+
+        const targetIds = new Set<string>();
+        if (!domain) {
+          currentNodes.forEach(n => {
+            if (!n.hidden && !n.parentId) targetIds.add(n.id);
+          });
+          if (targetIds.size === 0) {
+            currentNodes.forEach(n => {
+              if (!n.hidden) targetIds.add(n.id);
+            });
+          }
+        } else {
+          const scope = computeDomainScope(domain, currentNodes, edgesRef.current);
+          const candidateIds = scope.cameraNodeIds.size > 0 ? scope.cameraNodeIds : scope.matchedNodeIds;
+          candidateIds.forEach(id => {
+            const nd = nodeById.get(id);
+            if (!nd) return;
+            if (nd.hidden && nd.parentId) {
+              const pNode = nodeById.get(nd.parentId);
+              if (pNode && !pNode.hidden) targetIds.add(pNode.id);
+            } else if (!nd.hidden) {
+              targetIds.add(nd.id);
+            }
+          });
+        }
+
+        if (targetIds.size === 0) return;
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        targetIds.forEach(id => {
+          const nd = rfInstance.getNode(id) || nodeById.get(id);
+          if (!nd) return;
+          const internalNd = rfInstance.getInternalNode?.(id);
+          let absX = nd.position.x;
+          let absY = nd.position.y;
+          if (
+            internalNd?.internals?.positionAbsolute &&
+            Number.isFinite(internalNd.internals.positionAbsolute.x) &&
+            Number.isFinite(internalNd.internals.positionAbsolute.y)
+          ) {
+            absX = internalNd.internals.positionAbsolute.x;
+            absY = internalNd.internals.positionAbsolute.y;
+          } else {
+            let currParentId = nd.parentId;
+            const visited = new Set<string>();
+            while (currParentId && !visited.has(currParentId)) {
+              visited.add(currParentId);
+              const pNode = rfInstance.getNode(currParentId) || nodeById.get(currParentId);
+              if (!pNode) break;
+              absX += pNode.position.x;
+              absY += pNode.position.y;
+              currParentId = pNode.parentId;
+            }
+          }
+          const isExpandedGroup = Boolean(nd.data?.hasChildren && !nd.data?.isCollapsed);
+          const w =
+            nd.measured?.width ||
+            Number(nd.width) ||
+            Number(nd.style?.width) ||
+            (isExpandedGroup ? 420 : 240);
+          const h =
+            nd.measured?.height ||
+            Number(nd.height) ||
+            Number(nd.style?.height) ||
+            (isExpandedGroup ? 280 : 96);
+
+          if (absX < minX) minX = absX;
+          if (absY < minY) minY = absY;
+          if (absX + w > maxX) maxX = absX + w;
+          if (absY + h > maxY) maxY = absY + h;
+        });
+
+        if (!Number.isFinite(minX) || !Number.isFinite(minY)) return;
+
+        const rfEl = document.querySelector('.react-flow') as HTMLElement | null;
+        const rfRect = rfEl?.getBoundingClientRect();
+        const totalW = rfRect?.width || window.innerWidth || 1280;
+        const totalH = rfRect?.height || window.innerHeight || 720;
+
+        const hudEl = document.querySelector('.top-hud-panel') as HTMLElement | null;
+        const hudRect = hudEl?.getBoundingClientRect();
+        const inspectorEl = document.querySelector('.details-panel') as HTMLElement | null;
+        const inspectorRect = inspectorEl?.getBoundingClientRect();
+
+        const topInset = hudRect ? Math.min(totalH * 0.35, Math.max(72, hudRect.bottom - (rfRect?.top || 0) + 20)) : 96;
+        const rightInset =
+          inspectorRect && inspectorRect.width > 0
+            ? Math.min(totalW * 0.45, Math.max(0, (rfRect?.right || totalW) - inspectorRect.left + 20))
+            : 360;
+        const leftInset = 40;
+        const bottomInset = 48;
+
+        const usableW = Math.max(240, totalW - leftInset - rightInset);
+        const usableH = Math.max(200, totalH - topInset - bottomInset);
+
+        const boxW = Math.max(220, maxX - minX);
+        const boxH = Math.max(120, maxY - minY);
+        const padFactor = domain ? 0.82 : 0.86;
+        const minZoom = domain ? 0.25 : 0.12;
+        const maxZoom = domain ? 1.15 : 1.0;
+
+        const rawZoom = Math.min((usableW * padFactor) / boxW, (usableH * padFactor) / boxH);
+        const zoom = Math.max(minZoom, Math.min(maxZoom, rawZoom));
+
+        const boxCenterX = (minX + maxX) / 2;
+        const boxCenterY = (minY + maxY) / 2;
+        const usableCenterX = leftInset + usableW / 2;
+        const usableCenterY = topInset + usableH / 2;
+
+        const x = usableCenterX - boxCenterX * zoom;
+        const y = usableCenterY - boxCenterY * zoom;
+
+        rfInstance.setViewport({ x, y, zoom }, { duration: 400 });
+      } catch {
+        // Ignore viewport errors
+      }
+    }, 60);
+  }, [rfInstance]);
+
   // CROSS_CUTTING_LOCALIZATION_AUDIT_SPEC 3.1 & 4.1:
   // 배지 Hover 시 글로벌 노드를 화면 중앙에 강제 소환(hidden: false, position: center)하지 않고,
   // 현재 캔버스에 이미 표시 중인 연결 노드들에만 경량 외곽선 하이라이트(.hovered-global-neighbor)를 부여합니다.
@@ -481,7 +641,7 @@ export default function App() {
         nodes={renderedNodes}
         edges={renderedEdges}
         onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
+        onEdgesChange={handleEdgesChange}
         onSelectionChange={onSelectionChange}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
@@ -489,6 +649,27 @@ export default function App() {
         onNodeDragStop={() => { isDraggingRef.current = false; }}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onEdgeClick={(_, edge) => {
+          if (nodesRef.current.some(n => n.selected)) {
+            setNodes(nds => nds.map(n => (n.selected ? { ...n, selected: false } : n)));
+          }
+          setSelectedNode(null);
+          setSelectedEdge(edge);
+          setEditFormData({
+            id: edge.id,
+            label: (edge.label as string) || edge.data?.type || 'Transition',
+            name: '',
+            aliases: [],
+            description: '',
+            issue_link: '',
+            test_status: edge.data?.test_status || 'Untested',
+            edgeType: edge.data?.type || (edge.label as string) || 'Transition',
+            action: edge.data?.action || '',
+            properties: { ...(edge.data?.properties || {}) },
+            type: 'edge',
+          });
+          setIsCreatingNode(false);
+        }}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onPaneClick={() => {
@@ -543,69 +724,15 @@ export default function App() {
                 setSelectedDomain(domain);
                 if (!domain) {
                   setIsDomainIsolated(false);
-                  setTimeout(() => {
-                    try {
-                      rfInstance?.fitView({ padding: 0.2, duration: 400 });
-                    } catch {
-                      // Ignore fitView errors
-                    }
-                  }, 60);
-                  return;
                 }
-                const scope = computeDomainScope(domain, nodesRef.current, edgesRef.current);
-                const targetIds = new Set<string>();
-                scope.matchedNodeIds.forEach(id => {
-                  const nd = nodesRef.current.find(n => n.id === id);
-                  if (!nd) return;
-                  if (nd.hidden && nd.parentId) targetIds.add(nd.parentId);
-                  else if (!nd.hidden) targetIds.add(id);
-                });
-                if (targetIds.size > 0) {
-                  setTimeout(() => {
-                    try {
-                      rfInstance?.fitView({
-                        nodes: Array.from(targetIds).map(id => ({ id })),
-                        padding: 0.25,
-                        maxZoom: 1.25,
-                        duration: 400,
-                      });
-                    } catch {
-                      // Ignore fitView errors
-                    }
-                  }, 60);
-                }
+                focusDomainCamera(domain);
               }}
               isDomainIsolated={isDomainIsolated}
               onToggleDomainIsolate={() => {
-                setIsDomainIsolated(prev => {
-                  const next = !prev;
-                  if (selectedDomain) {
-                    const scope = computeDomainScope(selectedDomain, nodesRef.current, edgesRef.current);
-                    const targetIds = new Set<string>();
-                    const baseSet = next ? scope.matchedNodeIds : new Set([...scope.matchedNodeIds, ...scope.hubNodeIds]);
-                    baseSet.forEach(id => {
-                      const nd = nodesRef.current.find(n => n.id === id);
-                      if (!nd) return;
-                      if (nd.hidden && nd.parentId) targetIds.add(nd.parentId);
-                      else if (!nd.hidden) targetIds.add(id);
-                    });
-                    if (targetIds.size > 0) {
-                      setTimeout(() => {
-                        try {
-                          rfInstance?.fitView({
-                            nodes: Array.from(targetIds).map(id => ({ id })),
-                            padding: 0.25,
-                            maxZoom: 1.25,
-                            duration: 400,
-                          });
-                        } catch {
-                          // Ignore fitView errors
-                        }
-                      }, 60);
-                    }
-                  }
-                  return next;
-                });
+                setIsDomainIsolated(prev => !prev);
+                if (selectedDomain) {
+                  focusDomainCamera(selectedDomain);
+                }
               }}
             />
           </div>

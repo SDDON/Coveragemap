@@ -84,6 +84,7 @@ export interface CoverageEdgeData extends Record<string, unknown> {
   action?: string;
   test_status: StatusName;
   properties?: EdgeProperties;
+  underlyingEdgeIds?: string[];
   pathOffset?: number;
   edgeIndex?: number;
   totalEdges?: number;

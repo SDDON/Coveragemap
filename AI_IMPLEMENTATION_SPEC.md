@@ -127,6 +127,11 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
 
 ### 3.5. TestCase 모델링 및 연쇄 상태 전파 규격 (TestCase Modeling & State Propagation)
 세부 구현 명세 및 아키텍처 배경은 **[docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md](file:///e:/Workspace/coveragemap/docs/TESTCASE_MODELING_AND_STATE_PROPAGATION.md)**를 준수합니다.
+- **노드 라벨(9종) 및 엣지 타입(7종) 단일 표준 (`frontend/src/utils/constants.ts`)**:
+  - **9종 노드 라벨 (`NODE_LABEL_OPTIONS`)**: `Feature`, `Screen`, `Popup`, `Component`, `Content`, `System`, `Data`, `TestCase`, `Node`.
+  - **7종 엣지 타입 (`EDGE_TYPE_OPTIONS` / `QUICK_CONNECT_EDGE_TYPES`)**: `Transition`, `Contains`, `Displays`, `Depends_On`, `Triggers`, `Tests`, `Return`.
+  - 일반 노드/연결 추가·편집(`EditNodeForm.tsx`, `EditEdgeForm.tsx`), 빈 캔버스 드래그 빠른 생성 팝오버(`QuickConnectPopover.tsx`), 가시성 필터(`ViewTab.tsx`) 모두 동일한 SSOT 상수를 참조하여 선택 가능한 타입 목록이 100% 일치해야 합니다.
+  - 엣지의 액션/트리거(`action`) 속성은 백엔드 `GET /api/graph` 응답(`e.action`)부터 프론트엔드 레이아웃(`useGraphLayout.ts`의 `rawEdges`), 상태 마킹/편집(`useGraphOperations.ts`), 실행 취소(`useUndoStack.ts`)까지 유실 없이 보존되어 새로고침(F5) 후에도 캔버스 플로팅 배지(`FloatingEdge.tsx`)와 Inspector에 동일하게 표시되어야 합니다.
 - **포함 및 검증 관계**: `Screen` (부모) ➔ `Component` (자식, `Contains`), `TestCase` ➔ `Component` (`Tests`).
 - **선-후행 의존성 (`Depends_On`)**: 선행 TC가 `Failed` 또는 `Blocked`로 전이되면 후행 TC는 자동으로 `Blocked(🟡)`로 전파됩니다.
 - **컴포넌트 자동 롤업**: 타겟 컴포넌트에 연결된 모든 `Tests` 관계의 TC가 `Passed`이면 컴포넌트는 `Passed(🟢)`로 자동 승격됩니다.
@@ -197,6 +202,12 @@ UI 문자열은 `frontend/src/locales/koKR.ts` 한 곳에서 관리하며 `t`(= 
   - `.highlight-outgoing`: 진출 노드 (주황색 테두리 하이라이트).
   - `.highlight-root-cause`: 근본 원인 경로 (빨간색 펄스 애니메이션).
   - `.has-selection .react-flow__node:not(.active)`: 비선택 노드 딤 처리 (opacity 0.4, 흑백 필터).
+- **검색 하이라이트(`searchQuery`) 노드 및 엣지 속성 통합 탐색**:
+  - `Filters -> Search Highlight` 입력 시 노드의 속성(`name`, `label`, `aliases`, `description`, `checklist`, `properties`)뿐 아니라 **엣지의 속성(`type`, `label`, 한국어 `t.edgeType`, `action` 트리거, `test_status`, 커스텀 `properties` 키·값)**도 함께 매칭합니다.
+  - 매칭된 엣지에는 `.active.highlight-edge.highlight-search-match`를 부여하고 양 끝단 노드(접힌 부모 컨테이너 포함)도 함께 활성화(`.active`)하여, 엣지 속성만 일치하더라도 주변 비연관 노드/엣지가 정상 딤 처리되도록 보장합니다.
+- **도메인 칩 선택 및 격리 모드(`isDomainIsolated`) 유효 캔버스 카메라 정렬**:
+  - `computeDomainScope`에서 자식 노드가 매칭되어 부모 컨테이너를 보조 추가할 때 다른 도메인의 형제 자식들로 매칭이 오염되지 않도록 핵심 매칭 집합(`cameraNodeIds`)과 격리 내부 엣지(`domainInternalEdgeIds`)를 분리합니다.
+  - 도메인 칩 클릭 또는 격리 모드 토글 시 `focusDomainCamera`는 부모-자식 절대 좌표 바운딩 박스를 계산하고 상단 HUD(`.top-hud-panel`) 및 우측 Inspector(`.details-panel`) 가림 영역을 제외한 **유효 가시 캔버스 중앙**에 도메인 노드들을 배치합니다.
 - **부모 화면 + 내부 자식 컴포넌트 '콘텐츠 묶음(Content Unit, Depth 0)' 탐색**:
   - 포커스 기준 노드(`pinnedFocusNodeId`, `searchQuery` 매칭 노드, 또는 일반 `selectedNode`)가 자식 노드를 가진 부모 컨테이너인 경우, 부모 노드와 직속 자식 컴포넌트(`Contains`/`Has`) 전부를 시작 시드(`depth = 0`)로 함께 등록합니다. 이를 통해 `maxDepth = 1`일 때도 자식 컴포넌트에서 외부 화면·팝업·TC로 이어지는 진입/진출 흐름이 끊기지 않고 한 번에 강조됩니다.
   - 반대로 BFS 탐색으로 도달한 이웃 노드가 어떤 부모 컨테이너의 자식인 경우(특히 부모가 `isCollapsed: true`로 접혀 있는 경우), 해당 부모 컨테이너도 `activeNodes` 및 `incoming`/`outgoing`에 함께 롤업하여 접힌 화면이 딤 처리되지 않도록 보장합니다.

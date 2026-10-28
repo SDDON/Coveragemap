@@ -16,18 +16,19 @@ export const STATUS_ICON: Record<string, string> = { Untested: '⚪', Passed: '�
 // 변경 영향권(.highlight-affected)으로 표시할 다운스트림 홉 수 (TESTCASE 스펙 7.2: 1~2차 후속 노드)
 export const AFFECTED_MAX_HOPS = 2;
 
-export const FILTERABLE_NODE_TYPES = new Set(['Screen', 'Component', 'TestCase', 'Data']);
-
 export const NODE_LABEL_OPTIONS = [
   'Feature',
   'Screen',
+  'Popup',
+  'Component',
   'Content',
   'System',
-  'Component',
   'Data',
   'TestCase',
   'Node',
 ] as const;
+
+export const FILTERABLE_NODE_TYPES = new Set<string>(NODE_LABEL_OPTIONS);
 
 export const EDGE_TYPE_OPTIONS = [
   'Transition',
@@ -39,10 +40,5 @@ export const EDGE_TYPE_OPTIONS = [
   'Return',
 ] as const;
 
-export const QUICK_CONNECT_EDGE_TYPES = [
-  'Transition',
-  'Contains',
-  'Depends_On',
-  'Tests',
-  'Return',
-] as const;
+export const QUICK_CONNECT_EDGE_TYPES = EDGE_TYPE_OPTIONS;
+

@@ -82,10 +82,16 @@ export function getCollapsedKey(nodes: CoverageNode[]): string {
 }
 
 /**
- * 엣지 추가/삭제/타입 변경 키 — 엣지 연결 즉시 Focus+Context 하이라이트(active, incoming/outgoing, highlight-edge) 재계산 트리거
+ * 엣지 추가/삭제/타입/액션/속성 변경 키 — 엣지 연결 및 편집 즉시 Focus+Context 하이라이트(active, incoming/outgoing, highlight-edge) 재계산 트리거
  */
 export function getEdgesKey(edges: CoverageEdge[]): string {
-  return edges.map(e => `${e.id}:${e.source}:${e.target}:${e.data?.type || e.label || ''}`).sort().join('|');
+  return edges
+    .map(
+      e =>
+        `${e.id}:${e.source}:${e.target}:${e.data?.type || ''}:${e.label || ''}:${e.data?.action || ''}:${e.data?.test_status || ''}:${JSON.stringify(e.data?.properties || {})}`
+    )
+    .sort()
+    .join('|');
 }
 
 /**
@@ -425,47 +431,76 @@ export function computeDomainScope(
   edges: CoverageEdge[]
 ) {
   const matchedNodeIds = new Set<string>();
+  const cameraNodeIds = new Set<string>();
   const hubNodeIds = new Set<string>();
   const domainEdgeIds = new Set<string>();
-  if (!selectedDomain) return { matchedNodeIds, hubNodeIds, domainEdgeIds, key: '' };
+  const domainInternalEdgeIds = new Set<string>();
+  if (!selectedDomain) {
+    return { matchedNodeIds, cameraNodeIds, hubNodeIds, domainEdgeIds, domainInternalEdgeIds, key: '' };
+  }
 
+  const coreMatchedIds = new Set<string>();
   for (const n of nodes) {
     if (String(n.data?.properties?.is_global ?? n.data?.is_global ?? '').toLowerCase() === 'true') continue;
     const eff = getEffectiveNodeDomain(n, nodes);
     if (selectedDomain === '__unassigned__') {
-      if (!eff) matchedNodeIds.add(n.id);
+      if (!eff) coreMatchedIds.add(n.id);
     } else if (eff === selectedDomain) {
-      matchedNodeIds.add(n.id);
+      coreMatchedIds.add(n.id);
     }
   }
 
-  // 부모가 매칭되면 직속 자식도 매칭에 포함, 자식이 매칭되면 소속 부모도 포함
-  for (const n of nodes) {
-    if (n.parentId && matchedNodeIds.has(n.parentId)) {
-      matchedNodeIds.add(n.id);
-    } else if (n.parentId && matchedNodeIds.has(n.id)) {
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  coreMatchedIds.forEach(id => matchedNodeIds.add(id));
+
+  // 자식 노드가 매칭된 경우 소속 부모 컨테이너도 가시성 유지(matchedNodeIds)에 포함하되,
+  // 다른 도메인의 형제 자식으로 오염 전파하지 않으며, 카메라 타겟(cameraNodeIds)에는
+  // 실제 도메인 매칭 노드(또는 접힌 부모 대리 노드)만 포함합니다.
+  for (const id of coreMatchedIds) {
+    const n = nodeById.get(id);
+    if (!n) continue;
+    if (n.parentId) {
       matchedNodeIds.add(n.parentId);
+      const parentNode = nodeById.get(n.parentId);
+      if (n.hidden || parentNode?.data?.isCollapsed) {
+        if (parentNode && !parentNode.hidden) {
+          cameraNodeIds.add(parentNode.id);
+          coreMatchedIds.add(parentNode.id);
+        }
+      } else {
+        cameraNodeIds.add(n.id);
+      }
+    } else if (!n.hidden) {
+      cameraNodeIds.add(n.id);
     }
   }
 
   // 매칭된 도메인 노드들과 직접 연결된 1-hop 외부 허브 노드(예: 메인 로비) 및 간선 산출
   for (const e of edges) {
+    const sCore = coreMatchedIds.has(e.source);
+    const tCore = coreMatchedIds.has(e.target);
     const sMatched = matchedNodeIds.has(e.source);
-    const tMatched = matchedNodeIds.has(e.target);
-    if (sMatched && tMatched) {
+    if (sCore && tCore) {
       domainEdgeIds.add(e.id);
-    } else if (!isContainsEdge(e) && (sMatched || tMatched)) {
+      domainInternalEdgeIds.add(e.id);
+    } else if (isContainsEdge(e) && sMatched && tCore) {
       domainEdgeIds.add(e.id);
-      const hubId = sMatched ? e.target : e.source;
-      hubNodeIds.add(hubId);
-      const hubNode = nodes.find(n => n.id === hubId);
-      if (hubNode?.parentId) {
+      domainInternalEdgeIds.add(e.id);
+    } else if (!isContainsEdge(e) && (sCore || tCore)) {
+      domainEdgeIds.add(e.id);
+      const hubId = sCore ? e.target : e.source;
+      if (!matchedNodeIds.has(hubId)) {
+        hubNodeIds.add(hubId);
+      }
+      const hubNode = nodeById.get(hubId);
+      if (hubNode?.parentId && !matchedNodeIds.has(hubNode.parentId)) {
         hubNodeIds.add(hubNode.parentId);
       }
     }
   }
 
-  const key = `${selectedDomain}|${Array.from(matchedNodeIds).sort().join(',')}|${Array.from(hubNodeIds).sort().join(',')}|${Array.from(domainEdgeIds).sort().join(',')}`;
-  return { matchedNodeIds, hubNodeIds, domainEdgeIds, key };
+  const key = `${selectedDomain}|${Array.from(matchedNodeIds).sort().join(',')}|${Array.from(hubNodeIds).sort().join(',')}|${Array.from(domainEdgeIds).sort().join(',')}|${Array.from(domainInternalEdgeIds).sort().join(',')}`;
+  return { matchedNodeIds, cameraNodeIds, hubNodeIds, domainEdgeIds, domainInternalEdgeIds, key };
 }
+
 

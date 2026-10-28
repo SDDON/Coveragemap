@@ -5,6 +5,7 @@ import type { CoverageNode, CoverageEdge, StatusName, ChecklistItem } from '../.
 import type { EditFormData, PendingConnectSourceState } from '../../types/ui';
 import { isOverridden } from '../../statusPropagation';
 import { getSmartDefaultEdgeType, computeContentFocusScope } from '../../utils/graphScopes';
+import { NODE_LABEL_OPTIONS } from '../../utils/constants';
 import { ChecklistSection } from './ChecklistSection';
 import { t } from '../../locales/koKR';
 
@@ -127,14 +128,12 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
           value={editFormData.label || 'Node'}
           onChange={e => setEditFormData({ ...editFormData, label: e.target.value })}
         >
-          <option value="Feature">{t.nodeLabel.Feature}</option>
-          <option value="Screen">{t.nodeLabel.Screen}</option>
-          <option value="Content">{t.nodeLabel.Content}</option>
-          <option value="System">{t.nodeLabel.System}</option>
-          <option value="Component">{t.nodeLabel.Component}</option>
-          <option value="Data">{t.nodeLabel.Data}</option>
-          <option value="TestCase">{t.nodeLabel.TestCase}</option>
-          <option value="Node">{t.nodeLabel.Node}</option>
+          {NODE_LABEL_OPTIONS.map(lbl => (
+            <option key={lbl} value={lbl}>{t.nodeLabel[lbl] || lbl}</option>
+          ))}
+          {editFormData.label && !(NODE_LABEL_OPTIONS as readonly string[]).includes(editFormData.label) && (
+            <option value={editFormData.label}>{editFormData.label}</option>
+          )}
         </select>
       </div>
 

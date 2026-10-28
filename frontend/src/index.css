@@ -1944,11 +1944,11 @@ select option {
   opacity: 0.08;
   transition: opacity 0.25s ease;
 }
-.react-flow.domain-active.domain-isolated:not(.has-impact) .react-flow__node:not(.domain-matched):not(.domain-hub):not(.active) {
+.react-flow.domain-active.domain-isolated:not(.has-impact) .react-flow__node:not(.domain-matched):not(.active) {
   opacity: 0 !important;
   pointer-events: none !important;
 }
-.react-flow.domain-active.domain-isolated:not(.has-impact) .react-flow__edge:not(.domain-edge):not(.active) {
+.react-flow.domain-active.domain-isolated:not(.has-impact) .react-flow__edge:not(.domain-internal-edge):not(.active) {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -1975,7 +1975,7 @@ select option {
   opacity: 0.08;
   filter: grayscale(80%);
 }
-.react-flow.domain-active.domain-isolated:not(.has-impact) .floating-edge-label:not(.is-domain-edge):not(.is-active) {
+.react-flow.domain-active.domain-isolated:not(.has-impact) .floating-edge-label:not(.is-domain-internal-edge):not(.is-active) {
   opacity: 0 !important;
   pointer-events: none !important;
 }
@@ -1994,7 +1994,7 @@ select option {
   gap: 6px;
 }
 .quick-connect-label-select {
-  width: 96px !important;
+  width: 128px !important;
   padding: 5px 6px !important;
   font-size: 0.76rem !important;
   font-weight: 600 !important;
@@ -2244,3 +2244,21 @@ select option {
     font-size: 0.74rem !important;
   }
 }
+
+/* 필터 검색 매칭 엣지 (.highlight-search-match): 선명한 청록색(Teal/Cyan) 강조 */
+.react-flow__edge.highlight-search-match path.react-flow__edge-path {
+  stroke: #0891b2 !important;
+  stroke-width: 3.5 !important;
+  filter: drop-shadow(0 0 4px rgba(8, 145, 178, 0.45));
+}
+.react-flow__edge.highlight-search-match .custom-marker-path {
+  fill: #0891b2 !important;
+  transform: scale(1.25);
+}
+.floating-edge-label.is-search-match {
+  opacity: 1 !important;
+  filter: none !important;
+  border: 1.5px solid #0891b2;
+  box-shadow: 0 2px 6px rgba(8, 145, 178, 0.25);
+}
+

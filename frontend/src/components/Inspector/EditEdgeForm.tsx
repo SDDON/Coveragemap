@@ -2,6 +2,7 @@ import React from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { EditFormData } from '../../types/ui';
 import type { StatusName } from '../../types/graph';
+import { EDGE_TYPE_OPTIONS } from '../../utils/constants';
 import { t } from '../../locales/koKR';
 
 interface EditEdgeFormProps {
@@ -32,13 +33,12 @@ export const EditEdgeForm: React.FC<EditEdgeFormProps> = ({
           value={editFormData.edgeType || 'Transition'}
           onChange={e => setEditFormData({ ...editFormData, edgeType: e.target.value })}
         >
-          <option value="Transition">{t.edgeType.Transition}</option>
-          <option value="Contains">{t.edgeType.Contains}</option>
-          <option value="Displays">{t.edgeType.Displays}</option>
-          <option value="Depends_On">{t.edgeType.Depends_On}</option>
-          <option value="Triggers">{t.edgeType.Triggers}</option>
-          <option value="Tests">{t.edgeType.Tests}</option>
-          <option value="Return">{t.edgeType.Return}</option>
+          {EDGE_TYPE_OPTIONS.map(et => (
+            <option key={et} value={et}>{t.edgeType[et] || et}</option>
+          ))}
+          {editFormData.edgeType && !(EDGE_TYPE_OPTIONS as readonly string[]).includes(editFormData.edgeType) && (
+            <option value={editFormData.edgeType}>{editFormData.edgeType}</option>
+          )}
         </select>
       </div>
       <div className="form-group">

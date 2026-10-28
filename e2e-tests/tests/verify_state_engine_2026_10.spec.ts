@@ -1372,5 +1372,220 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(page.getByText('v0.5.1')).toBeVisible();
     await expect(page.getByText('v0.5.0')).toBeVisible();
   });
+
+  test('U. Edge Action Persistence across Reload, Edge Attribute Search Highlight, Unified 9 Node / 7 Edge Types in QuickConnect & Forms, and Domain Isolation Camera Positioning', async ({ page, request }) => {
+    // 1. Item 2: Save Edge Action/Trigger & Edge Type, then verify persistence across full page reload (F5)
+    const initialGraph = await (await request.get('/api/graph')).json();
+    const rootChildEdge = initialGraph.edges.find((e: any) => e.source === ids.root && e.target === ids.child);
+    expect(rootChildEdge).toBeTruthy();
+
+    const targetEdgeEl = page.locator(`.react-flow__edge[data-id="${rootChildEdge.id}"]`);
+    await expect(targetEdgeEl).toBeVisible();
+    await targetEdgeEl.locator('.react-flow__edge-interaction').click({ force: true });
+
+    await expect(page.locator('#edgeType')).toBeVisible();
+    await expect(page.locator('#edgeAction')).toBeVisible();
+
+    // Verify 7 unified edge types in EditEdgeForm (#edgeType)
+    const editEdgeOptions = await page.locator('#edgeType option').evaluateAll(
+      opts => opts.map(o => (o as HTMLOptionElement).value)
+    );
+    expect(editEdgeOptions).toEqual([
+      'Transition',
+      'Contains',
+      'Displays',
+      'Depends_On',
+      'Triggers',
+      'Tests',
+      'Return',
+    ]);
+
+    await page.locator('#edgeType').selectOption('Triggers');
+    await page.locator('#edgeAction').fill('상점 버튼 클릭');
+
+    const putEdgePromise = page.waitForResponse(
+      res => res.url().includes('/api/edges/') && res.request().method() === 'PUT'
+    );
+    await page.locator('.details-panel button.primary', { hasText: 'Save' }).click();
+    const putEdgeRes = await putEdgePromise;
+    expect(putEdgeRes.ok()).toBeTruthy();
+
+    // FloatingEdge badge must immediately display the saved action
+    await expect(page.locator('.floating-edge-label', { hasText: '(상점 버튼 클릭)' })).toBeVisible();
+
+    // Reload browser (F5) and confirm edge action persists on canvas and in EditEdgeForm
+    const reloadGraph = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    const reloadedGraphData = await (await reloadGraph).json();
+    const updatedEdge = reloadedGraphData.edges.find((e: any) => e.source === ids.root && e.target === ids.child);
+    expect(updatedEdge).toBeTruthy();
+    expect(updatedEdge.action).toBe('상점 버튼 클릭');
+
+    const reloadedActionBadge = page.locator('.floating-edge-label', { hasText: '(상점 버튼 클릭)' });
+    await expect(reloadedActionBadge).toBeVisible({ timeout: 10000 });
+
+    const reloadedEdgeEl = page.locator(`.react-flow__edge[data-id="${updatedEdge.id}"]`);
+    await reloadedEdgeEl.locator('.react-flow__edge-interaction').click({ force: true });
+    await expect(page.locator('#edgeAction')).toHaveValue('상점 버튼 클릭');
+    await expect(page.locator('#edgeType')).toHaveValue('Triggers');
+
+    // Clear selection by clicking pane
+    await page.locator('.react-flow__pane').click({ position: { x: 20, y: 300 } });
+
+    // 2. Item 1: Filters -> Search Highlight matches edge attributes (action, type) and highlights edge + endpoints
+    await page.getByRole('button', { name: 'Filters' }).click();
+    const searchInput = page.locator('#searchHighlight');
+    await expect(searchInput).toBeVisible();
+
+    await searchInput.fill('상점 버튼 클릭');
+    await expect(page.locator('.react-flow')).toHaveClass(/\bhas-selection\b/);
+    const matchedEdge = page.locator('.react-flow__edge.highlight-search-match');
+    await expect(matchedEdge).toHaveCount(1);
+    await expect(matchedEdge).toHaveClass(/\bactive\b/);
+    await expect(matchedEdge).toHaveClass(/\bhighlight-edge\b/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.root)).not.toHaveClass(/\bde-emphasized\b/);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.child)).not.toHaveClass(/\bde-emphasized\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bde-emphasized\b/);
+
+    // Also match by edge type ('Triggers')
+    await searchInput.fill('Triggers');
+    await expect(page.locator('.react-flow__edge.highlight-search-match')).toHaveCount(1);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bactive\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bde-emphasized\b/);
+
+    await searchInput.fill('');
+    await expect(reloadedEdgeEl.first()).toBeVisible();
+
+    // 3. Item 4: Verify Unified 9 Node Labels & 7 Edge Types in EditNodeForm and QuickConnectPopover
+    await selectNode(page, ids.root);
+    const editNodeOptions = await page.locator('#nodeLabel option').evaluateAll(
+      opts => opts.map(o => (o as HTMLOptionElement).value)
+    );
+    expect(editNodeOptions).toEqual([
+      'Feature',
+      'Screen',
+      'Popup',
+      'Component',
+      'Content',
+      'System',
+      'Data',
+      'TestCase',
+      'Node',
+    ]);
+
+    const rootBox = await nodeLocator(page, ids.root).locator('.custom-node').boundingBox();
+    expect(rootBox).not.toBeNull();
+    await page.mouse.move(rootBox!.x + rootBox!.width + 4, rootBox!.y + rootBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(Math.max(60, rootBox!.x - 150), Math.max(120, rootBox!.y - 100), { steps: 10 });
+    await page.mouse.up();
+
+    const popover = page.locator('.quick-connect-popover');
+    await expect(popover).toBeVisible();
+    await popover.locator('.quick-connect-search-input').fill('New_Popup_Node');
+
+    const quickConnectLabels = await popover.locator('[data-testid="quick-connect-label"] option').evaluateAll(
+      opts => opts.map(o => (o as HTMLOptionElement).value)
+    );
+    expect(quickConnectLabels).toEqual(editNodeOptions);
+
+    const quickConnectEdges = await popover.locator('.quick-connect-type-pill').evaluateAll(
+      btns => btns.map(b => (b.textContent || '').trim())
+    );
+    expect(quickConnectEdges).toEqual(editEdgeOptions);
+
+    await popover.locator('.quick-connect-close-btn').click();
+    await expect(popover).toBeHidden();
+
+    // 4. Item 3: Domain Tag Selection & Isolation Camera Positioning + Sibling Non-Pollution
+    await request.put(`/api/nodes/${encodeURIComponent(ids.root)}`, {
+      data: { label: 'Screen', name: 'Main Lobby Screen', aliases: ['Outgame'], test_status: 'Passed', properties: { domain: 'Outgame' } },
+    });
+    await request.put(`/api/nodes/${encodeURIComponent(ids.child)}`, {
+      data: { label: 'Popup', name: 'Diamond Shop Popup', aliases: ['Payment'], test_status: 'Passed', properties: { domain: 'Payment' } },
+    });
+    await request.put(`/api/nodes/${encodeURIComponent(ids.settings)}`, {
+      data: { label: 'Component', name: 'Sound Option Button', aliases: ['Outgame'], test_status: 'Passed', properties: { domain: 'Outgame' } },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.child, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Passed', properties: {} },
+    });
+
+    const reloadForDomain = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadForDomain;
+    await page.waitForTimeout(500);
+
+    const domainBar = page.locator('.domain-filter-bar');
+    const paymentChip = domainBar.locator('.domain-chip', { hasText: 'Payment' });
+    await expect(paymentChip).toBeVisible();
+    await paymentChip.click();
+    await page.waitForTimeout(550);
+
+    // Child 'Diamond Shop Popup' (#Payment) and its parent container must be .domain-matched,
+    // while sibling 'Sound Option Button' (#Outgame) must NOT be polluted with .domain-matched
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bdomain-matched\b/);
+    await expect(nodeLocator(page, ids.root)).toHaveClass(/\bdomain-matched\b/);
+    await expect(nodeLocator(page, ids.settings)).not.toHaveClass(/\bdomain-matched\b/);
+
+    // Toggle Domain Isolation ON -> sibling 'Sound Option Button' is hidden (opacity 0), and target node is centered in unoccluded canvas area
+    const isolateBtn = domainBar.locator('.domain-isolate-btn');
+    await isolateBtn.click();
+    await page.waitForTimeout(550);
+
+    await expect(page.locator('.react-flow')).toHaveClass(/\bdomain-isolated\b/);
+    await expect(nodeLocator(page, ids.settings)).toHaveCSS('opacity', '0');
+
+    const childRect = await nodeLocator(page, ids.child).boundingBox();
+    const inspectorRect = await page.locator('.details-panel').boundingBox();
+    const hudRect = await page.locator('.top-hud-panel').boundingBox();
+    expect(childRect).not.toBeNull();
+    expect(inspectorRect).not.toBeNull();
+    expect(hudRect).not.toBeNull();
+
+    const childCenterX = childRect!.x + childRect!.width / 2;
+    const childCenterY = childRect!.y + childRect!.height / 2;
+    expect(childCenterX).toBeGreaterThan(40);
+    expect(childCenterX).toBeLessThan(inspectorRect!.x);
+    expect(childCenterY).toBeGreaterThan(hudRect!.y + hudRect!.height);
+
+    // 5. Collapsed-parent proxy edge Action/Trigger edit & persistence across reload
+    await request.post('/api/edges', {
+      data: { source: ids.child, target: ids.tc1, type: 'Transition', test_status: 'Passed', properties: {} },
+    });
+    const reloadBeforeProxy = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadBeforeProxy;
+
+    // Collapse parent ids.root -> child->tc1 edge becomes a rerouted proxy edge (${ids.root}-${ids.tc1}-Transition)
+    await page.locator('.toolbar-collapse-all-btn').click();
+    const proxyEdgeId = `${ids.root}-${ids.tc1}-Transition`;
+    const proxyEdgeEl = page.locator(`.react-flow__edge[data-id="${proxyEdgeId}"]`);
+    await expect(proxyEdgeEl).toBeVisible();
+    await proxyEdgeEl.dispatchEvent('click');
+
+    await expect(page.locator('#edgeAction')).toBeVisible();
+    await page.locator('#edgeAction').fill('접힌 그룹 대리 간선 액션');
+    const putProxyEdgePromise = page.waitForResponse(
+      res => res.url().includes('/api/edges/') && res.request().method() === 'PUT'
+    );
+    await page.locator('.details-panel button.primary', { hasText: 'Save' }).click();
+    expect((await putProxyEdgePromise).ok()).toBeTruthy();
+
+    await expect(page.locator('.floating-edge-label', { hasText: '(접힌 그룹 대리 간선 액션)' })).toBeVisible();
+
+    const reloadAfterProxy = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    const afterProxyData = await (await reloadAfterProxy).json();
+    const persistedUnderlyingEdge = afterProxyData.edges.find((e: any) => e.source === ids.child && e.target === ids.tc1);
+    expect(persistedUnderlyingEdge).toBeTruthy();
+    expect(persistedUnderlyingEdge.action).toBe('접힌 그룹 대리 간선 액션');
+  });
 });
+
 

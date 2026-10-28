@@ -50,12 +50,12 @@ export const koKR = {
   // 우측 패널 ? 아이콘 툴팁
   tooltip: {
     filterGraph: '선택한 카테고리(Alias)에 해당하는 노드들만 캔버스에 표시합니다.',
-    searchHighlight: '검색어가 포함된 노드와 그 의존성 흐름을 하이라이트합니다.',
+    searchHighlight: '노드(이름·라벨·별칭·도메인·속성) 및 엣지(연결 타입·액션/트리거·커스텀 속성)를 검색해 일치하는 항목과 의존성 흐름을 하이라이트합니다.',
     visibilityFilter: '체크한 타입의 노드들만 캔버스에 표시합니다.',
     maxDepth: '선택한 노드로부터 지정한 단계(Depth)까지만 연관 노드를 표시합니다.',
     hideUnconnectedEdges: '노드 선택 또는 포커스 시, 관심 범위와 직접 연결되지 않은 배경 간선들을 완전히 숨겨 복잡한 그래프에서의 가독성을 높입니다.',
     overviewMode: '모든 상위 화면(Parent)의 하위 컴포넌트를 한 번에 접어 상위 수준 흐름만 보거나 다시 펼칩니다. 접힌 상태에서는 하위 연결선이 상위 대리 간선(Proxy Edge)으로 자동 위임됩니다.',
-    nodeLabel: '노드의 역할을 나타내는 주요 타입입니다. (예: Screen, Feature 등)',
+    nodeLabel: '노드의 역할을 나타내는 주요 타입입니다. (Feature, Screen, Popup, Component, Content, System, Data, TestCase, Node)',
     nodeName: '노드에 표시될 실제 이름입니다.',
     nodeCategory: '그룹화나 검색에 쓰이는 카테고리 태그(Alias)입니다.',
     nodeDomain: '허브 앤 스포크 복잡도를 줄이기 위한 논리적 최상위 도메인 분류입니다 (Max Depth=1 유지).',
@@ -65,7 +65,7 @@ export const koKR = {
     checklist: '하위 노드를 새로 분기하지 않고 화면 내부의 정적 UI·텍스트·딤(Dimmed) 명세를 체크리스트로 검증합니다. 항목 결과에 따라 노드 상태가 자동 판정됩니다.',
     changeImpact: '기획/스펙 변경 시 노드를 보라색 펄스로 강조하고 하류 1~2단계(Return 제외) 의존 노드에 재검증 영향권을 표시합니다.',
     nodeClone: '선택한 노드와 내부 Contains 자식·체크리스트·글로벌 배지 연결을 새 환경 태그(#아레나 등)로 복제하고 상태를 미검증으로 초기화합니다.',
-    edgeType: 'Transition(화면 이동), Contains(부모-자식 포함), Depends_On(선행 의존 전파), Tests(TC 검증 전파), Return(복귀, 전파 제외) 등 연결 성격을 지정합니다.',
+    edgeType: 'Transition(화면 이동), Contains(부모-자식 포함), Displays(노출), Depends_On(선행 의존 전파), Triggers(이벤트 호출), Tests(TC 검증 전파), Return(복귀, 전파 제외) 등 연결 성격을 지정합니다.',
     actionTrigger: '이 연결선(화면 전환/호출)을 발생시키는 사용자 조작이나 시스템 조건(예: 뒤로가기 버튼 클릭, 재화 부족 시)을 기록합니다.',
     domainBar: '최상위 도메인(전투/성장/상점 등)별로 노드를 색상 구분하고, 칩 클릭 시 해당 도메인과 연결 허브만 필터링·격리합니다.',
     globalNodes: '전역 노드를 다른 노드에 부착(Attach)하거나, 해당 전역 노드에 의존하는 모든 노드(Impact)를 시각화합니다.',
@@ -75,6 +75,7 @@ export const koKR = {
   nodeLabel: {
     Feature: 'Feature (기능)',
     Screen: 'Screen (화면)',
+    Popup: 'Popup (팝업/모달)',
     Content: 'Content (콘텐츠)',
     System: 'System (시스템)',
     Component: 'Component (컴포넌트)',

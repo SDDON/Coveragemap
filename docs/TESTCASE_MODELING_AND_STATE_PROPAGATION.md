@@ -55,13 +55,33 @@ flowchart LR
 
 ## 3. Domain Modeling Standard (표준 도메인 모델링 규격)
 
-### 3.1. 관계 유형 표준 (Edge Taxonomy)
-| 엣지 타입 (`type`) | 출발 노드 (`source`) | 도착 노드 (`target`) | 의미 및 영향도 |
+### 3.1. 노드 라벨 및 관계 유형 단일 표준 (Unified Node & Edge Taxonomy — SSOT: `frontend/src/utils/constants.ts`)
+CoverageMap의 모든 생성·편집·필터 UI(**일반 노드 추가/편집(`EditNodeForm`)**, **일반 연결 편집(`EditEdgeForm`)**, **빈 캔버스로 드래그하여 즉시 노드+연결 생성(`QuickConnectPopover`)**, **가시성 필터(`ViewTab` Visibility Filter)**)는 `constants.ts`의 단일 상수(`NODE_LABEL_OPTIONS`, `EDGE_TYPE_OPTIONS`)를 공통 참조하여 **동일한 9종 노드 타입과 7종 연결 타입**을 제공합니다.
+
+#### A. 표준 노드 라벨 (9종 `NODE_LABEL_OPTIONS`)
+| 노드 라벨 (`label`) | UI 표기 (`koKR.ts`) | 도메인 역할 및 모델링 기준 |
+| :--- | :--- | :--- |
+| **`Feature`** | `Feature (기능)` | 상점 구매, 매칭, 제작 등 유저에게 제공되는 단위 게임 기능 |
+| **`Screen`** | `Screen (화면)` | 타이틀, 로비, 인게임 등 독립된 전체 화면 컨테이너 (Subflow 부모 가능) |
+| **`Popup`** | `Popup (팝업/모달)` | 알림창, 재화 부족 모달 등 화면 위에 중첩 노출되는 팝업/모달 공간 (`#Popup` 회귀 대상) |
+| **`Component`** | `Component (UI 요소)` | 버튼, 버전 텍스트, 탭 바 등 화면/팝업 내부를 구성하는 개별 UI 요소 |
+| **`Content`** | `Content (콘텐츠)` | 던전, 스테이지, 시즌 패스, 이벤트 등 게임 플레이 콘텐츠 단위 |
+| **`System`** | `System (시스템)` | 결제 모듈, 인증 서버, 인벤토리 로직 등 백그라운드/코어 시스템 |
+| **`Data`** | `Data (데이터)` | 유저 재화, 테이블 설정값, 로컬 캐시 등 참조/저장 데이터 엔티티 |
+| **`TestCase`** | `TestCase (테스트케이스)` | 거시적 선후 의존(`Depends_On`) 검증이 필요한 독립 테스트케이스 노드 (A안) |
+| **`Node`** | `Node (기본)` | 특정 분류에 속하지 않는 범용 기본 노드 |
+
+#### B. 표준 엣지(연결) 타입 (7종 `EDGE_TYPE_OPTIONS` / `QUICK_CONNECT_EDGE_TYPES`)
+| 엣지 타입 (`type`) | 출발 노드 (`source`) | 도착 노드 (`target`) | 의미 및 상태 전파 영향도 (`action` 트리거 포함) |
 | :--- | :--- | :--- | :--- |
-| **`Contains`** | `Screen` (부모) | `Component` (자식) | 물리적 포함 관계 (Subflow Max Depth = 1 준수) |
-| **`Depends_On`** | `TestCase` (선행) | `TestCase` (후행) | 선행 검증이 실패/차단되면 후행 검증도 `Blocked` 처리됨 |
-| **`Tests`** | `TestCase` (검증) | `Component` / `Feature` | 하위 TC 검증 결과가 상위 컴포넌트로 롤업(Roll-up) 집계됨 |
-| **`Transition`** | `Screen` / `Feature` | `Screen` / `Feature` | 화면 전환 및 기능 흐름 간 상호작용 |
+| **`Transition`** | `Screen` / `Feature` | `Screen` / `Popup` / `Feature` | 유저 액션(`action`)에 의한 정방향 화면 전환 및 기능 흐름 (**결함 시 후행 `Blocked` 전파 ON**) |
+| **`Contains`** | `Screen` / `Popup` (부모) | `Component` / `Feature` (자식) | 물리적 계층 포함 관계 (Subflow Max Depth = 1 준수, **선행 결함 시 하위 `Blocked` 전파 ON**) |
+| **`Displays`** | `Screen` / `System` | `Popup` / `Component` / `Data` | 특정 화면이나 시스템이 UI/팝업/데이터를 출력·노출하는 관계 (**전파 ON**) |
+| **`Depends_On`** | `TestCase` / `Feature` (선행) | `TestCase` / `Feature` (후행) | 선행 조건 의존성 — 선행 노드가 `Failed`/`Blocked`이면 후행 노드를 즉시 `Blocked` 처리 (**전파 ON**) |
+| **`Triggers`** | `Component` / `Feature` | `System` / `Popup` / `Feature` | 이벤트/액션이 후속 시스템 로직이나 팝업을 발동시키는 관계 (**전파 ON**) |
+| **`Tests`** | `TestCase` (검증) | `Component` / `Feature` | 하위 TC 검증 결과가 타겟 컴포넌트/기능의 상태로 롤업(Roll-up) 집계됨 (**롤업 ON**) |
+| **`Return`** | `Screen` / `Popup` | `Screen` (복귀 대상) | 뒤로가기·팝업 닫기 등 역방향 복귀선 — **순환 데드락 방지를 위해 상태 전파 제외 (가중치 = 0)** |
+
 
 ### 3.2. A안(캔버스 독립 노드) vs B안(노드 내부 체크리스트) 비교 분석
 

@@ -99,13 +99,17 @@ export default function FloatingEdge({
   const isContainsEdge = edgeTypeLower === 'contains' || edgeTypeLower === 'has';
   const isDeEmphasized = edgeClassName.includes('de-emphasized');
   const isActiveEdge = edgeClassName.includes('active');
+  const isSearchMatchEdge = edgeClassName.includes('highlight-search-match');
   const isImpactEdge = edgeClassName.includes('impact-edge');
   const isDomainEdge = edgeClassName.includes('domain-edge');
+  const isDomainInternalEdge = edgeClassName.includes('domain-internal-edge');
   const labelStateClass = [
     isDeEmphasized ? 'is-de-emphasized' : '',
     isActiveEdge ? 'is-active' : '',
+    isSearchMatchEdge ? 'is-search-match' : '',
     isImpactEdge ? 'is-impact-edge' : '',
     isDomainEdge ? 'is-domain-edge' : '',
+    isDomainInternalEdge ? 'is-domain-internal-edge' : '',
   ]
     .filter(Boolean)
     .map(c => ` ${c}`)
@@ -127,7 +131,7 @@ export default function FloatingEdge({
         </marker>
       </defs>
       <BaseEdge id={id} path={edgePath} markerEnd={`url(#${markerId})`} style={style} />
-      {label && !isContainsEdge && (
+      {((label && !isContainsEdge) || Boolean(edgeData?.action)) && (
         <EdgeLabelRenderer>
           <div
             style={{
@@ -144,9 +148,9 @@ export default function FloatingEdge({
             className={`nodrag nopan floating-edge-label${labelStateClass}`}
           >
             <div style={{ textAlign: 'center' }}>
-              <div>{label}</div>
+              {!isContainsEdge && label && <div>{label}</div>}
               {edgeData?.action && (
-                <div style={{ fontSize: '0.6rem', color: '#888', marginTop: '2px' }}>
+                <div style={{ fontSize: '0.6rem', color: '#888', marginTop: !isContainsEdge && label ? '2px' : '0' }}>
                   ({edgeData.action})
                 </div>
               )}

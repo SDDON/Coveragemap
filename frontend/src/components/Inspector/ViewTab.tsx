@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { CoverageNode } from '../../types/graph';
+import { NODE_LABEL_OPTIONS } from '../../utils/constants';
 import { t } from '../../locales/koKR';
 
 interface ViewTabProps {
@@ -62,11 +63,12 @@ export const ViewTab: React.FC<ViewTabProps> = ({
       </div>
 
       <div className="form-group" style={{ marginTop: '12px', marginBottom: '16px' }}>
-        <label className="form-label" style={{ marginBottom: '6px' }}>
+        <label htmlFor="searchHighlight" className="form-label" style={{ marginBottom: '6px' }}>
           {t.inspector.searchHighlight}
           <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.searchHighlight}>?</span>
         </label>
         <input 
+          id="searchHighlight"
           type="text" 
           placeholder={t.inspector.searchPlaceholder} 
           value={searchQuery} 
@@ -81,8 +83,8 @@ export const ViewTab: React.FC<ViewTabProps> = ({
           <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.visibilityFilter}>?</span>
         </label>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-          {['Screen', 'Component', 'TestCase', 'Data'].map(type => (
-            <label key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', cursor: 'pointer', color: '#1e293b', fontWeight: 500 }}>
+          {NODE_LABEL_OPTIONS.map(type => (
+            <label key={type} title={t.nodeLabel[type]} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '13px', cursor: 'pointer', color: '#1e293b', fontWeight: 500 }}>
               <input
                 type="checkbox"
                 checked={visibleTypes.has(type)}

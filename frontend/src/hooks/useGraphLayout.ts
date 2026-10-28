@@ -264,6 +264,7 @@ export function useGraphLayout({
               label: e.type,
               data: {
                 type: e.type,
+                action: e.action ?? (typeof e.properties?.action === 'string' ? e.properties.action : undefined),
                 test_status: (e.test_status as CoverageNodeData['test_status']) || 'Untested',
                 properties: e.properties,
               },
