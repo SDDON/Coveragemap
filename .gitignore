@@ -50,6 +50,6 @@ backend/presets/*.json
 !backend/presets/minimal_e2e.json
 !backend/presets/mobile_game_qa_guide_2026_10.json
 
-# Multi-agent orchestration working directory
-.agents/teamwork/
-
+# Multi-agent orchestration working directory (워크스페이스 공유 스킬만 버전 관리)
+.agents/*
+!.agents/skills/
