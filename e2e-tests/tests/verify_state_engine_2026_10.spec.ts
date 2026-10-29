@@ -1585,6 +1585,26 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     const persistedUnderlyingEdge = afterProxyData.edges.find((e: any) => e.source === ids.child && e.target === ids.tc1);
     expect(persistedUnderlyingEdge).toBeTruthy();
     expect(persistedUnderlyingEdge.action).toBe('접힌 그룹 대리 간선 액션');
+
+    // 6. Node Category (#nodeCategory / aliases) edit & Save immediately updates Switch Workspace overlay without reload
+    await selectNode(page, ids.root);
+    const categoryInput = page.locator('#nodeCategory');
+    await expect(categoryInput).toBeVisible();
+    await categoryInput.fill('Outgame, 신규카테고리_즉시반영');
+    const putCategoryPromise = page.waitForResponse(
+      res => res.url().includes(`/api/nodes/${encodeURIComponent(ids.root)}`) && res.request().method() === 'PUT'
+    );
+    await page.locator('.details-panel button.primary', { hasText: 'Save' }).click();
+    expect((await putCategoryPromise).ok()).toBeTruthy();
+
+    await page.getByRole('button', { name: /Switch Workspace/i }).click();
+    const wsOverlay = page.locator('.workspace-selector-overlay');
+    await expect(wsOverlay).toBeVisible();
+    const newCategoryBtn = wsOverlay.getByRole('button', { name: '신규카테고리_즉시반영' });
+    await expect(newCategoryBtn).toBeVisible();
+    await newCategoryBtn.click();
+    await expect(wsOverlay).toBeHidden();
+    await expect(nodeLocator(page, ids.root)).toBeVisible();
   });
 });
 

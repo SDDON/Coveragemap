@@ -85,7 +85,8 @@ def get_graph(
     return convert_to_response(processed_graph, debounce_id=debounce_id)
 
 @app.get("/api/aliases", response_model=List[str])
-def get_aliases(session = Depends(get_db)):
+def get_aliases(response: Response, session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     """Return all unique normalized aliases present in the current graph."""
     result = session.run("MATCH (n) WHERE n.aliases IS NOT NULL UNWIND n.aliases AS alias RETURN DISTINCT alias")
     from graph_service import _normalize_aliases

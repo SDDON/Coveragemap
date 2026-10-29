@@ -20,7 +20,7 @@ export const WorkspaceSelectorOverlay: React.FC<WorkspaceSelectorOverlayProps> =
   if (!show) return null;
 
   return (
-    <div style={{
+    <div className="workspace-selector-overlay" style={{
       position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
       backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 'var(--z-modal)',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',

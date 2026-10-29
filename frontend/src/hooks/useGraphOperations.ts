@@ -41,6 +41,8 @@ export interface UseGraphOperationsProps {
   setFilterText?: Dispatch<SetStateAction<string>>;
   setShowAllDomains?: Dispatch<SetStateAction<boolean>>;
   pendingCreatePosRef?: MutableRefObject<{ x: number; y: number } | null>;
+  setAliases?: Dispatch<SetStateAction<string[]>>;
+  fetchAliases?: () => Promise<void>;
 }
 
 export function useGraphOperations({
@@ -69,6 +71,8 @@ export function useGraphOperations({
   setFilterText,
   setShowAllDomains,
   pendingCreatePosRef,
+  setAliases,
+  fetchAliases,
 }: UseGraphOperationsProps) {
   /**
    * 캔버스 드래그 연결(onConnect), Quick Connect 팝오버(Pattern A), 2-Step 클릭 연결(Pattern B)이
@@ -714,6 +718,12 @@ export function useGraphOperations({
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
         selectedNodeRef.current = newNode;
+        if (setAliases && payloadAliases.length > 0) {
+          setAliases(prev => Array.from(new Set([...prev, ...payloadAliases])).sort());
+        }
+        if (fetchAliases) {
+          await fetchAliases();
+        }
         if (setIsCreatingNode) setIsCreatingNode(false);
         setSelectedNode(newNode);
         if (setEditFormData) {
@@ -778,6 +788,26 @@ export function useGraphOperations({
         const wasGlobal = String(targetNode.data?.properties?.is_global ?? targetNode.data?.is_global ?? '').toLowerCase() === 'true';
         const isGlobalNow = String(editFormData.properties?.is_global ?? '').toLowerCase() === 'true';
         const globalChanged = wasGlobal !== isGlobalNow;
+        const updatedNodes = nodesRef.current.map(n => (n.id === targetId ? {
+          ...n,
+          data: {
+            ...n.data,
+            label: nextLabel,
+            name: nextName,
+            aliases: nextAliases,
+            description: nextDesc,
+            issue_link: nextIssue,
+            properties: { ...(n.data?.properties || {}), ...(editFormData.properties || {}) },
+          },
+        } : n));
+        nodesRef.current = updatedNodes;
+        setNodes(updatedNodes);
+        if (setAliases && nextAliases.length > 0) {
+          setAliases(prev => Array.from(new Set([...prev, ...nextAliases])).sort());
+        }
+        if (fetchAliases) {
+          await fetchAliases();
+        }
 
         setNodes(nds => nds.map(n => (n.id === targetId ? {
           ...n,
@@ -906,7 +936,7 @@ export function useGraphOperations({
         setErrorToast(extractErrorMessage(err));
       }
     }
-  }, [editFormData, isCreatingNode, setIsCreatingNode, rfInstance, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, setSelectedEdge, unparentNodesOnContainsDelete, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast, setEdges, pendingCreatePosRef, setEditFormData, filterText, setFilterText, setShowAllDomains]);
+  }, [editFormData, isCreatingNode, setIsCreatingNode, rfInstance, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, setSelectedEdge, unparentNodesOnContainsDelete, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast, setEdges, pendingCreatePosRef, setEditFormData, filterText, setFilterText, setShowAllDomains, setAliases, fetchAliases]);
 
   return {
     createEdgeBetweenNodes,

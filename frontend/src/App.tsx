@@ -120,6 +120,23 @@ export default function App() {
 
   const triggerRefresh = useCallback(() => setGraphVersion(v => v + 1), []);
 
+  const fetchAliases = useCallback(async () => {
+    try {
+      const res = await fetch('/api/aliases', { cache: 'no-store' });
+      if (res.ok) {
+        const data = (await res.json()) as string[];
+        setAliases(data);
+      }
+    } catch {
+      setAliases([]);
+    }
+  }, []);
+
+  const nodesAliasesKey = useMemo(
+    () => nodes.map(n => `${n.id}:${(n.data?.aliases || []).join(',')}`).join('|'),
+    [nodes]
+  );
+
   const { loading, error: layoutError, setError: setLayoutError, unparentNodesOnContainsDelete, relayoutFocused, nodesStructuralKey, nodesStatusKey } = useGraphLayout({
     nodes, edges, triggerRefresh, filterText, maxDepth, visibleTypes, graphVersion, rfInstance, setNodes, setEdges, nodesRef,
     selectedNodeRef, setSelectedNode, setEditFormData,
@@ -164,7 +181,7 @@ export default function App() {
   } = useGraphOperations({
     nodesRef, edgesRef, selectedNodeRef, selectedEdgeRef, editFormData, setNodes, setEdges, setSelectedNode, setSelectedEdge,
     setPinnedFocusNodeId, setActiveImpacts, pushUndo, applyLocalStatusChanges, syncStatusesFromServer, triggerRefresh, unparentNodesOnContainsDelete, setErrorToast,
-    isCreatingNode, setIsCreatingNode, rfInstance, setEditFormData, filterText, setFilterText, setShowAllDomains, pendingCreatePosRef,
+    isCreatingNode, setIsCreatingNode, rfInstance, setEditFormData, filterText, setFilterText, setShowAllDomains, pendingCreatePosRef, setAliases, fetchAliases,
   });
 
   const {
@@ -403,7 +420,7 @@ export default function App() {
     let mounted = true;
     const fetchAliases = async () => {
       try {
-        const res = await fetch('/api/aliases');
+        const res = await fetch('/api/aliases', { cache: 'no-store' });
         if (res.ok && mounted) {
           const data = (await res.json()) as string[];
           setAliases(data);
@@ -415,7 +432,7 @@ export default function App() {
     fetchAliases();
     fetchGlobals();
     return () => { mounted = false; };
-  }, [graphVersion, fetchGlobals]);
+  }, [graphVersion, nodesAliasesKey, fetchGlobals]);
 
   useEffect(() => {
     let mounted = true;
@@ -704,7 +721,7 @@ export default function App() {
               filterText={filterText}
               showAllDomains={showAllDomains}
               onAddNode={() => startCreateNode()}
-              onSwitchWorkspace={() => { setFilterText(''); setShowAllDomains(false); localStorage.removeItem('savedWorkspace'); localStorage.removeItem('savedShowAll'); }}
+              onSwitchWorkspace={() => { fetchAliases(); setFilterText(''); setShowAllDomains(false); localStorage.removeItem('savedWorkspace'); localStorage.removeItem('savedShowAll'); }}
               onOpenPresets={() => setShowPresetManager(true)}
               onOpenHelp={() => setShowHelp(true)}
               onRelayout={relayoutFocused}
