@@ -292,7 +292,12 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
                                 }
                                 let hostname = link;
                                 try {
-                                  hostname = new URL(url).hostname;
+                                  const parsed = new URL(url);
+                                  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                                    url = '#';
+                                  } else {
+                                    hostname = parsed.hostname;
+                                  }
                                 } catch {
                                   // Gracefully fall back to original link text if URL parsing fails
                                 }

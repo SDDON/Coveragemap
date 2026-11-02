@@ -8,6 +8,9 @@ from graph_service import fetch_graph_from_neo4j, convert_to_response, serialize
 from models import IDENTIFIER_PATTERN
 
 PRESETS_DIR = os.path.join(os.path.dirname(__file__), "presets")
+MAX_PRESET_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_PRESET_NODES = 5000
+MAX_PRESET_EDGES = 20000
 
 def ensure_presets_dir():
     if not os.path.exists(PRESETS_DIR):
@@ -110,6 +113,15 @@ def _resolve_preset_path(preset_id: str) -> str:
 def get_preset(preset_id: str) -> Dict[str, Any]:
     """Retrieve the full content of a specific preset safely."""
     filepath = _resolve_preset_path(preset_id)
+    try:
+        file_size = os.path.getsize(filepath)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stat preset: {str(e)}")
+    if file_size > MAX_PRESET_FILE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"프리셋 파일 크기가 허용 한도({MAX_PRESET_FILE_BYTES // (1024 * 1024)}MB)를 초과했습니다."
+        )
             
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -135,6 +147,10 @@ def load_preset_to_neo4j(session, preset_id: str, clean: bool = False) -> Dict[s
     preset_data = get_preset(preset_id)
     nodes = preset_data.get("nodes", [])
     edges = preset_data.get("edges", [])
+    if len(nodes) > MAX_PRESET_NODES:
+        raise HTTPException(status_code=400, detail=f"프리셋 노드 수가 허용 한도({MAX_PRESET_NODES}개)를 초과했습니다.")
+    if len(edges) > MAX_PRESET_EDGES:
+        raise HTTPException(status_code=400, detail=f"프리셋 엣지 수가 허용 한도({MAX_PRESET_EDGES}개)를 초과했습니다.")
 
     # 쓰기 전에 모든 식별자를 먼저 검증하여, 잘못된 파일이면 아무것도 변경하지 않습니다.
     for n in nodes:

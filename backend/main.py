@@ -1,7 +1,7 @@
 import os
 import threading
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, Query, HTTPException, Response
+from fastapi import FastAPI, Depends, Query, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 from database import get_db, close_driver
@@ -57,6 +57,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    return response
 
 @app.get("/api/health")
 def api_health(session = Depends(get_db)):
@@ -339,7 +348,13 @@ def api_qa_next_targets(session = Depends(get_db)):
 # ─── Dev / Testing Endpoints ────────────────────────────────────────
 
 @app.post("/api/dev/reset-seed")
-def api_reset_seed(session = Depends(get_db)):
+def api_reset_seed(request: Request = None, session = Depends(get_db)):
+    client_host = (request.client.host if request and getattr(request, "client", None) else "").strip().lower()
+    if client_host and client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        raise HTTPException(
+            status_code=403,
+            detail="Development endpoints are restricted to local loopback requests only."
+        )
     """개발/테스트 전용 시드 리셋 엔드포인트. ENABLE_DEV_ENDPOINTS=1 설정 시에만 허용됩니다."""
     if os.getenv("ENABLE_DEV_ENDPOINTS", "").strip().lower() not in ("true", "1", "yes"):
         raise HTTPException(

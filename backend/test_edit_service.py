@@ -1045,5 +1045,62 @@ def test_return_edge_weight_zero():
     assert kwargs["properties"].get("weight") == 0
 
 
+def test_runtime_security_headers_and_guards():
+    """
+    런타임 보안 하드닝 검증:
+    1) 모든 API 응답에 X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy 헤더가 포함되는지 확인
+    2) /api/dev/reset-seed가 비-루프백(외부 IP) 클라이언트 요청을 403으로 차단하는지 확인
+    3) sanitize_node_properties / sanitize_edge_properties가 제어문자(\x00 등) 및 128자 초과 키를 제거하는지 확인
+    4) load_preset_to_neo4j가 MAX_PRESET_NODES 한도 초과 프리셋을 400으로 차단하는지 확인
+    """
+    from fastapi import HTTPException
+    from fastapi.testclient import TestClient
+    import main as main_mod
+    import preset_service as ps
+    from graph_service import sanitize_node_properties, sanitize_edge_properties
+
+    client = TestClient(main_mod.app)
+    resp = client.get("/api/presets")
+    assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+    assert resp.headers.get("X-Frame-Options") == "DENY"
+    assert resp.headers.get("Referrer-Policy") == "no-referrer"
+    assert "geolocation=()" in resp.headers.get("Permissions-Policy", "")
+
+    # 비-루프백 호스트 차단 확인
+    fake_req = Mock()
+    fake_req.client = Mock()
+    fake_req.client.host = "203.0.113.55"
+    with pytest.raises(HTTPException) as exc_info:
+        main_mod.api_reset_seed(request=fake_req, session=Mock())
+    assert exc_info.value.status_code == 403
+
+    # 속성 키 제어문자 및 길이 한도 검증
+    cleaned_node = sanitize_node_properties({
+        "valid_key": "ok",
+        "bad\x00key": "drop",
+        "bad\nkey": "drop",
+        "x" * 129: "drop",
+        "id": "reserved_drop",
+    })
+    assert cleaned_node == {"valid_key": "ok"}
+
+    cleaned_edge = sanitize_edge_properties({
+        "edge_meta": 123,
+        "ctrl\x1fkey": "drop",
+        "source": "reserved_drop",
+    })
+    assert cleaned_edge == {"edge_meta": 123}
+
+    # 프리셋 노드 수 상한 검증
+    oversized_preset = {
+        "nodes": [{"id": f"n_{i}", "label": "Screen"} for i in range(ps.MAX_PRESET_NODES + 1)],
+        "edges": [],
+    }
+    with patch.object(ps, "get_preset", return_value=oversized_preset):
+        with pytest.raises(HTTPException) as preset_exc:
+            ps.load_preset_to_neo4j(Mock(), "dummy_id", clean=False)
+        assert preset_exc.value.status_code == 400
+
+
 
 

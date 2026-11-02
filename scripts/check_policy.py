@@ -12,12 +12,14 @@ Enforced Rules:
 5. [Parent Scale Immutability Rule]: Parent/node styling must NEVER use transform: scale to protect Subflow coordinates.
 6. [Skip Reason Rule]: Every test.skip / test.fixme in e2e-tests/tests needs a '// SKIP-REASON: ...' comment on the line above.
 7. [i18n Centralization Rule]: No hardcoded Hangul UI strings in frontend/src (except frontend/src/locales/). Comments are allowed.
+8. [Repository Security & Leak Guard]: Blocks unwhitelisted tracked presets in backend/presets/, leaked secrets/API keys, or non-noreply Git email.
 
 Exit code: 0 if passed, 1 if any violations found.
 """
 
 import os
 import re
+import subprocess
 import sys
 
 # Ensure UTF-8 output on Windows console
@@ -258,6 +260,106 @@ def check_i18n_migrated_files():
                     "snippet": line.strip()
                 })
 
+ALLOWED_TRACKED_PRESETS = {
+    "backend/presets/honkai_starrail_full_qa.json",
+    "backend/presets/honkai_starrail_title.json",
+    "backend/presets/minimal_e2e.json",
+    "backend/presets/mobile_game_qa_guide_2026_10.json",
+}
+
+SECRET_PATTERNS = [
+    ("Google API Key", re.compile(r"AIza[0-9A-Za-z\-_]{35}")),
+    ("GitHub Token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}")),
+    ("Private Key Header", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
+]
+
+
+def check_repo_security_and_leaks():
+    """Rule 8: Git 추적 파일 내 비허용 실무 프리셋, 민감 시크릿/개인키, 개인 이메일 설정 여부를 검증합니다."""
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files"],
+            cwd=WORKSPACE_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            check=False,
+        )
+        tracked_files = [line.strip().replace("\\", "/") for line in proc.stdout.splitlines() if line.strip()]
+    except Exception:
+        tracked_files = []
+
+    for rel in tracked_files:
+        # 1. 비허용 프리셋 JSON 추적 차단
+        if rel.startswith("backend/presets/") and rel.endswith(".json"):
+            if rel not in ALLOWED_TRACKED_PRESETS:
+                violations.append({
+                    "file": rel,
+                    "line": 1,
+                    "rule": "Repository Security & Leak Guard",
+                    "detail": "공식 샘플 프리셋 외의 로컬/실무 프리셋 JSON 파일이 Git 추적 대상에 포함되어 있습니다.",
+                    "snippet": rel,
+                })
+
+        # 2. .env 실파일 추적 차단 (.env.example 제외)
+        base = os.path.basename(rel)
+        if base == ".env" or (base.startswith(".env.") and base not in {".env.example", ".env.template"}):
+            violations.append({
+                "file": rel,
+                "line": 1,
+                "rule": "Repository Security & Leak Guard",
+                "detail": "환경변수 파일(.env)이 Git 추적 대상에 포함되어 있습니다.",
+                "snippet": rel,
+            })
+
+        # 3. 고위험 API 키 / 개인키 패턴 스캔
+        if rel == "scripts/check_policy.py":
+            continue
+        full_path = os.path.join(WORKSPACE_ROOT, rel)
+        if not os.path.isfile(full_path):
+            continue
+        try:
+            with open(full_path, "r", encoding="utf-8", errors="ignore") as fh:
+                for line_no, line in enumerate(fh, start=1):
+                    for label, pattern in SECRET_PATTERNS:
+                        if pattern.search(line):
+                            violations.append({
+                                "file": rel,
+                                "line": line_no,
+                                "rule": "Repository Security & Leak Guard",
+                                "detail": f"노출 위험이 있는 {label} 패턴이 감지되었습니다.",
+                                "snippet": line.strip()[:80],
+                            })
+        except Exception:
+            pass
+
+    # 4. Git 로컬 author email 개인정보 보호 검증
+    try:
+        email_proc = subprocess.run(
+            ["git", "config", "--get", "user.email"],
+            cwd=WORKSPACE_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            check=False,
+        )
+        git_email = email_proc.stdout.strip()
+        if git_email and not (
+            git_email.endswith("@users.noreply.github.com") or git_email.endswith("@localhost")
+        ):
+            violations.append({
+                "file": ".git/config",
+                "line": 1,
+                "rule": "Repository Security & Leak Guard",
+                "detail": "Git user.email에 개인/사내 이메일이 설정되어 있습니다. GitHub noreply 이메일(@users.noreply.github.com)을 사용하세요.",
+                "snippet": f"user.email = {git_email}",
+            })
+    except Exception:
+        pass
+
+
 def main():
     print("=" * 65)
     print(" 🛡️  CoverageMap Tier 1 Static Policy Checker")
@@ -275,6 +377,7 @@ def main():
 
     check_test_skip_reasons(os.path.join(WORKSPACE_ROOT, "e2e-tests", "tests"))
     check_i18n_migrated_files()
+    check_repo_security_and_leaks()
 
     if not violations:
         print("\n✅ [SUCCESS] All UI, Z-Index, and Port policies are strictly compliant!")
@@ -284,7 +387,8 @@ def main():
         print("   - Halo Handle Outer Rim & Stacking isolation verified.")
         print("   - Parent Scale Immutability verified.")
         print("   - E2E Test Skip Reasons verified.")
-        print("   - i18n Centralization verified.\n")
+        print("   - i18n Centralization verified.")
+        print("   - Repository Security & Leak Guard verified.\n")
         sys.exit(0)
     else:
         print(f"\n❌ [POLICY VIOLATIONS FOUND] Total: {len(violations)}\n")

@@ -44,18 +44,32 @@ RESERVED_EDGE_PROPERTIES = {
 }
 
 
+MAX_PROPERTY_KEY_LENGTH = 128
+
+
+def _is_safe_property_key(key: Any, reserved: Set[str]) -> bool:
+    """속성 키가 예약어가 아니며, 제어 문자(Null 바이트 등)를 포함하지 않고 길이 한도 이내인지 검증합니다."""
+    if not isinstance(key, str) or not key or len(key) > MAX_PROPERTY_KEY_LENGTH:
+        return False
+    if key in reserved:
+        return False
+    if any(ord(c) < 32 or ord(c) == 127 for c in key):
+        return False
+    return True
+
+
 def sanitize_node_properties(props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """노드 속성 딕셔너리에서 최상위 예약어 필드를 제거합니다."""
     if not props:
         return {}
-    return {k: v for k, v in props.items() if k not in RESERVED_NODE_PROPERTIES}
+    return {k: v for k, v in props.items() if _is_safe_property_key(k, RESERVED_NODE_PROPERTIES)}
 
 
 def sanitize_edge_properties(props: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """엣지 속성 딕셔너리에서 최상위 예약어 필드를 제거합니다."""
     if not props:
         return {}
-    return {k: v for k, v in props.items() if k not in RESERVED_EDGE_PROPERTIES}
+    return {k: v for k, v in props.items() if _is_safe_property_key(k, RESERVED_EDGE_PROPERTIES)}
 
 
 def _normalize_aliases(aliases: Any) -> List[str]:

@@ -123,3 +123,10 @@ cd e2e-tests && npm test
 ## 6. 라이선스 (License)
 
 이 프로젝트는 [MIT License](LICENSE) 하에 배포됩니다.
+
+### 오픈소스 스택 (Built With)
+* **Frontend**: [React](https://react.dev/) (MIT), [React Flow / `@xyflow/react`](https://reactflow.dev/) (MIT), [ELK.js](https://github.com/kieler/elkjs) (EPL-2.0), [react-tooltip](https://react-tooltip.com/) (MIT)
+* **Backend & Agent Interop**: [FastAPI](https://fastapi.tiangolo.com/) (MIT), [NetworkX](https://networkx.org/) (BSD-3-Clause), [Neo4j Python Driver](https://github.com/neo4j/neo4j-python-driver) (Apache-2.0), [Model Context Protocol (MCP) SDK](https://modelcontextprotocol.io/) (MIT)
+
+### 샘플 데이터셋 안내 (Sample Preset Notice)
+* 본 저장소의 `backend/presets/` 디렉터리에 포함된 샘플 프리셋 데이터는 공개된 상용 게임의 일반적인 UI·콘텐츠 흐름을 참고하여 **블랙박스 QA 모델링 연구 및 기능 시연 목적**으로 재구성한 예시 데이터이며, 언급된 각 게임 타이틀의 제작사 및 상표권자와는 무관합니다.
