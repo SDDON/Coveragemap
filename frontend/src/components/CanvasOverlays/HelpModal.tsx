@@ -82,6 +82,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
               <li><strong>{t.help.highlightTipTitle}</strong>: {t.help.highlightTipBody}</li>
               <li><strong>{t.help.depthTitle}</strong>: {t.help.depthBody}</li>
               <li><strong>{t.help.undoTitle}</strong>: {t.help.undoBody}</li>
+              <li><strong>{t.help.copyPasteTitle}</strong>: {t.help.copyPasteBody}</li>
             </ul>
 
             <h3 style={{ borderBottom: '1px solid var(--panel-border)', paddingBottom: '8px', marginTop: '20px' }}>{t.help.globalTitle}</h3>

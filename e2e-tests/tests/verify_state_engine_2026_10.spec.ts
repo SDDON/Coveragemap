@@ -660,6 +660,41 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await refreshAfterUndo;
     await expect(nodeLocator(page, clonedParent.id)).toHaveCount(0);
     await expect(nodeLocator(page, clonedChild.id)).toHaveCount(0);
+
+    // 5. Keyboard shortcut Ctrl+C / Ctrl+V copies and pastes the node (and its Contains children) as #복사본 / #복사본2
+    await nodeLocator(page, ids.root).click({ position: { x: 40, y: 30 }, force: true });
+    await page.keyboard.press('Control+c');
+    await page.locator('.react-flow__pane').click({ position: { x: 25, y: 250 } });
+
+    const paste1Post = page.waitForResponse(
+      res => res.url().includes(`/api/nodes/${encodeURIComponent(ids.root)}/clone`) && res.request().method() === 'POST'
+    );
+    const paste1Refresh = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.keyboard.press('Control+v');
+    const paste1Data = await (await paste1Post).json();
+    expect(paste1Data.name).toBe('파티 편성 #복사본');
+    await paste1Refresh;
+    await expect(nodeLocator(page, paste1Data.cloned_root_id)).toBeVisible();
+
+    const paste2Post = page.waitForResponse(
+      res => res.url().includes(`/api/nodes/${encodeURIComponent(ids.root)}/clone`) && res.request().method() === 'POST'
+    );
+    const paste2Refresh = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.keyboard.press('Control+v');
+    const paste2Data = await (await paste2Post).json();
+    expect(paste2Data.name).toBe('파티 편성 #복사본2');
+    await paste2Refresh;
+    await expect(nodeLocator(page, paste2Data.cloned_root_id)).toBeVisible();
+
+    const undoPaste2 = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.keyboard.press('Control+z');
+    await undoPaste2;
+    await expect(nodeLocator(page, paste2Data.cloned_root_id)).toHaveCount(0);
+
+    const undoPaste1 = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.keyboard.press('Control+z');
+    await undoPaste1;
+    await expect(nodeLocator(page, paste1Data.cloned_root_id)).toHaveCount(0);
   });
 
   test('N. Immediate UI update without reload when connecting edges between Contains child and external/sibling components (C1->C2, C2->C1, C1->C3)', async ({ page, request }) => {

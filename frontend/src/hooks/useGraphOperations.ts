@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import { MarkerType, ReactFlowInstance } from '@xyflow/react';
 import {
@@ -581,6 +581,9 @@ export function useGraphOperations({
           });
         }
         setPinnedFocusNodeId(prev => (prev === targetId ? res.cloned_root_id : prev));
+        if (fetchAliases) {
+          void fetchAliases();
+        }
 
         // 2) 현재 워크스페이스 필터(filterText)가 활성화된 상태에서 새 태그(#골드던전 등)로 복제하여
         //    기존 해시태그가 치환되면 /api/graph?filter=... 응답에서 복제된 노드가 제외될 수 있으므로 전체 보기로 전환합니다.
@@ -600,7 +603,58 @@ export function useGraphOperations({
     } catch (err: unknown) {
       setErrorToast(extractErrorMessage(err));
     }
-  }, [selectedNodeRef, pushUndo, triggerRefresh, setErrorToast, setPinnedFocusNodeId, nodesRef, setNodes, setSelectedNode, setEditFormData, filterText, setFilterText, setShowAllDomains]);
+  }, [selectedNodeRef, pushUndo, triggerRefresh, setErrorToast, setPinnedFocusNodeId, nodesRef, setNodes, setSelectedNode, setEditFormData, filterText, setFilterText, setShowAllDomains, fetchAliases]);
+
+  const copiedNodeIdRef = useRef<string | null>(null);
+  const isPasteInFlightRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const handleCopyPasteKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const activeEl = document.activeElement as HTMLElement | null;
+      const tagName = activeEl?.tagName?.toUpperCase();
+      if (
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT' ||
+        activeEl?.isContentEditable
+      ) {
+        return;
+      }
+      if (document.querySelector('.help-modal-panel, .workspace-selector-overlay')) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (key === 'c') {
+        const selectedText = window.getSelection?.()?.toString?.() || '';
+        if (selectedText.trim().length > 0) return;
+
+        const currentTarget =
+          selectedNodeRef.current ||
+          nodesRef.current.find(n => n.selected) ||
+          null;
+        if (currentTarget?.id) {
+          e.preventDefault();
+          copiedNodeIdRef.current = currentTarget.id;
+        }
+      } else if (key === 'v') {
+        const copiedId =
+          copiedNodeIdRef.current && nodesRef.current.some(n => n.id === copiedNodeIdRef.current)
+            ? copiedNodeIdRef.current
+            : (selectedNodeRef.current?.id || nodesRef.current.find(n => n.selected)?.id || null);
+        if (!copiedId || isPasteInFlightRef.current) return;
+        e.preventDefault();
+        isPasteInFlightRef.current = true;
+        void handleCloneNode(copiedId).finally(() => {
+          isPasteInFlightRef.current = false;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleCopyPasteKeyDown);
+    return () => window.removeEventListener('keydown', handleCopyPasteKeyDown);
+  }, [handleCloneNode, nodesRef, selectedNodeRef]);
 
   /**
    * 항목 C: 빈 공간 드래그 Quick Connect 팝오버에서 새 노드를 즉시 생성하고 소스 노드와 연결합니다.
