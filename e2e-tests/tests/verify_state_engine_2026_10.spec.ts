@@ -662,7 +662,9 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(nodeLocator(page, clonedChild.id)).toHaveCount(0);
 
     // 5. Keyboard shortcut Ctrl+C / Ctrl+V copies and pastes the node (and its Contains children) as #복사본 / #복사본2
-    await nodeLocator(page, ids.root).click({ position: { x: 40, y: 30 }, force: true });
+    await expect(nodeLocator(page, ids.root)).toBeVisible({ timeout: 10000 });
+    await nodeLocator(page, ids.root).locator('.node-label').first().click({ force: true });
+    await expect(page.locator('.details-panel .node-id')).toContainText(ids.root, { timeout: 10000 });
     await page.keyboard.press('Control+c');
     await page.locator('.react-flow__pane').click({ position: { x: 25, y: 250 } });
 

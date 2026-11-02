@@ -3,7 +3,7 @@ import type { StatusName } from '../types/graph';
 // System reserved keys that have dedicated UI form controls and must be excluded from Custom Properties
 export const SYSTEM_RESERVED_KEYS = new Set([
   'name', 'label', 'aliases', 'test_status', 'id',
-  'is_global', 'description', 'issue_link', 'x', 'y',
+  'is_global', 'description', 'x', 'y',
   // B안 체크리스트 / 📌 수동 고정 / Change Impact Ripple 필드는 전용 UI(Inspector 섹션)에서만 편집합니다.
   'checklist', 'is_manual_override', 'override_reason',
   'is_modified', 'modified_note', 'modified_at', 'acknowledged_at'

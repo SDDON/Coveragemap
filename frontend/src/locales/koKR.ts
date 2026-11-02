@@ -60,7 +60,7 @@ export const koKR = {
     nodeCategory: '그룹화나 검색에 쓰이는 카테고리 태그(Alias)입니다.',
     nodeDomain: '허브 앤 스포크 복잡도를 줄이기 위한 논리적 최상위 도메인 분류입니다 (Max Depth=1 유지).',
     globalNode: '체크 시 이 노드는 캔버스에서 숨겨지고, 이 노드와 연결된 다른 노드들의 하단에 뱃지(Pill) 형태로 표시됩니다.',
-    issueLink: 'Jira 티켓, 기획서, 스프레드시트 TC 등 외부 참조 URL을 줄바꿈(Enter)이나 쉼표(,)로 여러 개 등록할 수 있습니다.',
+
     status: '현재 테스트/개발 상태를 나타냅니다. 선행 Depends_On 실패 시 하류는 Blocked로 자동 전파되며, Mark Blocked로 사유와 함께 수동 고정(📌)할 수 있습니다.',
     checklist: '하위 노드를 새로 분기하지 않고 화면 내부의 정적 UI·텍스트·딤(Dimmed) 명세를 체크리스트로 검증합니다. 항목 결과에 따라 노드 상태가 자동 판정됩니다.',
     changeImpact: '기획/스펙 변경 시 노드를 보라색 펄스로 강조하고 하류 1~2단계(Return 제외) 의존 노드에 재검증 영향권을 표시합니다.',
@@ -97,7 +97,7 @@ export const koKR = {
 
   // 노드 편집 폼
   nodeForm: {
-    issueLink: 'Issue Link (e.g. Jira) - 쉼표(,)나 엔터(줄바꿈)로 여러 개 입력 가능',
+
     parentLabel: (name: string) => `📦 소속 부모: ${name}`,
     changeRelation: '🔗 관계 변경',
     changeRelationTitle: '부모-자식 Contains 연결선을 선택하여 관계 타입(Transition 등)이나 상태를 변경합니다.',

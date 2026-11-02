@@ -69,7 +69,6 @@ export function useCanvasBadgeEvents({
             name: data.name || '',
             aliases: data.aliases || [],
             description: data.description || '',
-            issue_link: data.issue_link || '',
             test_status: (data.test_status as StatusName) || 'Untested',
             properties: { ...(data.properties || {}) },
             type: 'node',

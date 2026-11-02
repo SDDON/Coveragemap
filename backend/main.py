@@ -139,7 +139,7 @@ def api_get_globals(session = Depends(get_db)):
             "MATCH (n) WHERE n.is_global = 'true' "
             "RETURN elementId(n) AS id, labels(n)[0] AS type, labels(n)[0] AS label, "
             "n.name AS name, coalesce(n.aliases, []) AS aliases, "
-            "n.description AS description, n.issue_link AS issue_link, "
+            "n.description AS description, "
             "coalesce(n.test_status, 'Untested') AS test_status, "
             "coalesce(n.is_manual_override, false) AS is_manual_override, "
             "n.override_reason AS override_reason, "

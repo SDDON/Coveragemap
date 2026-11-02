@@ -79,7 +79,6 @@ export interface EditFormData {
   status?: StatusName | string;
   test_status?: StatusName;
   description?: string;
-  issue_link?: string;
   edgeType?: string;
   action?: string;
   isManualOverride?: boolean;

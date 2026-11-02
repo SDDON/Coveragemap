@@ -241,7 +241,6 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
                     name: '',
                     aliases: [],
                     description: '',
-                    issue_link: '',
                     test_status: containsEdge.data?.test_status || 'Untested',
                     edgeType: containsEdge.data?.type || (containsEdge.label as string) || 'Contains',
                     action: containsEdge.data?.action || '',
@@ -299,25 +298,6 @@ export const EditNodeForm: React.FC<EditNodeFormProps> = ({
           {t.globalNode.hintUsage}
           {t.globalNode.hintClick}
         </p>
-
-        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: '0.8rem', color: '#1e293b' }}>
-              {t.nodeForm.issueLink}
-              <span className="info-icon-wrapper" data-tooltip-id="app-tooltip" data-tooltip-content={t.tooltip.issueLink}>?</span>
-            </label>
-            <textarea 
-              rows={3}
-              value={(editFormData.properties?.issue_link as string) || ''} 
-              onChange={e => {
-                const newProps = { ...(editFormData.properties || {}), issue_link: e.target.value };
-                setEditFormData({ ...editFormData, properties: newProps });
-              }}
-              placeholder="https://jira...&#10;https://github..."
-              style={{ width: '100%', padding: '8px 10px', fontSize: '0.85rem', borderRadius: '6px', border: '1.5px solid #cbd5e1', backgroundColor: '#ffffff', color: '#0f172a', resize: 'vertical' }}
-            />
-          </div>
-        </div>
       </div>
 
       {/* 상태는 폼에 열어둔 값이 아니라 "현재 노드의 실제 상태"를 사용합니다. */}

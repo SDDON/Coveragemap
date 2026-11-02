@@ -334,7 +334,7 @@ export function useGraphLayout({
                 name: matchedNode.data?.name || '',
                 aliases: matchedNode.data?.aliases || [],
                 description: matchedNode.data?.description || '',
-                issue_link: matchedNode.data?.issue_link || '',
+
                 test_status: matchedNode.data?.test_status || 'Untested',
                 properties: { ...(matchedNode.data?.properties || {}) },
                 type: 'node',

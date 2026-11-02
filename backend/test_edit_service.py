@@ -432,7 +432,7 @@ def test_mcp_server_create_node_and_create_edge_extended():
 
     tools = {t.name: t for t in asyncio.run(mcp_srv.list_tools())}
     node_schema_props = tools["create_node"].inputSchema["properties"]
-    for key in ("label", "name", "aliases", "test_status", "is_global", "description", "issue_link", "checklist"):
+    for key in ("label", "name", "aliases", "test_status", "is_global", "description", "checklist"):
         assert key in node_schema_props
 
     edge_schema_props = tools["create_edge"].inputSchema["properties"]
@@ -451,7 +451,7 @@ def test_mcp_server_create_node_and_create_edge_extended():
                     "test_status": "Passed",
                     "is_global": False,
                     "description": "인앱 결제 최종 확인 모달",
-                    "issue_link": "https://docs.google.com/spreadsheets/d/payment-tc",
+
                     "checklist": [
                         "  상품명 및 결제 금액 텍스트 정상 노출  ",
                         "",
@@ -471,7 +471,7 @@ def test_mcp_server_create_node_and_create_edge_extended():
                 "aliases": ["#Popup", "PaymentConfirm"],
                 "test_status": "Passed",
                 "description": "인앱 결제 최종 확인 모달",
-                "issue_link": "https://docs.google.com/spreadsheets/d/payment-tc",
+
                 "properties": {
                     "is_global": "false",
                     "checklist": [
@@ -541,7 +541,7 @@ def test_mcp_server_create_node_and_create_edge_extended():
             label="Modal",
             name="결제 확인 팝업",
             description="설명",
-            issue_link="https://jira.example.com/1",
+
             test_status="Passed",
             properties={"is_global": "true", "checklist": checklist_payload},
         ),
@@ -549,7 +549,7 @@ def test_mcp_server_create_node_and_create_edge_extended():
     assert created_id == "4:abc:999"
     create_kwargs = mock_session.run.call_args_list[1][1]
     assert create_kwargs["description"] == "설명"
-    assert create_kwargs["issue_link"] == "https://jira.example.com/1"
+
     assert create_kwargs["test_status"] == "Passed"
     assert create_kwargs["properties"]["is_global"] == "true"
     assert json.loads(create_kwargs["properties"]["checklist"]) == checklist_payload
@@ -774,7 +774,7 @@ def test_clone_node_with_children_replaces_tags_resets_statuses_and_excludes_ext
     assert root_create_kwargs["name"] == "파티 편성 #아레나"
     assert "아레나" in root_create_kwargs["aliases"]
     assert root_create_kwargs["description"] == "파티 편성 메인 컨테이너"
-    assert root_create_kwargs["issue_link"] == "https://jira.example.com/browse/QA-77"
+
     assert "is_modified" not in root_create_kwargs["properties"]
     assert "is_manual_override" not in root_create_kwargs["properties"]
     assert "x" not in root_create_kwargs["properties"]

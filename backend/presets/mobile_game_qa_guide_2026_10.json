@@ -171,7 +171,6 @@
       "description": "[🔴 결함 원흉 데모] 스토어 영수증 검증 콜백 타임아웃 결함이 발생한 선행 API 노드입니다. 하류 상점 팝업과 우편함 보상을 자동 Blocked 처리합니다.",
       "test_status": "Failed",
       "properties": {
-        "issue_link": "JIRA-404",
         "checklist": [
           {
             "id": "chk_iap_1",
@@ -256,8 +255,7 @@
       "description": "[전역 배지 - 결함 발생 🔴] 일시적 Wi-Fi/데이터 단절 후 복구 시 무한 로딩 없이 재연결 팝업이 동작하는지 검증합니다. 실패 상태이므로 부착된 노드에 붉은 결함 칩이 노출됩니다.",
       "test_status": "Failed",
       "properties": {
-        "is_global": "true",
-        "issue_link": "JIRA-502"
+        "is_global": "true"
       }
     }
   ],

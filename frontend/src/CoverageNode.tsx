@@ -262,7 +262,7 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
                       const badgeChecklist: ChecklistItem[] = Array.isArray(rawChecklist)
                         ? (rawChecklist as ChecklistItem[]).filter(item => item && String(item.text || '').trim().length > 0)
                         : [];
-                      const hasBadgeTooltip = badgeChecklist.length > 0 || Boolean(badge.properties?.description) || Boolean(badge.properties?.issue_link);
+                      const hasBadgeTooltip = badgeChecklist.length > 0 || Boolean(badge.properties?.description);
                       if (!hasBadgeTooltip) return null;
                       const badgeStatusIcon = (st?: string) =>
                         st === 'Passed' ? '🟢' : st === 'Failed' ? '🔴' : st === 'Blocked' ? '🟡' : '⚪';
@@ -270,7 +270,7 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
                         <div className="badge-tooltip" onClick={e => e.stopPropagation()}>
                           <div style={{ fontWeight: 600, marginBottom: '6px', fontSize: '0.85rem' }}>{t.node.verificationGuide(badge.name)}</div>
                           {badgeChecklist.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: badge.properties?.issue_link ? '8px' : '0', color: 'rgba(255,255,255,0.9)', lineHeight: '1.4' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'rgba(255,255,255,0.9)', lineHeight: '1.4' }}>
                               {badgeChecklist.map((item: ChecklistItem, cIdx: number) => (
                                 <div key={item.id || cIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
                                   <span style={{ flexShrink: 0 }}>{badgeStatusIcon(item.status)}</span>
@@ -279,37 +279,10 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
                               ))}
                             </div>
                           ) : badge.properties?.description ? (
-                            <div style={{ marginBottom: badge.properties?.issue_link ? '8px' : '0', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>
+                            <div style={{ color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>
                               {String(badge.properties.description)}
                             </div>
                           ) : null}
-                          {Boolean(badge.properties?.issue_link) && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              {String(badge.properties?.issue_link || '').split(/[,\n]+/).map((l: string) => l.trim()).filter((link: string) => link.length > 0).map((link: string, idx: number) => {
-                                let url = link;
-                                if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                                  url = 'https://' + url;
-                                }
-                                let hostname = link;
-                                try {
-                                  const parsed = new URL(url);
-                                  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-                                    url = '#';
-                                  } else {
-                                    hostname = parsed.hostname;
-                                  }
-                                } catch {
-                                  // Gracefully fall back to original link text if URL parsing fails
-                                }
-                                return (
-                                  <a key={idx} href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#60a5fa', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500 }}>
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-                                    {hostname}
-                                  </a>
-                                );
-                              })}
-                            </div>
-                          )}
                         </div>
                       );
                     })()}

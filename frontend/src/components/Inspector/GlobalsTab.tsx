@@ -75,7 +75,6 @@ export const GlobalsTab: React.FC<GlobalsTabProps> = ({
         name: globalNodeObj.data.name || '',
         aliases: globalNodeObj.data.aliases || [],
         description: data.description || g.description || '',
-        issue_link: data.issue_link || g.issue_link || '',
         test_status: globalNodeObj.data.test_status || 'Untested',
         properties: { ...(globalNodeObj.data.properties || {}), is_global: 'true' },
         type: 'node',

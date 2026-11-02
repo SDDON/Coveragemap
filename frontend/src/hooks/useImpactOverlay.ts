@@ -211,7 +211,6 @@ export function useImpactOverlay({
       name: target.data?.name || '',
       aliases: target.data?.aliases || [],
       description: target.data?.description || '',
-      issue_link: target.data?.issue_link || '',
       test_status: target.data?.test_status || 'Untested',
       properties: { ...(target.data?.properties || {}) },
       type: 'node',

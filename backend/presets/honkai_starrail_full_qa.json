@@ -953,7 +953,7 @@
       "test_status": "Failed",
       "properties": {
         "domain": "Economy",
-        "issue_link": "https://jira.hoyoverse-qa.example/browse/HSR-4041",
+
         "checklist": [
           {
             "id": "chk_iap_1",
@@ -1015,8 +1015,8 @@
       "test_status": "Blocked",
       "properties": {
         "is_global": "true",
-        "category": "Cross-Cutting",
-        "issue_link": "https://jira.hoyoverse-qa.example/browse/HSR-5029"
+        "category": "Cross-Cutting"
+
       }
     },
     {

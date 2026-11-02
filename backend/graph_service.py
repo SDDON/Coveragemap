@@ -417,7 +417,7 @@ def create_node(session, node_data: NodeCreate) -> str:
         n.name = $name,
         n.aliases = $aliases,
         n.description = $description,
-        n.issue_link = $issue_link,
+
         n.test_status = $test_status,
         n.is_manual_override = $is_manual_override,
         n.override_reason = $override_reason
@@ -427,7 +427,7 @@ def create_node(session, node_data: NodeCreate) -> str:
         name=node_data.name,
         aliases=node_data.aliases,
         description=node_data.description,
-        issue_link=node_data.issue_link,
+
         test_status=effective_test_status,
         is_manual_override=node_data.is_manual_override,
         override_reason=node_data.override_reason,
@@ -454,9 +454,9 @@ def update_node(session, node_id: str, node_data: NodeUpdate):
     if node_data.description is not None:
         set_clauses.append("n.description = $description")
         params["description"] = node_data.description
-    if node_data.issue_link is not None:
-        set_clauses.append("n.issue_link = $issue_link")
-        params["issue_link"] = node_data.issue_link
+
+
+
     if node_data.test_status is not None:
         set_clauses.append("n.test_status = $test_status")
         params["test_status"] = node_data.test_status
@@ -897,7 +897,7 @@ def acknowledge_node_modification(session, node_id: str) -> Optional[Dict[str, A
 # ─── 노드(및 Contains 하위 구조) 복제 기능 ─────────────────────────────
 CLONE_STRIP_PROP_KEYS = {
     "id", "name", "label", "aliases", "test_status",
-    "description", "issue_link",
+    "description",
     "is_manual_override", "override_reason",
     "is_modified", "modified_note", "modified_at", "acknowledged_at",
     "x", "y",
@@ -961,7 +961,7 @@ def clone_node_with_children(session, node_id: str, tag: Optional[str] = None) -
            root.name AS name,
            coalesce(root.aliases, []) AS aliases,
            root.description AS description,
-           root.issue_link AS issue_link,
+
            properties(root) AS properties
     LIMIT 1
     """
@@ -981,7 +981,7 @@ def clone_node_with_children(session, node_id: str, tag: Optional[str] = None) -
            child.name AS name,
            coalesce(child.aliases, []) AS aliases,
            child.description AS description,
-           child.issue_link AS issue_link,
+
            properties(child) AS properties
     """
     children_recs = list(session.run(children_query, root_id=root_id))
@@ -1029,7 +1029,7 @@ def clone_node_with_children(session, node_id: str, tag: Optional[str] = None) -
 
         raw_props = deserialize_props_from_neo4j(dict(n_rec.get("properties") or {}))
         description = n_rec.get("description") if n_rec.get("description") is not None else raw_props.get("description")
-        issue_link = n_rec.get("issue_link") if n_rec.get("issue_link") is not None else raw_props.get("issue_link")
+
 
         clean_props = {k: v for k, v in raw_props.items() if k not in CLONE_STRIP_PROP_KEYS}
         if "checklist" in clean_props and isinstance(clean_props["checklist"], list):
@@ -1052,7 +1052,7 @@ def clone_node_with_children(session, node_id: str, tag: Optional[str] = None) -
             n.name = $name,
             n.aliases = $aliases,
             n.description = $description,
-            n.issue_link = $issue_link,
+    
             n.test_status = 'Untested',
             n.is_manual_override = false,
             n.override_reason = null
@@ -1063,7 +1063,7 @@ def clone_node_with_children(session, node_id: str, tag: Optional[str] = None) -
             name=new_name,
             aliases=orig_aliases,
             description=description,
-            issue_link=issue_link,
+
             properties=serialize_props_for_neo4j(clean_props),
         ).single()
         new_id = created_rec["id"]
@@ -1292,8 +1292,8 @@ def get_node_status_summary(session, query_str: str) -> Optional[NodeStatusSumma
            coalesce(n.test_status, 'Untested') AS test_status,
            coalesce(n.is_manual_override, false) AS is_manual_override,
            n.override_reason AS override_reason,
-           n.description AS description,
-           n.issue_link AS issue_link
+           n.description AS description
+
     LIMIT 1
     """
     rec = session.run(find_query, q=query_str.strip()).single()
@@ -1329,7 +1329,7 @@ def get_node_status_summary(session, query_str: str) -> Optional[NodeStatusSumma
         is_manual_override=is_override_bool,
         override_reason=rec["override_reason"],
         description=rec["description"],
-        issue_link=rec["issue_link"],
+
         root_cause=root_cause_info,
         incoming_statuses=incoming_statuses
     )
@@ -1711,7 +1711,7 @@ def get_node_full_details(session, query_str: str) -> Optional[Dict[str, Any]]:
         "test_status": rec["test_status"] or "Untested",
         "is_global": is_global,
         "description": props.get("description"),
-        "issue_link": props.get("issue_link"),
+
         "is_manual_override": str(props.get("is_manual_override", "false")).lower() == "true",
         "override_reason": props.get("override_reason"),
         "is_modified": str(props.get("is_modified", "false")).lower() == "true",

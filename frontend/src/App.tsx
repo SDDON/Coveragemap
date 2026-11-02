@@ -86,7 +86,7 @@ export default function App() {
     name: '',
     aliases: [],
     description: '',
-    issue_link: '',
+
     test_status: 'Untested',
     type: 'node',
   });
@@ -220,7 +220,7 @@ export default function App() {
       name: '',
       aliases: filterText ? [filterText] : [],
       description: '',
-      issue_link: '',
+  
       test_status: 'Untested',
       properties: selectedDomain && selectedDomain !== '__unassigned__' ? { domain: selectedDomain } : {},
       type: 'node',
@@ -393,13 +393,13 @@ export default function App() {
     if (nextNode) {
       setEditFormData({
         id: nextNode.id, label: nextNode.data?.label || 'Node', name: nextNode.data?.name || '', aliases: nextNode.data?.aliases || [],
-        description: nextNode.data?.description || '', issue_link: nextNode.data?.issue_link || '', test_status: nextNode.data?.test_status || 'Untested',
+        description: nextNode.data?.description || '', test_status: nextNode.data?.test_status || 'Untested',
         properties: { ...(nextNode.data?.properties || {}) }, type: 'node',
       });
       setIsCreatingNode(false);
     } else if (nextEdge) {
       setEditFormData({
-        id: nextEdge.id, label: (nextEdge.label as string) || nextEdge.data?.type || 'Transition', name: '', aliases: [], description: '', issue_link: '',
+        id: nextEdge.id, label: (nextEdge.label as string) || nextEdge.data?.type || 'Transition', name: '', aliases: [], description: '',
         test_status: nextEdge.data?.test_status || 'Untested', edgeType: nextEdge.data?.type || (nextEdge.label as string) || 'Transition',
         action: nextEdge.data?.action || '', properties: { ...(nextEdge.data?.properties || {}) }, type: 'edge',
       });
@@ -678,7 +678,7 @@ export default function App() {
             name: '',
             aliases: [],
             description: '',
-            issue_link: '',
+        
             test_status: edge.data?.test_status || 'Untested',
             edgeType: edge.data?.type || (edge.label as string) || 'Transition',
             action: edge.data?.action || '',

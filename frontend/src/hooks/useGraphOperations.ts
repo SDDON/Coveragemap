@@ -574,7 +574,7 @@ export function useGraphOperations({
             name: clonedNode.data.name,
             aliases: clonedNode.data.aliases,
             description: '',
-            issue_link: '',
+    
             test_status: 'Untested',
             properties: { ...(clonedNode.data.properties || {}) },
             type: 'node',
@@ -683,7 +683,7 @@ export function useGraphOperations({
         name: trimmedName,
         aliases: payloadAliases,
         description: '',
-        issue_link: '',
+
         test_status: 'Untested',
         properties: initialProperties,
       });
@@ -708,7 +708,7 @@ export function useGraphOperations({
           name: trimmedName,
           aliases: payloadAliases,
           description: '',
-          issue_link: '',
+  
           test_status: 'Untested',
           properties: initialProperties,
           badges: [],
@@ -736,7 +736,7 @@ export function useGraphOperations({
           name: editFormData.name || '',
           aliases: payloadAliases,
           description: editFormData.description || '',
-          issue_link: editFormData.issue_link || '',
+
           test_status: statusName,
           properties: editFormData.properties || {},
         });
@@ -762,7 +762,7 @@ export function useGraphOperations({
             name: editFormData.name || '',
             aliases: payloadAliases,
             description: editFormData.description || '',
-            issue_link: editFormData.issue_link || '',
+  
             test_status: statusName,
             properties: editFormData.properties || {},
             badges: [],
@@ -813,7 +813,7 @@ export function useGraphOperations({
         oldData: { label: targetNode.data?.label || 'Node', name: targetNode.data?.name || '', aliases: targetNode.data?.aliases || [], test_status: targetNode.data?.test_status || 'Untested', properties: { ...(targetNode.data?.properties || {}) } },
       });
       // Extract description and issue_link to top-level for the backend, while preserving is_global in properties
-      // 전용 폼 컨트롤(#nodeIsGlobal, description, issue_link)이 사용하는 키는 보존하되,
+      // 전용 폼 컨트롤(#nodeIsGlobal, description)이 사용하는 키는 보존하되,
       // Custom Properties 목록에서는 SYSTEM_RESERVED_KEYS 필터로 숨깁니다.
       // 상태는 폼에 열어둔 값이 아니라 "현재 노드의 실제 상태"를 사용합니다.
       // (폼을 연 뒤 연쇄 전파로 Blocked 등이 된 경우, 이름만 고쳐 저장해도 전파 결과를 덮어쓰지 않도록)
@@ -826,14 +826,14 @@ export function useGraphOperations({
           ? editFormData.aliases
           : (typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map(s => s.trim()).filter(Boolean) : (targetNode.data?.aliases || []));
         const nextDesc = editFormData.description !== undefined ? String(editFormData.description) : targetNode.data?.description;
-        const nextIssue = editFormData.issue_link !== undefined ? String(editFormData.issue_link) : targetNode.data?.issue_link;
+
 
         await api.nodes.updateNode(targetId, {
           label: nextLabel,
           name: nextName,
           aliases: nextAliases,
           description: nextDesc,
-          issue_link: nextIssue,
+
           properties: editFormData.properties,
         });
         // Don't triggerRefresh for normal edits — local state is already updated
@@ -850,7 +850,7 @@ export function useGraphOperations({
             name: nextName,
             aliases: nextAliases,
             description: nextDesc,
-            issue_link: nextIssue,
+  
             properties: { ...(n.data?.properties || {}), ...(editFormData.properties || {}) },
           },
         } : n));
@@ -871,7 +871,7 @@ export function useGraphOperations({
             name: nextName,
             aliases: nextAliases,
             description: nextDesc,
-            issue_link: nextIssue,
+  
             properties: { ...(n.data?.properties || {}), ...(editFormData.properties || {}) },
           },
         } : n)));
@@ -883,7 +883,7 @@ export function useGraphOperations({
             name: nextName,
             aliases: nextAliases,
             description: nextDesc,
-            issue_link: nextIssue,
+  
             properties: { ...(prev.data?.properties || {}), ...(editFormData.properties || {}) },
           },
         } : prev));

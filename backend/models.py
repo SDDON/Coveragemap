@@ -31,7 +31,7 @@ class NodeCreate(BaseModel):
     name: str
     aliases: List[str] = Field(default_factory=list)
     description: Optional[str] = None
-    issue_link: Optional[str] = None
+
     properties: Dict[str, Any] = Field(default_factory=dict)
     test_status: TestStatus = "Untested"
     is_manual_override: Optional[bool] = None
@@ -42,7 +42,7 @@ class NodeUpdate(BaseModel):
     name: Optional[str] = None
     aliases: Optional[List[str]] = None
     description: Optional[str] = None
-    issue_link: Optional[str] = None
+
     properties: Optional[Dict[str, Any]] = None
     test_status: Optional[TestStatus] = None
     is_manual_override: Optional[bool] = None
@@ -102,7 +102,7 @@ class NodeStatusSummary(BaseModel):
     is_manual_override: bool = False
     override_reason: Optional[str] = None
     description: Optional[str] = None
-    issue_link: Optional[str] = None
+
     root_cause: Optional[RootCauseInfo] = None
     incoming_statuses: Dict[str, int] = Field(default_factory=dict)
 

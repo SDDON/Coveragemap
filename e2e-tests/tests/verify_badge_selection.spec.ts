@@ -54,6 +54,6 @@ test.describe('Badge Selection API and Focus Verification', () => {
     // Verify the right panel shifted to Edit tab for this node
     await expect(page.locator('.details-panel')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('#nodeName')).toHaveValue('Badge_Selection_Node', { timeout: 15000 });
-    await expect(page.locator('label', { hasText: 'Issue Link' })).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#nodeIsGlobal')).toBeChecked({ timeout: 15000 });
   });
 });

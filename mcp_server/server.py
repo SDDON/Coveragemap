@@ -130,7 +130,7 @@ async def list_tools():
         ),
         Tool(
             name="create_node",
-            description="새 노드를 생성합니다. label은 노드 유형(Feature, TestCase, Screen 등), name은 구체적 이름입니다. 선택적으로 test_status, 전역 여부(is_global), 설명(description), 이슈/문서 링크(issue_link), 내부 체크리스트(checklist)를 생성 시점에 함께 지정할 수 있습니다.",
+            description="새 노드를 생성합니다. label은 노드 유형(Feature, TestCase, Screen 등), name은 구체적 이름입니다. 선택적으로 test_status, 전역 여부(is_global), 설명(description), 내부 체크리스트(checklist)를 생성 시점에 함께 지정할 수 있습니다.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -160,10 +160,6 @@ async def list_tools():
                     "description": {
                         "type": "string",
                         "description": "노드/기능 설명 또는 전역 배지 검증 가이드 (선택사항)"
-                    },
-                    "issue_link": {
-                        "type": "string",
-                        "description": "연결된 Jira/이슈 또는 외부 테이블형 테스트 문서 링크 (선택사항)"
                     },
                     "checklist": {
                         "type": "array",
@@ -504,8 +500,9 @@ async def call_tool(name: str, arguments: dict):
         }
         if arguments.get("description") is not None:
             body["description"] = arguments["description"]
-        if arguments.get("issue_link") is not None:
-            body["issue_link"] = arguments["issue_link"]
+        if arguments.get("description") is not None:
+            body["description"] = arguments["description"]
+
 
         result = _api("POST", "/api/nodes", body)
         if _is_error(result):
@@ -622,8 +619,8 @@ async def call_tool(name: str, arguments: dict):
             
         if data.get("description"):
             lines.append(f"• 기능 설명: {data['description']}")
-        if data.get("issue_link"):
-            lines.append(f"• 연결 이슈: {data['issue_link']}")
+
+
             
         # 들어오는 선행 조건 분포
         in_stats = data.get("incoming_statuses", {})
@@ -824,8 +821,8 @@ async def call_tool(name: str, arguments: dict):
             lines.append(f"• 📌 수동 고정(Manual Override): true (사유: {data.get('override_reason') or '미작성'})")
         if data.get("description"):
             lines.append(f"• 기능 설명: {data.get('description')}")
-        if data.get("issue_link"):
-            lines.append(f"• 이슈/문서 링크: {data.get('issue_link')}")
+
+
         if data.get("is_modified"):
             lines.append(f"• ✨ 스펙 변경 여부(is_modified): true ({data.get('modified_note') or '메모 없음'})")
 

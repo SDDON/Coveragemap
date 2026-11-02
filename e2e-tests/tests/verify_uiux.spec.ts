@@ -97,7 +97,7 @@ test.describe('Badge Usability UI/UX Verification', () => {
         properties: {
           is_global: 'true',
           description: 'Tooltip Test Verification Description',
-          issue_link: 'https://jira.example.com/CM-1',
+
         },
       },
     });
@@ -110,7 +110,7 @@ test.describe('Badge Usability UI/UX Verification', () => {
         test_status: 'Untested',
         properties: {
           description: 'Tooltip Test Verification Description',
-          issue_link: 'https://jira.example.com/CM-1',
+
         },
       },
     });

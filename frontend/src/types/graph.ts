@@ -27,7 +27,6 @@ export interface BadgeData {
   edgeType?: string;
   properties?: Record<string, unknown>;
   description?: string;
-  issue_link?: string;
 }
 
 export type GlobalBadge = BadgeData;
@@ -42,7 +41,6 @@ export interface NodeProperties {
   acknowledged_at?: string;
   checklist?: ChecklistItem[];
   description?: string;
-  issue_link?: string;
   domain?: string;
   [key: string]: unknown;
 }
@@ -68,7 +66,6 @@ export interface CoverageNodeData extends Record<string, unknown> {
   impactedChildCount?: number;
   activeImpactSlots?: Record<string, number>;
   description?: string;
-  issue_link?: string;
 }
 
 export type CoverageNode = Node<CoverageNodeData>;
@@ -105,7 +102,6 @@ export type ApiNode = {
   override_reason?: string;
   is_global?: boolean;
   description?: string;
-  issue_link?: string;
 };
 
 export type ApiEdge = {

@@ -171,7 +171,7 @@ class ReachabilityGraphSession:
         if query.strip().startswith("MATCH (n) WHERE elementId(n) = $id") and "SET" in query:
             nid = kw["id"]
             if nid in self.nodes:
-                for k in ("test_status", "is_manual_override", "override_reason", "name", "description", "issue_link"):
+                for k in ("test_status", "is_manual_override", "override_reason", "name", "description"):
                     if k in kw:
                         self.nodes[nid][k] = kw[k]
                 if "properties" in kw and isinstance(kw["properties"], dict):
