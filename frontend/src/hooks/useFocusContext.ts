@@ -7,8 +7,7 @@ import {
   computeScopedAuditScope,
   computeContentFocusScope,
   computeDomainScope,
-  getEffectiveNodeDomain,
-  getDomainMeta,
+  matchesNodeSearchQuery,
   getEdgesKey,
 } from '../utils/graphScopes';
 import { t } from '../locales/koKR';
@@ -64,7 +63,10 @@ export function useFocusContext({
   // 엣지 추가/삭제/타입/액션/속성 변경 키 — 엣지 연결 및 편집 즉시 Focus+Context 하이라이트 재계산 트리거
   const edgesKey = useMemo(() => getEdgesKey(edges), [edges]);
 
-  const affectedScope = useMemo(() => computeAffectedScope(nodes, edges), [nodes, edges]);
+  const affectedScope = useMemo(
+    () => computeAffectedScope(nodes, edges, selectedNode?.id),
+    [nodes, edges, selectedNode?.id]
+  );
   const rootCauseScope = useMemo(() => computeRootCauseScope(tracedRootNodeId, nodes, edges), [tracedRootNodeId, nodes, edges]);
   const scopedAuditScope = useMemo(() => computeScopedAuditScope(scopedAuditRootId, nodes, edges), [scopedAuditRootId, nodes, edges]);
   const domainScope = useMemo(() => computeDomainScope(selectedDomain, nodes, edges), [selectedDomain, nodes, edges]);
@@ -103,37 +105,7 @@ export function useFocusContext({
 
     const trimmedQuery = searchQuery.trim();
     const searchSeeds = trimmedQuery
-      ? nodes.filter(n => {
-          const name = (n.data?.name || '').toLowerCase();
-          const rawLabel = n.data?.label || '';
-          const label = rawLabel.toLowerCase();
-          const localizedLabel = (t.nodeLabel[rawLabel as keyof typeof t.nodeLabel] || '').toLowerCase();
-          const desc = String(n.data?.description ?? n.data?.properties?.description ?? '').toLowerCase();
-          const nodeAliases = (n.data?.aliases || []).map((a: string) => a.toLowerCase());
-          const effDomain = getEffectiveNodeDomain(n, nodes);
-          const domainLabel = effDomain ? getDomainMeta(effDomain).displayLabel.toLowerCase() : '';
-          const q = trimmedQuery.toLowerCase();
-          const qClean = q.replace(/^#+/, '').trim();
-          const propsObj = n.data?.properties || {};
-          const propsMatched = Object.entries(propsObj).some(([k, v]) => {
-            if (['checklist', 'x', 'y', 'is_global', 'is_manual_override', 'is_modified'].includes(k)) return false;
-            if (v === null || v === undefined || typeof v === 'object') return false;
-            return k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q);
-          });
-          const checklistArr = Array.isArray(propsObj.checklist) ? propsObj.checklist : [];
-          const checklistMatched = checklistArr.some(item => String(item?.text || '').toLowerCase().includes(q));
-          return (
-            name.includes(q) ||
-            label.includes(q) ||
-            localizedLabel.includes(q) ||
-            desc.includes(q) ||
-            nodeAliases.some((a: string) => a.includes(q) || (qClean.length > 0 && a.replace(/^#+/, '').includes(qClean))) ||
-            (qClean.length > 0 && effDomain.toLowerCase().includes(qClean)) ||
-            (qClean.length > 0 && domainLabel.includes(qClean)) ||
-            propsMatched ||
-            checklistMatched
-          );
-        })
+      ? nodes.filter(n => matchesNodeSearchQuery(n, trimmedQuery, nodes))
       : [];
     const searchSeedIds = new Set(searchSeeds.map(s => s.id));
 
@@ -407,17 +379,23 @@ export function useFocusContext({
         // 결함 원인 역추적(Root Cause Tracing, Spec 3.3) — 선행 결함 경로 맥동 강조
         if (isRootCauseNode) cls += ' highlight-root-cause';
         // D. 변경 영향권(Impact Ripple) — Focus 상태와 독립적으로 유지되는 순수 CSS 클래스
-        if (affectedScope.nodeIds.has(n.id)) cls += ' highlight-affected';
+        const isNodeAffected = affectedScope.nodeIds.has(n.id);
+        if (isNodeAffected) cls += ' highlight-affected';
 
         const prevSlots: Record<string, number> = n.data?.activeImpactSlots || {};
         const slotsChanged = Object.keys(prevSlots).length !== Object.keys(nextSlots).length || Object.keys(nextSlots).some(k => prevSlots[k] !== nextSlots[k]);
         const nextCls = cls.trim();
-        if (n.className !== nextCls || (n.data?.impactedChildCount || 0) !== impactedChildCount || slotsChanged) {
+        if (
+          n.className !== nextCls ||
+          (n.data?.impactedChildCount || 0) !== impactedChildCount ||
+          Boolean(n.data?.isAffected) !== isNodeAffected ||
+          slotsChanged
+        ) {
           changed = true;
           return {
             ...n,
             className: nextCls,
-            data: { ...n.data, impactedChildCount, activeImpactSlots: nextSlots },
+            data: { ...n.data, impactedChildCount, isAffected: isNodeAffected, activeImpactSlots: nextSlots },
           };
         }
         return n;

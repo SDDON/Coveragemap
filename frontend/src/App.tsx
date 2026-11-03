@@ -249,6 +249,41 @@ export default function App() {
     }
   }, [selectedNode?.id, selectedEdge?.id, isCreatingNode]);
 
+  const handleQuickFind = useCallback(() => {
+    setRightPanelTab('view');
+    setTimeout(() => {
+      const searchEl = document.getElementById('searchHighlight') as HTMLInputElement | null;
+      if (searchEl) {
+        searchEl.focus();
+        searchEl.select();
+      }
+    }, 30);
+  }, []);
+
+  const handleFocusNodeFromSearch = useCallback((nodeId: string, openEditTab = false) => {
+    if (!openEditTab) {
+      prevSelectionIdRef.current = nodeId;
+    }
+    focusNodeFromImpactList(nodeId);
+    if (openEditTab) {
+      setRightPanelTab('edit');
+    } else {
+      setRightPanelTab('view');
+    }
+  }, [focusNodeFromImpactList]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        if (showPresetManager || showHelp) return;
+        e.preventDefault();
+        handleQuickFind();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleQuickFind, showPresetManager, showHelp]);
+
   // 부모 노드들이 접힌(isCollapsed) 개괄 뷰 상태에서의 대리 간선(Proxy Edge) 정책 (항목 A):
   // - 동일 그룹 내부 간선(newSource === newTarget)은 숨김 처리하여 내부 복잡도 제거
   // - 외부 그룹과의 연결 간선은 부모 컨테이너로 위임(Reroute)하되, 기존 '...' 축약 대신
@@ -724,6 +759,7 @@ export default function App() {
               onSwitchWorkspace={() => { fetchAliases(); setFilterText(''); setShowAllDomains(false); localStorage.removeItem('savedWorkspace'); localStorage.removeItem('savedShowAll'); }}
               onOpenPresets={() => setShowPresetManager(true)}
               onOpenHelp={() => setShowHelp(true)}
+              onQuickFind={handleQuickFind}
               onRelayout={relayoutFocused}
               hasParentNodes={parentNodes.length > 0}
               allParentsCollapsed={allParentsCollapsed}
@@ -780,6 +816,7 @@ export default function App() {
           handleAcknowledge={handleAcknowledge} handleCloneNode={handleCloneNode}
           handleDetachFromParent={handleDetachFromParent} saveChecklist={saveChecklist}
           handleDelete={handleDelete} handleSave={handleSave} setErrorToast={setErrorToast}
+          onFocusNode={handleFocusNodeFromSearch}
         />
 
         <SystemStatusPill healthStatus={healthStatus} />

@@ -12,6 +12,7 @@ export interface TopToolbarProps {
   hasParentNodes?: boolean;
   allParentsCollapsed?: boolean;
   onToggleCollapseAll?: () => void;
+  onQuickFind?: () => void;
 }
 
 export const TopToolbar: React.FC<TopToolbarProps> = ({
@@ -25,6 +26,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
   hasParentNodes = false,
   allParentsCollapsed = false,
   onToggleCollapseAll,
+  onQuickFind,
 }) => {
   const workspaceDisplay = filterText ? filterText : (showAllDomains ? t.workspace.all : t.workspace.none);
 
@@ -65,6 +67,16 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
       >
         ?
       </button>
+      {onQuickFind && (
+        <button
+          type="button"
+          className="toolbar-btn toolbar-btn-find"
+          title={t.toolbar.quickFindTitle}
+          onClick={onQuickFind}
+        >
+          {t.toolbar.quickFindBtn}
+        </button>
+      )}
       <button
         type="button"
         className="toolbar-btn"

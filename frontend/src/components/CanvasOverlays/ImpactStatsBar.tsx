@@ -22,6 +22,8 @@ const STATUS_PRIORITY: Record<string, number> = {
   Passed: 3,
 };
 
+type ImpactStatusFilter = 'all' | 'Passed' | 'Failed' | 'Untested';
+
 /* Impact Overlay Stats Bar (Multi-Global 5-Slot, OR/AND Filter, Isolation Toggle & Node Navigator Drawer) */
 export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
   activeImpacts,
@@ -36,6 +38,7 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
   selectedNodeId,
 }) => {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<ImpactStatusFilter>('all');
 
   const matchedIds = useMemo(() => {
     if (activeImpacts.length === 0) return new Set<string>();
@@ -68,24 +71,44 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
     return list;
   }, [matchedIds, nodes]);
 
+  const filteredDrawerNodes = useMemo(() => {
+    if (statusFilter === 'all') return matchedNodes;
+    return matchedNodes.filter(nd => {
+      const st = String(nd.data?.test_status || 'Untested');
+      if (statusFilter === 'Untested') {
+        return st !== 'Passed' && st !== 'Failed';
+      }
+      return st === statusFilter;
+    });
+  }, [matchedNodes, statusFilter]);
+
   if (activeImpacts.length === 0) return null;
 
-  const stats = activeImpacts.length === 1
-    ? activeImpacts[0].stats
-    : (() => {
+  const stats = matchedNodes.length > 0
+    ? (() => {
         let Passed = 0;
         let Failed = 0;
         let Untested = 0;
-        matchedIds.forEach(id => {
-          const nd = nodes.find(n => n.id === id);
-          const st = nd?.data?.test_status || 'Untested';
+        matchedNodes.forEach(nd => {
+          const st = nd.data?.test_status || 'Untested';
           if (st === 'Passed') Passed += 1;
           else if (st === 'Failed') Failed += 1;
           else Untested += 1;
         });
         return { Passed, Failed, Untested };
-      })();
+      })()
+    : activeImpacts[0].stats;
   const total = activeImpacts.length === 1 ? activeImpacts[0].total : matchedIds.size;
+
+  const handleToggleStatusFilter = (target: 'Passed' | 'Failed' | 'Untested') => {
+    setStatusFilter(prev => {
+      const next = prev === target ? 'all' : target;
+      if (next !== 'all') {
+        setIsDrawerOpen(true);
+      }
+      return next;
+    });
+  };
 
   return (
     <div
@@ -99,7 +122,10 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
           onClick={e => e.stopPropagation()}
         >
           <div className="impact-navigator-header">
-            <span>{t.impact.listTitle} ({matchedNodes.length})</span>
+            <span>
+              {t.impact.listTitle} ({filteredDrawerNodes.length}
+              {statusFilter !== 'all' ? ` / ${matchedNodes.length}` : ''})
+            </span>
             <button
               type="button"
               className="impact-navigator-close"
@@ -109,10 +135,10 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
             </button>
           </div>
           <div className="impact-navigator-list">
-            {matchedNodes.length === 0 ? (
+            {filteredDrawerNodes.length === 0 ? (
               <div className="impact-navigator-empty">{t.impact.listEmpty}</div>
             ) : (
-              matchedNodes.map(nd => {
+              filteredDrawerNodes.map(nd => {
                 const st = String(nd.data?.test_status || 'Untested');
                 const stColor =
                   st === 'Passed' ? '#22c55e' :
@@ -207,15 +233,36 @@ export const ImpactStatsBar: React.FC<ImpactStatsBarProps> = ({
         {isDrawerOpen ? t.impact.listToggleClose(matchedNodes.length) : t.impact.listToggleOpen(matchedNodes.length)}
       </button>
       <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.1)' }} />
-      <div className="impact-stat-item">
+      <div
+        className={`impact-stat-item${statusFilter === 'Passed' ? ' active' : ''}`}
+        role="button"
+        tabIndex={0}
+        title={t.impact.filterByStatusTitle('Passed')}
+        onClick={() => handleToggleStatusFilter('Passed')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleStatusFilter('Passed'); } }}
+      >
         <div className="impact-stat-dot" style={{ background: '#22c55e' }} />
         <span style={{ color: '#4ade80' }}>{stats.Passed}</span>
       </div>
-      <div className="impact-stat-item">
+      <div
+        className={`impact-stat-item${statusFilter === 'Failed' ? ' active' : ''}`}
+        role="button"
+        tabIndex={0}
+        title={t.impact.filterByStatusTitle('Failed')}
+        onClick={() => handleToggleStatusFilter('Failed')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleStatusFilter('Failed'); } }}
+      >
         <div className="impact-stat-dot" style={{ background: '#ef4444' }} />
         <span style={{ color: '#f87171' }}>{stats.Failed}</span>
       </div>
-      <div className="impact-stat-item">
+      <div
+        className={`impact-stat-item${statusFilter === 'Untested' ? ' active' : ''}`}
+        role="button"
+        tabIndex={0}
+        title={t.impact.filterByStatusTitle('Untested')}
+        onClick={() => handleToggleStatusFilter('Untested')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleStatusFilter('Untested'); } }}
+      >
         <div className="impact-stat-dot" style={{ background: '#64748b' }} />
         <span style={{ color: '#94a3b8' }}>{stats.Untested}</span>
       </div>

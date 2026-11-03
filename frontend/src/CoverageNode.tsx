@@ -62,6 +62,7 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
   );
   // 🟣 Change Impact Ripple: 기능 변경 표시 (테스터가 Acknowledge 할 때까지 유지)
   const isModified = props.is_modified === true || props.is_modified === 'true';
+  const isAffected = Boolean(data.isAffected && !isModified);
   // ☑ 노드 내부 체크리스트 (B안: properties.checklist 배열) 진행률 배지 계산
   const checklist: Array<{ status?: string }> = Array.isArray(props.checklist) ? props.checklist : [];
   const clTotal = checklist.length;
@@ -149,11 +150,14 @@ function CoverageNode({ id, data }: { id: string; data: CoverageNodeData; select
           </div>
         )}
 
-        {/* 변경 표시 칩 + 체크리스트 진행률 배지 + 동적 결함 칩 (값이 있을 때만 렌더링하여 노드를 컴팩트하게 유지) */}
-        {(isModified || checklistBadge || failedBadges.length > 0) && (
+        {/* 변경 표시 칩 + 영향권 칩 + 체크리스트 진행률 배지 + 동적 결함 칩 (값이 있을 때만 렌더링하여 노드를 컴팩트하게 유지) */}
+        {(isModified || isAffected || checklistBadge || failedBadges.length > 0) && (
           <div className="node-status-chips">
             {isModified && (
               <span className="modified-chip" title={props.modified_note || ''}>{t.modified.chip}</span>
+            )}
+            {isAffected && (
+              <span className="affected-chip" title={t.modified.affectedChipTitle}>{t.modified.affectedChip}</span>
             )}
             {checklistBadge && (
               <span className={`checklist-badge checklist-badge-${checklistBadge.tone}`}>{checklistBadge.text}</span>

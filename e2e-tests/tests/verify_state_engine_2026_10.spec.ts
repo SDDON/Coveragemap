@@ -37,7 +37,16 @@ const nodeLocator = (page: Page, id: string) => page.locator(`.react-flow__node[
 
 const selectNode = async (page: Page, id: string) => {
   await nodeLocator(page, id).click({ force: true });
-  await expect(page.locator('.details-panel .node-id')).toContainText(id);
+  const nodeIdEl = page.locator('.details-panel .node-id');
+  const matched = await nodeIdEl
+    .filter({ hasText: id })
+    .waitFor({ state: 'attached', timeout: 1200 })
+    .then(() => true)
+    .catch(() => false);
+  if (!matched) {
+    await nodeLocator(page, id).dispatchEvent('click');
+  }
+  await expect(nodeIdEl).toContainText(id);
 };
 
 test.describe('2026-10 Spec: Living TC State Engine', () => {
@@ -166,8 +175,13 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
 
     await expect(nodeLocator(page, ids.root).locator('.custom-node')).toHaveClass(/node-modified-pulse/);
     await expect(nodeLocator(page, ids.root).locator('.modified-chip')).toBeVisible();
-    // Game_Root --DEPENDS_ON--> Game_Child: 하류 영향권 강조
+    // Game_Root --DEPENDS_ON--> Game_Child: 하류 영향권 강조 (점선 테두리 + 영향권 칩, 변경 원점 실선과 구분)
     await expect(nodeLocator(page, ids.child)).toHaveClass(/highlight-affected/);
+    await expect(nodeLocator(page, ids.child).locator('.affected-chip')).toBeVisible();
+    const modBorderStyle = await nodeLocator(page, ids.root).locator('.custom-node').evaluate(el => window.getComputedStyle(el).borderStyle);
+    const affBorderStyle = await nodeLocator(page, ids.child).locator('.custom-node').evaluate(el => window.getComputedStyle(el).borderStyle);
+    expect(modBorderStyle).toBe('solid');
+    expect(affBorderStyle).toBe('dashed');
 
     const ackPromise = page.waitForResponse(res => res.url().includes('/acknowledge') && res.request().method() === 'POST');
     await section.locator('.modified-banner button.success').click();
@@ -1642,6 +1656,72 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await newCategoryBtn.click();
     await expect(wsOverlay).toBeHidden();
     await expect(nodeLocator(page, ids.root)).toBeVisible();
+  });
+
+  test('V. Focused Change Impact Ripple per selected modified node & Quick Find (Ctrl+F) + Triage Drawer camera navigation', async ({ page, request }) => {
+    // 1. Create a Global '스크롤' badge node and attach it to Game_Settings
+    const gScrollRes = await request.post('/api/nodes', {
+      data: {
+        label: 'Component',
+        name: '스크롤',
+        aliases: ['Scroll'],
+        test_status: 'Untested',
+        properties: { is_global: 'true', description: '전역 스크롤바 UI 동작' },
+      },
+    });
+    expect(gScrollRes.ok()).toBeTruthy();
+    const gScrollId = await gScrollRes.json();
+
+    await request.post('/api/edges', {
+      data: { source: ids.settings, target: gScrollId, type: 'Depends_On', test_status: 'Failed', properties: {} },
+    });
+
+    // Mark both ids.root (with note '스크롤') and ids.settings as modified
+    await request.post(`/api/nodes/${encodeURIComponent(ids.root)}/mark-modified`, {
+      data: { note: '퀘스트 목록 스크롤 개선' },
+    });
+    await request.post(`/api/nodes/${encodeURIComponent(ids.settings)}/mark-modified`, {
+      data: { note: '사운드 옵션 개편' },
+    });
+    await request.put(`/api/nodes/${encodeURIComponent(ids.settings)}`, {
+      data: { test_status: 'Failed' },
+    });
+
+    const reloadRes = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadRes;
+
+    // 2. When selecting modified node ids.settings (which has NO downstream dependents), ids.child must NOT have .highlight-affected
+    await selectNode(page, ids.settings);
+    await expect(nodeLocator(page, ids.child)).not.toHaveClass(/\bhighlight-affected\b/);
+
+    // When selecting modified node ids.root (which has downstream dependent ids.child), ids.child gets .highlight-affected
+    await selectNode(page, ids.root);
+    await expect(nodeLocator(page, ids.child)).toHaveClass(/\bhighlight-affected\b/);
+    await expect(nodeLocator(page, ids.root)).not.toHaveClass(/\bhighlight-affected\b/);
+
+    // 3. Press Ctrl+F -> switches Inspector to Filters tab and focuses #searchHighlight
+    await page.keyboard.press('Control+f');
+    const searchInput = page.locator('#searchHighlight');
+    await expect(searchInput).toBeVisible();
+    await expect(searchInput).toBeFocused();
+
+    // Search for '스크롤' -> matches BOTH ids.root (via modified_note) and ids.settings (via Global Badge '스크롤')
+    await searchInput.fill('스크롤');
+    const resultDrawer = page.locator('.search-result-drawer');
+    await expect(resultDrawer).toBeVisible();
+    const resultItems = resultDrawer.locator('.search-result-item');
+    await expect(resultItems).toHaveCount(2);
+
+    // Filter by Triage Chip '🔴 Failed' -> narrows down to 1 node (Game Settings)
+    await page.locator('.triage-chip-failed').click();
+    await expect(resultItems).toHaveCount(1);
+    await expect(resultItems.first()).toContainText('Game Settings');
+
+    // Click the result row -> selects Game Settings & flies camera while keeping Filters ('view') tab open
+    await resultItems.first().locator('.search-result-main-btn').click();
+    await expect(searchInput).toBeVisible();
+    await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bactive\b/);
   });
 });
 

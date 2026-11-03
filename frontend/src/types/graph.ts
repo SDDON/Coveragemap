@@ -56,6 +56,7 @@ export interface CoverageNodeData extends Record<string, unknown> {
   override_reason?: string;
   is_modified?: boolean;
   modified_note?: string;
+  isAffected?: boolean;
   is_global?: boolean;
   properties?: NodeProperties;
   badges?: BadgeData[];

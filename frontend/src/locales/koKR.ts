@@ -45,6 +45,8 @@ export const koKR = {
     help: '도움말 및 범례 (Help & Legend)',
     relayout: '선택된 노드만 또는 전체를 자동 정렬합니다',
     relayoutBtn: '⟳ Re-layout',
+    quickFindBtn: '🔍 찾기',
+    quickFindTitle: '노드 이름·태그·변경 메모·배지 빠른 검색 및 Pass/Fail 모아보기 (Ctrl+F)',
   },
 
   // 우측 패널 ? 아이콘 툴팁
@@ -157,6 +159,8 @@ export const koKR = {
     hint: '변경 표시된 노드는 보라색 펄스로, 하류 1~2단계 노드/엣지는 영향권으로 강조됩니다. 확인 완료해도 테스트 상태는 바뀌지 않습니다.',
     saveFailed: '변경 표시 상태를 저장하지 못했습니다.',
     chip: '✨ [Spec Updated]',
+    affectedChip: '〰 변경 영향권',
+    affectedChipTitle: '상위 노드의 스펙 변경으로 인해 재검증이 권장되는 하류 영향권 노드입니다.',
   },
 
   // 부모 노드 접기/펼치기 요약 배지 (AI_IMPLEMENTATION_SPEC 4.1 / COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 4.3)
@@ -268,6 +272,27 @@ export const koKR = {
     listEmpty: '조건에 일치하는 영향 노드가 없습니다.',
     flyToHint: '클릭하여 해당 노드 위치로 카메라 이동',
     parentBadge: (parentName: string) => `📦 ${parentName}`,
+    filterByStatusTitle: (status: string) => `${status} 상태인 노드만 목록에서 필터링 (클릭 시 토글)`,
+  },
+
+  // 빠른 찾기(Ctrl+F) 및 Pass/Fail·변경점(is_modified) 모아보기(Triage)
+  quickFind: {
+    filterAll: '전체',
+    filterModified: '✨ 변경됨',
+    filterFailed: '🔴 Failed',
+    filterBlocked: '🟡 Blocked',
+    filterPassed: '🟢 Passed',
+    filterUntested: '⚪ Untested',
+    summaryText: (total: number, passed: number, failed: number, blocked: number, untested: number, modified: number) =>
+      `대상 ${total}개 · 🟢 ${passed} · 🔴 ${failed} · 🟡 ${blocked} · ⚪ ${untested}${modified > 0 ? ` · ✨ 변경 ${modified}` : ''}`,
+    prevMatchTitle: '이전 노드로 카메라 이동 (Shift+Enter)',
+    nextMatchTitle: '다음 노드로 카메라 이동 (Enter)',
+    emptyResult: '조건에 일치하는 노드가 없습니다.',
+    editNodeTitle: '이 노드의 편집(Edit) 탭 열기',
+    flyToTitle: '클릭하여 해당 노드로 카메라 이동 및 포커스',
+    modifiedBadge: (note?: string) => (note ? `✨ ${note}` : '✨ 변경됨'),
+    globalBadgeStatus: (name: string, status: string) => `🏷️ ${name}: ${status}`,
+    clearBtn: '초기화',
   },
 
   // 태그/속성 기반 최상위 도메인 그룹핑 및 퀵 격리 탐색 (PROPOSAL_TAG_BASED_DOMAIN_GROUPING.md)

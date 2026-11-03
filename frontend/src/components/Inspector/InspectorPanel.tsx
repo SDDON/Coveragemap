@@ -65,6 +65,7 @@ interface InspectorPanelProps {
   handleDelete: () => Promise<void>;
   handleSave: () => Promise<void>;
   setErrorToast: (msg: string | null) => void;
+  onFocusNode?: (nodeId: string, openEditTab?: boolean) => void;
 }
 
 export const InspectorPanel: React.FC<InspectorPanelProps> = ({
@@ -122,6 +123,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   handleDelete,
   handleSave,
   setErrorToast,
+  onFocusNode,
 }) => {
   return (
     <Panel
@@ -239,6 +241,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             setMaxDepth={setMaxDepth}
             hideUnconnectedEdges={hideUnconnectedEdges}
             setHideUnconnectedEdges={setHideUnconnectedEdges}
+            selectedNodeId={selectedNode?.id}
+            onFocusNode={onFocusNode}
           />
         </div>
 

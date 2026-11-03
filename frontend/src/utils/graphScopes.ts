@@ -28,17 +28,26 @@ export function getSmartDefaultEdgeType(sourceNode?: CoverageNode, targetNode?: 
  * D. 변경 영향권(Impact Ripple): is_modified 노드에서 나가는 엣지(Return 제외)를 따라 1~2홉 하류 노드/엣지.
  * 집합 객체 대신 정렬된 키 문자열을 함께 만들어, 내용이 같으면 하이라이트 effect가 다시 돌지 않게 합니다.
  */
-export function computeAffectedScope(nodes: CoverageNode[], edges: CoverageEdge[]) {
-  const modifiedIds = nodes
+export function computeAffectedScope(
+  nodes: CoverageNode[],
+  edges: CoverageEdge[],
+  focusedNodeId?: string | null
+) {
+  const allModifiedIds = nodes
     .filter(n => {
       const v = n.data?.properties?.is_modified ?? n.data?.is_modified;
       return v === true || v === 'true';
     })
     .map(n => n.id);
+  const allModifiedSet = new Set(allModifiedIds);
+  const seedModifiedIds =
+    focusedNodeId && allModifiedSet.has(focusedNodeId) ? [focusedNodeId] : allModifiedIds;
+
   const nodeIds = new Set<string>();
   const edgeIds = new Set<string>();
-  let frontier = modifiedIds;
-  const visited = new Set(modifiedIds);
+  let frontier = [...seedModifiedIds];
+  // 변경 원본 노드 자체는 언제나 .node-modified-pulse만 유지하고 .highlight-affected가 중복 부여되지 않도록 보호합니다.
+  const visited = new Set(allModifiedIds);
   for (let hop = 0; hop < AFFECTED_MAX_HOPS && frontier.length > 0; hop++) {
     const next: string[] = [];
     for (const id of frontier) {
@@ -55,13 +64,13 @@ export function computeAffectedScope(nodes: CoverageNode[], edges: CoverageEdge[
     frontier = next;
   }
 
-  // D. 변경 영향권(Impact Ripple) 또는 변경 표시(is_modified)에 포함된 자식 노드의 부모 Screen 상향 롤업 (COLLAPSED_SCREEN_IMPACT_HIGHLIGHT_SPEC 4.1)
+  // D. 접힌(isCollapsed) 부모 Screen의 하위 자식이 변경/영향권에 포함된 경우에만 부모로 상향 롤업 (펼쳐진 부모 테두리 중복 오염 방지)
   const parentNodeIds = new Set<string>();
-  for (const nid of [...modifiedIds, ...nodeIds]) {
+  for (const nid of [...seedModifiedIds, ...nodeIds]) {
     const childNode = nodes.find(n => n.id === nid);
     if (childNode?.parentId) {
       const parentNode = nodes.find(n => n.id === childNode.parentId);
-      if (parentNode) {
+      if (parentNode && parentNode.data?.isCollapsed && !allModifiedSet.has(parentNode.id)) {
         parentNodeIds.add(parentNode.id);
       }
     }
@@ -70,7 +79,7 @@ export function computeAffectedScope(nodes: CoverageNode[], edges: CoverageEdge[
     nodeIds.add(pid);
   }
 
-  const key = `${Array.from(nodeIds).sort().join(',')}|${Array.from(edgeIds).sort().join(',')}|${[...modifiedIds].sort().join(',')}`;
+  const key = `${focusedNodeId || ''}|${Array.from(nodeIds).sort().join(',')}|${Array.from(edgeIds).sort().join(',')}|${[...allModifiedIds].sort().join(',')}`;
   return { nodeIds, edgeIds, key };
 }
 
@@ -501,6 +510,60 @@ export function computeDomainScope(
 
   const key = `${selectedDomain}|${Array.from(matchedNodeIds).sort().join(',')}|${Array.from(hubNodeIds).sort().join(',')}|${Array.from(domainEdgeIds).sort().join(',')}|${Array.from(domainInternalEdgeIds).sort().join(',')}`;
   return { matchedNodeIds, cameraNodeIds, hubNodeIds, domainEdgeIds, domainInternalEdgeIds, key };
+}
+
+/**
+ * 노드 검색어 매칭 헬퍼:
+ * 이름, 라벨, 별칭(해시태그), 논리 도메인, 설명, 변경 메모(modified_note), 부착된 글로벌 배지 이름(badges), 체크리스트 항목, 커스텀 속성을 통합 검색합니다.
+ */
+export function matchesNodeSearchQuery(
+  n: CoverageNode,
+  rawQuery: string,
+  allNodes: CoverageNode[]
+): boolean {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+  const qClean = q.replace(/^#+/, '').trim();
+
+  const name = (n.data?.name || '').toLowerCase();
+  const rawLabel = n.data?.label || '';
+  const label = rawLabel.toLowerCase();
+  const localizedLabel = (t.nodeLabel[rawLabel as keyof typeof t.nodeLabel] || '').toLowerCase();
+  const desc = String(n.data?.description ?? n.data?.properties?.description ?? '').toLowerCase();
+  const modifiedNote = String(n.data?.modified_note ?? n.data?.properties?.modified_note ?? '').toLowerCase();
+  const nodeAliases = (n.data?.aliases || []).map((a: string) => a.toLowerCase());
+  const effDomain = getEffectiveNodeDomain(n, allNodes);
+  const domainLabel = effDomain ? getDomainMeta(effDomain).displayLabel.toLowerCase() : '';
+
+  const badges = Array.isArray(n.data?.badges) ? n.data.badges : [];
+  const badgeMatched = badges.some(b => {
+    const bName = String(b?.name || '').toLowerCase();
+    const bDesc = String(b?.properties?.description || '').toLowerCase();
+    return bName.includes(q) || (qClean.length > 0 && bName.includes(qClean)) || bDesc.includes(q);
+  });
+
+  const propsObj = n.data?.properties || {};
+  const propsMatched = Object.entries(propsObj).some(([k, v]) => {
+    if (['checklist', 'x', 'y', 'is_global', 'is_manual_override', 'is_modified'].includes(k)) return false;
+    if (v === null || v === undefined || typeof v === 'object') return false;
+    return k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q);
+  });
+  const checklistArr = Array.isArray(propsObj.checklist) ? propsObj.checklist : [];
+  const checklistMatched = checklistArr.some(item => String(item?.text || '').toLowerCase().includes(q));
+
+  return (
+    name.includes(q) ||
+    label.includes(q) ||
+    localizedLabel.includes(q) ||
+    desc.includes(q) ||
+    modifiedNote.includes(q) ||
+    badgeMatched ||
+    nodeAliases.some((a: string) => a.includes(q) || (qClean.length > 0 && a.replace(/^#+/, '').includes(qClean))) ||
+    (qClean.length > 0 && effDomain.toLowerCase().includes(qClean)) ||
+    (qClean.length > 0 && domainLabel.includes(qClean)) ||
+    propsMatched ||
+    checklistMatched
+  );
 }
 
 
