@@ -295,6 +295,27 @@ export const koKR = {
     clearBtn: '초기화',
   },
 
+  // 선택한 노드의 In/Out 연결(Edge) 네비게이터 및 서브 탭
+  nodeConnections: {
+    subTabBasic: '📝 기본·검증',
+    subTabEdges: (inCount: number, outCount: number) => `🔗 연결 (In ${inCount} · Out ${outCount})`,
+    incomingTitle: (count: number) => `📥 들어오는 연결 (In · ${count})`,
+    outgoingTitle: (count: number) => `📤 나가는 연결 (Out · ${count})`,
+    emptyIncoming: '이 노드로 들어오는 연결선이 없습니다.',
+    emptyOutgoing: '이 노드에서 나가는 연결선이 없습니다.',
+    viaChildBadge: (childName: string) => `↳ 하위 [${childName}] 경유`,
+    jumpToNodeTitle: (nodeName: string) => `'${nodeName}' 노드로 카메라 이동 및 선택`,
+    jumpBtn: '🎯 이동',
+    editEdgeTitle: '이 연결선의 타입 및 액션 트리거 편집',
+    editEdgeBtn: '✏️',
+    changeEdgeStatus: '연결선 검증 상태 변경',
+    showContainsToggle: (count: number) => `📦 부모·자식 포함(Contains) 연결 보기 (${count})`,
+    hideContainsToggle: '📦 부모·자식 포함(Contains) 연결 숨기기',
+    containsSectionTitle: (count: number) => `📦 부모·자식 포함(Contains · ${count})`,
+    parentDirectionBadge: '상위 부모',
+    childDirectionBadge: '하위 자식',
+  },
+
   // 태그/속성 기반 최상위 도메인 그룹핑 및 퀵 격리 탐색 (PROPOSAL_TAG_BASED_DOMAIN_GROUPING.md)
   domain: {
     barLabel: '🏷️ 도메인:',
@@ -516,6 +537,7 @@ export const koKR = {
     unknown: 'An unknown error occurred.',
     deleteNodeFailed: 'Failed to delete node.',
     createNodeFailed: 'Failed to create node.',
+    nodeNameRequired: '노드 이름을 입력해주세요.',
   },
 } as const;
 

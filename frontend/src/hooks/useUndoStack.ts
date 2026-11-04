@@ -107,22 +107,23 @@ export function useUndoStack({
           setEditFormData({});
         }
       } else if (action.type === 'UPDATE_NODE') {
+        const prevData = action.previousData || action.oldData;
         const res = await fetch(`/api/nodes/${encodeURIComponent(action.id!)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(action.previousData)
+          body: JSON.stringify(prevData)
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.detail || 'Failed to undo node update');
         }
 
-        const restoredStatus = String(action.previousData?.test_status || 'untested').toLowerCase();
+        const restoredStatus = String(prevData?.test_status || 'untested').toLowerCase();
         setNodes(nds => nds.map(n => {
           if (n.id !== action.id) {
             if (Array.isArray(n.data?.badges) && n.data.badges.some(b => b.id === action.id)) {
               const nextBadges = n.data.badges.map(b =>
-                b.id === action.id ? { ...b, ...action.previousData } : b
+                b.id === action.id ? { ...b, ...prevData } : b
               );
               return { ...n, data: { ...n.data, badges: nextBadges } };
             }
@@ -133,7 +134,7 @@ export function useUndoStack({
           return {
             ...n,
             className: nextCls,
-            data: { ...n.data, ...action.previousData }
+            data: { ...n.data, ...prevData }
           };
         }));
 
@@ -144,7 +145,7 @@ export function useUndoStack({
           return {
             ...prev,
             className: nextCls,
-            data: { ...prev.data, ...action.previousData }
+            data: { ...prev.data, ...prevData }
           };
         });
 
@@ -153,11 +154,11 @@ export function useUndoStack({
           if (prev.id !== action.id || prev.type !== 'node') return prev;
           return {
             ...prev,
-            ...action.previousData,
-            status: (action.previousData?.test_status as string) || prev.status,
-            aliases: Array.isArray(action.previousData?.aliases)
-              ? action.previousData.aliases.join(', ')
-              : ((action.previousData?.aliases as string) ?? prev.aliases)
+            ...prevData,
+            status: (prevData?.test_status as string) || prev.status,
+            aliases: Array.isArray(prevData?.aliases)
+              ? prevData.aliases.join(', ')
+              : ((prevData?.aliases as string) ?? prev.aliases)
           };
         });
       } else if (action.type === 'DELETE_NODE') {

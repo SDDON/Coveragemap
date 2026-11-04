@@ -24,6 +24,7 @@ interface UseGraphLayoutProps {
   edges: CoverageEdge[];
   nodesRef: MutableRefObject<CoverageNode[]>;
   selectedNodeRef?: MutableRefObject<CoverageNode | null>;
+  isCreatingNodeRef?: MutableRefObject<boolean>;
   setNodes: Dispatch<SetStateAction<CoverageNode[]>>;
   setEdges: Dispatch<SetStateAction<CoverageEdge[]>>;
   setSelectedNode?: Dispatch<SetStateAction<CoverageNode | null>>;
@@ -46,6 +47,7 @@ export function useGraphLayout({
   edges = [],
   nodesRef,
   selectedNodeRef,
+  isCreatingNodeRef,
   setNodes,
   setEdges,
   setSelectedNode,
@@ -147,6 +149,7 @@ export function useGraphLayout({
 
         const isFilterChange = prevFilterForFitRef.current !== filterText;
         const shouldFitView = !hasInitialFitRef.current || isFilterChange;
+        const preFetchNodeIds = new Set(nodesRef.current.map(n => n.id));
 
         const data = await api.nodes.fetchGraph(filterText, maxDepth, controller.signal);
         if (controller.signal.aborted) return;
@@ -179,7 +182,7 @@ export function useGraphLayout({
               impactedChildCount: 0,
             },
             type: 'custom',
-            selected: selectedNodeRef?.current?.id === n.id,
+            selected: !isCreatingNodeRef?.current && selectedNodeRef?.current?.id === n.id,
             position: { x: 0, y: 0 },
             className: statusCls,
             hidden: isHiddenByFilter,
@@ -285,15 +288,28 @@ export function useGraphLayout({
         if (controller.signal.aborted) return;
         // 백그라운드 triggerRefresh() 시에는 기존 루트 노드들의 위치를 그대로 유지하여 캔버스 점프를 방지합니다.
         const prevNodesMap = new Map(nodesRef.current.map(n => [n.id, n]));
-        let finalNodes = layoutedNodes;
+        let finalNodes: CoverageNode[] = layoutedNodes;
         if (!shouldFitView && prevNodesMap.size > 0) {
           const preservedPositions: Array<{ x: number; y: number }> = [];
           finalNodes = layoutedNodes.map(ln => {
             const prevNode = prevNodesMap.get(ln.id);
-            const isSelected = selectedNodeRef?.current?.id === ln.id;
+            const isSelected = !isCreatingNodeRef?.current && selectedNodeRef?.current?.id === ln.id;
             if (prevNode && !prevNode.hidden && !prevNode.parentId && !ln.parentId && prevNode.position) {
-              preservedPositions.push(prevNode.position);
-              return { ...ln, position: prevNode.position, selected: isSelected };
+              let posX = prevNode.position.x;
+              let posY = prevNode.position.y;
+              let step = 0;
+              while (
+                preservedPositions.some(
+                  p => Math.abs(p.x - posX) < 40 && Math.abs(p.y - posY) < 40
+                )
+              ) {
+                step += 1;
+                posX = prevNode.position.x + (step % 3) * 300;
+                posY = prevNode.position.y + Math.floor(step / 3) * 150;
+              }
+              const safePos = { x: posX, y: posY };
+              preservedPositions.push(safePos);
+              return { ...ln, position: safePos, selected: isSelected };
             }
             return { ...ln, selected: isSelected };
           });
@@ -318,11 +334,22 @@ export function useGraphLayout({
           }
         }
 
+        if (!isFilterChange) {
+          const finalNodeIdSet = new Set(finalNodes.map(n => n.id));
+          const concurrentNewNodes = nodesRef.current.filter(
+            n => !preFetchNodeIds.has(n.id) && !finalNodeIdSet.has(n.id)
+          );
+          if (concurrentNewNodes.length > 0) {
+            finalNodes = [...finalNodes, ...concurrentNewNodes];
+          }
+        }
+
         if (setHoveredNode) setHoveredNode(null);
         if (setHoveredEdge) setHoveredEdge(null);
+        nodesRef.current = finalNodes;
         setNodes(finalNodes);
         setEdges(layoutedEdges);
-        if (selectedNodeRef?.current?.id) {
+        if (!isCreatingNodeRef?.current && selectedNodeRef?.current?.id) {
           const matchedNode = finalNodes.find(n => n.id === selectedNodeRef.current?.id);
           if (matchedNode) {
             selectedNodeRef.current = matchedNode;
@@ -386,6 +413,7 @@ export function useGraphLayout({
     actualRefreshKey,
     nodesRef,
     selectedNodeRef,
+    isCreatingNodeRef,
     setSelectedNode,
     setHoveredNode,
     setHoveredEdge,

@@ -566,4 +566,117 @@ export function matchesNodeSearchQuery(
   );
 }
 
+export interface NodeConnectionItem {
+  edge: CoverageEdge;
+  neighborNode: CoverageNode;
+  viaChildNode?: CoverageNode;
+  containsDirection?: 'parent' | 'child';
+}
+
+export interface ComputedNodeConnections {
+  incoming: NodeConnectionItem[];
+  outgoing: NodeConnectionItem[];
+  contains: NodeConnectionItem[];
+}
+
+/**
+ * 선택된 노드를 기준으로 진입(Incoming) / 진출(Outgoing) / 부모·자식 포함(Contains) 간선 목록을 계산합니다.
+ * - 전역 배지(is_global === 'true') 부착용 간선은 배지 섹션에서 관리되므로 제외합니다.
+ * - 부모 컨테이너(Screen 등)가 선택된 경우, 내부 직속 자식(Contains)이 외부 노드와 맺고 있는
+ *   진입/진출 간선도 함께 수집하고 viaChildNode로 경유 자식 정보를 표시합니다.
+ */
+export function computeNodeConnections(
+  targetNode: CoverageNode | null,
+  nodes: CoverageNode[],
+  edges: CoverageEdge[]
+): ComputedNodeConnections {
+  if (!targetNode) {
+    return { incoming: [], outgoing: [], contains: [] };
+  }
+
+  const nodeById = new Map<string, CoverageNode>();
+  nodes.forEach(n => nodeById.set(n.id, n));
+
+  const childIds = new Set<string>();
+  nodes.forEach(n => {
+    if (n.parentId === targetNode.id) {
+      childIds.add(n.id);
+    }
+  });
+  edges.forEach(e => {
+    const et = String(e.data?.type || e.label || '').toLowerCase();
+    if ((et === 'contains' || et === 'has') && e.source === targetNode.id) {
+      childIds.add(e.target);
+    }
+  });
+
+  const scopeIds = new Set<string>([targetNode.id, ...childIds]);
+  const incoming: NodeConnectionItem[] = [];
+  const outgoing: NodeConnectionItem[] = [];
+  const contains: NodeConnectionItem[] = [];
+
+  edges.forEach(e => {
+    const srcNode = nodeById.get(e.source);
+    const tgtNode = nodeById.get(e.target);
+    if (!srcNode || !tgtNode) return;
+
+    if (
+      srcNode.data?.properties?.is_global === 'true' ||
+      tgtNode.data?.properties?.is_global === 'true'
+    ) {
+      return;
+    }
+
+    const rawType = String(e.data?.type || e.label || 'Transition');
+    const lowerType = rawType.toLowerCase();
+    const isContains = lowerType === 'contains' || lowerType === 'has';
+
+    if (isContains) {
+      if (e.source === targetNode.id) {
+        contains.push({
+          edge: e,
+          neighborNode: tgtNode,
+          containsDirection: 'child',
+        });
+      } else if (e.target === targetNode.id) {
+        contains.push({
+          edge: e,
+          neighborNode: srcNode,
+          containsDirection: 'parent',
+        });
+      }
+      return;
+    }
+
+    if (e.target === targetNode.id) {
+      incoming.push({
+        edge: e,
+        neighborNode: srcNode,
+      });
+    } else if (childIds.has(e.target) && !scopeIds.has(e.source)) {
+      incoming.push({
+        edge: e,
+        neighborNode: srcNode,
+        viaChildNode: tgtNode,
+      });
+    }
+
+    if (e.source === targetNode.id) {
+      outgoing.push({
+        edge: e,
+        neighborNode: tgtNode,
+      });
+    } else if (childIds.has(e.source) && !scopeIds.has(e.target)) {
+      outgoing.push({
+        edge: e,
+        neighborNode: tgtNode,
+        viaChildNode: srcNode,
+      });
+    }
+  });
+
+  return { incoming, outgoing, contains };
+}
+
+
 

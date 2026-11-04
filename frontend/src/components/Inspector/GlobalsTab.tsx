@@ -19,7 +19,7 @@ interface GlobalsTabProps {
   setRightPanelTab: Dispatch<SetStateAction<'view' | 'edit' | 'globals'>>;
   toggleImpact: (globalNodeId: string, globalNodeName: string) => Promise<void>;
   fetchGlobals: () => Promise<void>;
-  triggerRefresh: () => void;
+  triggerRefresh?: () => void;
   setErrorToast: (msg: string | null) => void;
 }
 
@@ -38,7 +38,6 @@ export const GlobalsTab: React.FC<GlobalsTabProps> = ({
   setRightPanelTab,
   toggleImpact,
   fetchGlobals,
-  triggerRefresh,
   setErrorToast,
 }) => {
   const [newGlobalName, setNewGlobalName] = useState('');
@@ -127,18 +126,41 @@ export const GlobalsTab: React.FC<GlobalsTabProps> = ({
   };
 
   const handleCreateGlobal = async () => {
-    if (!newGlobalName.trim()) return;
+    const trimmed = newGlobalName.trim();
+    if (!trimmed) {
+      setErrorToast(t.error.nodeNameRequired);
+      return;
+    }
     try {
-      await api.nodes.createNode({
+      const newId = await api.nodes.createNode({
         label: 'Component',
-        name: newGlobalName.trim(),
+        name: trimmed,
         aliases: [],
         properties: { is_global: 'true' },
         test_status: 'Untested',
       });
+      const hiddenGlobalNode: CoverageNode = {
+        id: newId,
+        type: 'custom',
+        position: { x: 0, y: 0 },
+        hidden: true,
+        className: 'status-untested',
+        data: {
+          id: newId,
+          label: 'Component',
+          name: trimmed,
+          aliases: [],
+          test_status: 'Untested',
+          properties: { is_global: 'true' },
+          is_global: true,
+          badges: [],
+        },
+      };
+      const nextNodes = [...nodesRef.current, hiddenGlobalNode];
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
       setNewGlobalName('');
       await fetchGlobals();
-      triggerRefresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setErrorToast(message || 'Failed to create global node');

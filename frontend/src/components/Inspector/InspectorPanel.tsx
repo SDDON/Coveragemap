@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import { Panel } from '@xyflow/react';
 import type { ReactFlowInstance } from '@xyflow/react';
 import type { CoverageNode, CoverageEdge, ApiNode, StatusName, ChecklistItem } from '../../types/graph';
 import type { EditFormData, PendingConnectSourceState, ActiveImpactItem, RightPanelTab } from '../../types/ui';
 import { ViewTab } from './ViewTab';
-import { EditNodeForm } from './EditNodeForm';
+import { EditNodeForm, NodeEditSubTab } from './EditNodeForm';
 import { EditEdgeForm } from './EditEdgeForm';
 import { GlobalsTab } from './GlobalsTab';
 import { t } from '../../locales/koKR';
@@ -57,6 +57,7 @@ interface InspectorPanelProps {
   modifiedNoteDraft: string;
   setModifiedNoteDraft: (note: string) => void;
   handleSaveStatus: (status: StatusName, overrideOptions?: { reason?: string }) => Promise<void>;
+  handleUpdateEdgeStatusById?: (edgeId: string, status: StatusName) => Promise<void>;
   handleMarkModified: (nodeId?: string) => Promise<void>;
   handleAcknowledge: (nodeId?: string) => Promise<void>;
   handleCloneNode: (nodeId?: string, tag?: string) => Promise<void>;
@@ -115,6 +116,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   modifiedNoteDraft,
   setModifiedNoteDraft,
   handleSaveStatus,
+  handleUpdateEdgeStatusById,
   handleMarkModified,
   handleAcknowledge,
   handleCloneNode,
@@ -125,6 +127,14 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   setErrorToast,
   onFocusNode,
 }) => {
+  const [nodeEditSubTab, setNodeEditSubTab] = useState<NodeEditSubTab>('basic');
+
+  useEffect(() => {
+    if (isCreatingNode) {
+      setNodeEditSubTab('basic');
+    }
+  }, [isCreatingNode]);
+
   return (
     <Panel
       position="top-right"
@@ -288,6 +298,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   modifiedNoteDraft={modifiedNoteDraft}
                   setModifiedNoteDraft={setModifiedNoteDraft}
                   handleSaveStatus={handleSaveStatus}
+                  handleUpdateEdgeStatusById={handleUpdateEdgeStatusById}
                   handleMarkModified={handleMarkModified}
                   handleAcknowledge={handleAcknowledge}
                   handleCloneNode={handleCloneNode}
@@ -295,6 +306,9 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   saveChecklist={saveChecklist}
                   handleDelete={handleDelete}
                   handleSave={handleSave}
+                  onFocusNode={onFocusNode}
+                  activeSubTab={nodeEditSubTab}
+                  setActiveSubTab={setNodeEditSubTab}
                 />
               )}
 

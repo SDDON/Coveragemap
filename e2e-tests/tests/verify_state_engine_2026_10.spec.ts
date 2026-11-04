@@ -1723,6 +1723,205 @@ test.describe('2026-10 Spec: Living TC State Engine', () => {
     await expect(searchInput).toBeVisible();
     await expect(nodeLocator(page, ids.settings)).toHaveClass(/\bactive\b/);
   });
+
+  test('W. Node Edit Sub-tabs: In/Out Edge list, child-relayed edges, inline edge status toggle, and continuous jump navigation', async ({ page, request }) => {
+    // 1. Setup: Make Game_Settings a Contains child of Game_Root, and connect Game_Settings -> Game_Child via Transition ('옵션 저장 후 이동')
+    await request.post('/api/edges', {
+      data: { source: ids.root, target: ids.settings, type: 'Contains', test_status: 'Untested', properties: {} },
+    });
+    await request.post('/api/edges', {
+      data: {
+        source: ids.settings,
+        target: ids.child,
+        type: 'Transition',
+        action: '옵션 저장 후 이동',
+        test_status: 'Untested',
+        properties: {},
+      },
+    });
+
+    const reloadRes = page.waitForResponse(res => res.url().includes('/api/graph') && res.status() === 200);
+    await page.reload();
+    await reloadRes;
+
+    // 2. Select parent node Game_Root -> verify 2 sub-tabs exist (In 1 from TC1, Out 2: direct Game_Child + child-relayed Game_Settings -> Game_Child)
+    await selectNode(page, ids.root);
+    const subTabs = page.locator('.node-edit-subtabs .node-edit-subtab-btn');
+    await expect(subTabs).toHaveCount(2);
+    await expect(subTabs.nth(1)).toContainText('In 1 · Out 2');
+
+    // 3. Switch to [🔗 연결] sub-tab
+    await subTabs.nth(1).click();
+    const connPanel = page.locator('.node-connections-panel');
+    await expect(connPanel).toBeVisible();
+
+    const inCards = connPanel.locator('.incoming-group .node-conn-card');
+    const outCards = connPanel.locator('.outgoing-group .node-conn-card');
+    await expect(inCards).toHaveCount(1);
+    await expect(outCards).toHaveCount(2);
+    await expect(connPanel.locator('.outgoing-group')).toContainText('옵션 저장 후 이동');
+    await expect(connPanel.locator('.outgoing-group')).toContainText('하위 [Game Settings] 경유');
+
+    // 4. Inline edge status change inside In/Out list: mark the outgoing Transition edge as Passed
+    const relayedCard = outCards.filter({ hasText: '옵션 저장 후 이동' });
+    await relayedCard.locator('.node-conn-status-trigger').click();
+    const edgePutPromise = page.waitForResponse(res => res.url().includes('/api/edges/') && res.request().method() === 'PUT');
+    await relayedCard.locator('.checklist-status-menu .checklist-status-btn').nth(1).click(); // Passed (🟢)
+    expect((await edgePutPromise).ok()).toBeTruthy();
+    await expect(relayedCard.locator('.node-conn-status-trigger')).toContainText('🟢');
+
+    // 5. Continuous Jump Navigation (🎯 이동): click jump on TC1 -> selects TC1 and stays on [🔗 연결] sub-tab!
+    await inCards.first().locator('.node-conn-action-btn.jump').click();
+    await expect(page.locator('.details-panel .node-id')).toContainText(ids.tc1);
+    await expect(page.locator('.node-connections-panel')).toBeVisible();
+    await expect(page.locator('.node-connections-panel .outgoing-group .node-conn-card')).toHaveCount(1);
+
+    // 6. Click ✏️ (Edit Edge) on TC1's outgoing edge -> switches Inspector to EditEdgeForm
+    await page.locator('.node-connections-panel .outgoing-group .node-conn-action-btn.edit').first().click();
+    await expect(page.locator('#edgeType')).toBeVisible();
+  });
+
+  test('X. Consecutive node creation creates distinct non-overlapping nodes without PUT overwrite or race clobbering', async ({ page, request }) => {
+    const addNodeBtn = page.locator('.top-toolbar').getByRole('button', { name: 'Add Node' });
+    await expect(addNodeBtn).toBeVisible();
+
+    // 1. Empty name validation: attempting to save with whitespace-only name shows error toast and does not create a node
+    await addNodeBtn.click();
+    const nameInput = page.locator('#nodeName');
+    await expect(nameInput).toBeVisible();
+    await nameInput.fill('   ');
+    await nameInput.press('Enter');
+    await expect(page.locator('.error-toast')).toContainText('노드 이름을 입력해주세요.');
+    await expect(page.locator('.react-flow__node')).toHaveCount(4);
+
+    // 2. Create 3 nodes consecutively right after one another (testing button Save + Enter key Save + immediate Add Node click)
+    await nameInput.fill('Consec_Node_Alpha');
+    const post1Promise = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await page.locator('.details-panel button.primary', { hasText: 'Save' }).click();
+    const post1Res = await post1Promise;
+    expect(post1Res.ok()).toBeTruthy();
+    const newId1 = (await post1Res.json()) as string;
+
+    // Immediately click Add Node while post-save effects may still be settling
+    await addNodeBtn.click();
+    await expect(nameInput).toHaveValue('');
+    await nameInput.fill('Consec_Node_Beta');
+    const post2Promise = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await nameInput.press('Enter');
+    const post2Res = await post2Promise;
+    expect(post2Res.ok()).toBeTruthy();
+    const newId2 = (await post2Res.json()) as string;
+    expect(newId2).not.toBe(newId1);
+
+    // Immediately click Add Node a third time
+    await addNodeBtn.click();
+    await expect(nameInput).toHaveValue('');
+    await nameInput.fill('Consec_Node_Gamma');
+    const post3Promise = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await page.locator('.details-panel button.primary', { hasText: 'Save' }).click();
+    const post3Res = await post3Promise;
+    expect(post3Res.ok()).toBeTruthy();
+    const newId3 = (await post3Res.json()) as string;
+    expect(newId3).not.toBe(newId1);
+    expect(newId3).not.toBe(newId2);
+
+    // 3. Verify all 3 new nodes exist on canvas (4 seed + 3 new = 7) and do NOT overlap at identical coordinates
+    await expect(page.locator('.react-flow__node')).toHaveCount(7);
+    await expect(nodeLocator(page, newId1)).toBeVisible();
+    await expect(nodeLocator(page, newId2)).toBeVisible();
+    await expect(nodeLocator(page, newId3)).toBeVisible();
+
+    const box1 = await nodeLocator(page, newId1).boundingBox();
+    const box2 = await nodeLocator(page, newId2).boundingBox();
+    const box3 = await nodeLocator(page, newId3).boundingBox();
+    expect(box1).not.toBeNull();
+    expect(box2).not.toBeNull();
+    expect(box3).not.toBeNull();
+    if (box1 && box2 && box3) {
+      const dist12 = Math.hypot(box1.x - box2.x, box1.y - box2.y);
+      const dist23 = Math.hypot(box2.x - box3.x, box2.y - box3.y);
+      const dist13 = Math.hypot(box1.x - box3.x, box1.y - box3.y);
+      expect(dist12).toBeGreaterThan(80);
+      expect(dist23).toBeGreaterThan(80);
+      expect(dist13).toBeGreaterThan(80);
+    }
+
+    // 4. Verify backend SSOT persisted all 3 distinct nodes with their exact names
+    const graph = await (await request.get('/api/graph')).json();
+    const names = graph.nodes.map((n: { name: string }) => n.name);
+    expect(names).toContain('Consec_Node_Alpha');
+    expect(names).toContain('Consec_Node_Beta');
+    expect(names).toContain('Consec_Node_Gamma');
+
+    // 5. Update the newly created third node's name and verify Ctrl+Z Undo restores its previous name cleanly
+    await nameInput.fill('Consec_Node_Gamma_Updated');
+    const putPromise = page.waitForResponse(res => res.url().includes(`/api/nodes/${encodeURIComponent(newId3)}`) && res.request().method() === 'PUT');
+    await nameInput.press('Enter');
+    expect((await putPromise).ok()).toBeTruthy();
+    await expect(nodeLocator(page, newId3)).toContainText('Consec_Node_Gamma_Updated');
+
+    // Blur input and press Ctrl+Z to undo UPDATE_NODE
+    await nameInput.blur();
+    const undoPutPromise = page.waitForResponse(res => res.url().includes(`/api/nodes/${encodeURIComponent(newId3)}`) && res.request().method() === 'PUT');
+    await page.keyboard.press('Control+z');
+    expect((await undoPutPromise).ok()).toBeTruthy();
+    await expect(nodeLocator(page, newId3)).toContainText('Consec_Node_Gamma');
+
+    // 6. In-flight POST race defense: click Add Node while previous POST /api/nodes is still awaiting response
+    let delayedOnce = false;
+    await page.route('**/api/nodes', async route => {
+      if (route.request().method() === 'POST' && !delayedOnce) {
+        delayedOnce = true;
+        await new Promise(r => setTimeout(r, 150));
+      }
+      await route.continue();
+    });
+
+    await addNodeBtn.click();
+    await nameInput.fill('Consec_InFlight_1');
+    const postInFlight1 = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await nameInput.press('Enter');
+
+    // While Consec_InFlight_1's POST is still in-flight (150ms delay), click Add Node and type Consec_InFlight_2
+    await page.waitForTimeout(30);
+    await addNodeBtn.click();
+    await nameInput.fill('Consec_InFlight_2');
+
+    const inFlightRes1 = await postInFlight1;
+    expect(inFlightRes1.ok()).toBeTruthy();
+    const inFlightId1 = (await inFlightRes1.json()) as string;
+
+    // After Consec_InFlight_1 resolves, Inspector must STILL be in Add Node mode with 'Consec_InFlight_2' intact!
+    await expect(page.locator('.details-panel h3').first()).toContainText('Add Node');
+    await expect(nameInput).toHaveValue('Consec_InFlight_2');
+
+    const postInFlight2 = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await nameInput.press('Enter');
+    const inFlightRes2 = await postInFlight2;
+    expect(inFlightRes2.ok()).toBeTruthy();
+    const inFlightId2 = (await inFlightRes2.json()) as string;
+    expect(inFlightId2).not.toBe(inFlightId1);
+    await expect(nodeLocator(page, inFlightId1)).toBeVisible();
+    await expect(nodeLocator(page, inFlightId2)).toBeVisible();
+    await page.unroute('**/api/nodes');
+
+    // 7. Global node consecutive creation: creating a Global node keeps Edit form stable without 300ms LoadingOverlay block
+    await addNodeBtn.click();
+    await page.locator('#nodeLabel').selectOption('Component');
+    await page.locator('#nodeIsGlobal').check();
+    await nameInput.fill('Consec_Global_Badge');
+    const postGlobal = page.waitForResponse(res => res.url().includes('/api/nodes') && res.request().method() === 'POST');
+    await nameInput.press('Enter');
+    const globalNodeId = (await (await postGlobal).json()) as string;
+
+    // Global node is hidden on canvas, remains selected in Edit tab, and appears in Globals tab
+    await expect(nodeLocator(page, globalNodeId)).toBeHidden();
+    await expect(nameInput).toHaveValue('Consec_Global_Badge');
+    await page.getByRole('button', { name: 'Globals' }).click();
+    await expect(page.locator('.details-panel')).toContainText('Consec_Global_Badge');
+  });
 });
+
+
 
 

@@ -7,6 +7,7 @@ import {
   Background,
   ConnectionMode,
   Connection,
+  NodeChange,
   EdgeChange,
   ReactFlowInstance,
   useNodesState,
@@ -111,12 +112,15 @@ export default function App() {
   const selectedNodeRef = useRef<CoverageNode | null>(selectedNode);
   const selectedEdgeRef = useRef<CoverageEdge | null>(selectedEdge);
   const editFormDataRef = useRef<EditFormData>(editFormData);
+  const isCreatingNodeRef = useRef<boolean>(isCreatingNode);
+  const createSessionRef = useRef<number>(0);
   const pendingCreatePosRef = useRef<{ x: number; y: number } | null>(null);
   nodesRef.current = nodes;
   edgesRef.current = edges;
   selectedNodeRef.current = selectedNode;
   selectedEdgeRef.current = selectedEdge;
   editFormDataRef.current = editFormData;
+  isCreatingNodeRef.current = isCreatingNode;
 
   const triggerRefresh = useCallback(() => setGraphVersion(v => v + 1), []);
 
@@ -132,6 +136,15 @@ export default function App() {
     }
   }, []);
 
+  const fetchGlobals = useCallback(async () => {
+    try {
+      const data = await api.globals.fetchGlobals();
+      setGlobalNodesList(data);
+    } catch {
+      setGlobalNodesList([]);
+    }
+  }, []);
+
   const nodesAliasesKey = useMemo(
     () => nodes.map(n => `${n.id}:${(n.data?.aliases || []).join(',')}`).join('|'),
     [nodes]
@@ -139,7 +152,7 @@ export default function App() {
 
   const { loading, error: layoutError, setError: setLayoutError, unparentNodesOnContainsDelete, relayoutFocused, nodesStructuralKey, nodesStatusKey } = useGraphLayout({
     nodes, edges, triggerRefresh, filterText, maxDepth, visibleTypes, graphVersion, rfInstance, setNodes, setEdges, nodesRef,
-    selectedNodeRef, setSelectedNode, setEditFormData,
+    selectedNodeRef, setSelectedNode, setEditFormData, isCreatingNodeRef,
   });
 
   const { persist, syncStatusesFromServer, applyLocalStatusChanges, executeMutation } = useGraphSync({
@@ -177,11 +190,12 @@ export default function App() {
 
   const {
     createEdgeBetweenNodes, handleQuickCreateAndConnect, onNodesDelete, onEdgesDelete, handleDetachFromParent,
-    handleDelete, handleSaveStatus, saveChecklist, handleCloneNode, handleSave,
+    handleDelete, handleSaveStatus, handleUpdateEdgeStatusById, saveChecklist, handleCloneNode, handleSave,
   } = useGraphOperations({
     nodesRef, edgesRef, selectedNodeRef, selectedEdgeRef, editFormData, setNodes, setEdges, setSelectedNode, setSelectedEdge,
     setPinnedFocusNodeId, setActiveImpacts, pushUndo, applyLocalStatusChanges, syncStatusesFromServer, triggerRefresh, unparentNodesOnContainsDelete, setErrorToast,
-    isCreatingNode, setIsCreatingNode, rfInstance, setEditFormData, filterText, setFilterText, setShowAllDomains, pendingCreatePosRef, setAliases, fetchAliases,
+    isCreatingNode, setIsCreatingNode, isCreatingNodeRef, createSessionRef, rfInstance, setEditFormData, filterText, setFilterText, showAllDomains, setShowAllDomains,
+    selectedDomain, setSelectedDomain, setIsDomainIsolated, pendingCreatePosRef, setAliases, fetchAliases, fetchGlobals,
   });
 
   const {
@@ -195,6 +209,8 @@ export default function App() {
    * editFormData를 새 노드 생성 초기값(type: 'node')으로 리셋하여 EditNodeForm이 즉시 표시되도록 보장합니다.
    */
   const startCreateNode = useCallback((screenPos?: { x: number; y: number }) => {
+    createSessionRef.current += 1;
+    isCreatingNodeRef.current = true;
     pendingCreatePosRef.current = screenPos || null;
     if (nodesRef.current.some(n => n.selected)) {
       const nextNds = nodesRef.current.map(n => (n.selected ? { ...n, selected: false } : n));
@@ -385,7 +401,19 @@ export default function App() {
     return calculateEdgeBundling(Array.from(edgeMap.values()));
   }, [edges, nodesStructuralKey, nodesStatusKey, selectedEdge?.id, isCreatingNode]);
 
+  const handleNodesChange = useCallback((changes: NodeChange<CoverageNode>[]) => {
+    if (isCreatingNodeRef.current && changes.some(c => c.type === 'select' && c.selected)) {
+      isCreatingNodeRef.current = false;
+      setIsCreatingNode(false);
+    }
+    onNodesChange(changes);
+  }, [onNodesChange]);
+
   const handleEdgesChange = useCallback((changes: EdgeChange<CoverageEdge>[]) => {
+    if (isCreatingNodeRef.current && changes.some(c => c.type === 'select' && c.selected)) {
+      isCreatingNodeRef.current = false;
+      setIsCreatingNode(false);
+    }
     const mappedChanges: EdgeChange<CoverageEdge>[] = [];
     for (const c of changes) {
       if (c.type === 'select') {
@@ -410,8 +438,18 @@ export default function App() {
   }, [connectDragRef, createEdgeBetweenNodes]);
 
   const onSelectionChange = useCallback(({ nodes: selNodes, edges: selEdges }: { nodes: CoverageNode[]; edges: CoverageEdge[] }) => {
+    if (isCreatingNodeRef.current) return;
     const nextNode = selNodes.length > 0 ? selNodes[0] : null;
     const nextEdge = selEdges.length > 0 ? selEdges[0] : null;
+
+    if (
+      !nextNode &&
+      !nextEdge &&
+      (selectedNodeRef.current?.data?.is_global === true ||
+        String(selectedNodeRef.current?.data?.properties?.is_global ?? '').toLowerCase() === 'true')
+    ) {
+      return;
+    }
 
     setSelectedNode(prev => {
       if (prev?.id !== nextNode?.id) {
@@ -441,15 +479,6 @@ export default function App() {
       setIsCreatingNode(false);
     }
   }, [setEditFormData, setModifiedNoteDraft]);
-
-  const fetchGlobals = useCallback(async () => {
-    try {
-      const data = await api.globals.fetchGlobals();
-      setGlobalNodesList(data);
-    } catch {
-      setGlobalNodesList([]);
-    }
-  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -692,7 +721,7 @@ export default function App() {
         }}
         nodes={renderedNodes}
         edges={renderedEdges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onSelectionChange={onSelectionChange}
         onNodesDelete={onNodesDelete}
@@ -700,11 +729,18 @@ export default function App() {
         onNodeDragStart={() => { isDraggingRef.current = true; }}
         onNodeDragStop={() => { isDraggingRef.current = false; }}
         onConnect={onConnect}
-        onNodeClick={onNodeClick}
+        onNodeClick={(e, node) => {
+          createSessionRef.current += 1;
+          isCreatingNodeRef.current = false;
+          setIsCreatingNode(false);
+          onNodeClick(e, node);
+        }}
         onEdgeClick={(_, edge) => {
           if (nodesRef.current.some(n => n.selected)) {
             setNodes(nds => nds.map(n => (n.selected ? { ...n, selected: false } : n)));
           }
+          createSessionRef.current += 1;
+          isCreatingNodeRef.current = false;
           setSelectedNode(null);
           setSelectedEdge(edge);
           setEditFormData({
@@ -728,6 +764,10 @@ export default function App() {
           if (Date.now() - quickConnectOpenedAtRef.current > 300) {
             setQuickConnectPopover(null);
           }
+          createSessionRef.current += 1;
+          isCreatingNodeRef.current = false;
+          selectedNodeRef.current = null;
+          selectedEdgeRef.current = null;
           setSelectedNode(null);
           setSelectedEdge(null);
           setIsCreatingNode(false);
@@ -812,7 +852,7 @@ export default function App() {
           pendingConnectSource={pendingConnectSource} setPendingConnectSource={setPendingConnectSource}
           blockReasonDraft={blockReasonDraft} setBlockReasonDraft={setBlockReasonDraft}
           modifiedNoteDraft={modifiedNoteDraft} setModifiedNoteDraft={setModifiedNoteDraft}
-          handleSaveStatus={handleSaveStatus} handleMarkModified={handleMarkModified}
+          handleSaveStatus={handleSaveStatus} handleUpdateEdgeStatusById={handleUpdateEdgeStatusById} handleMarkModified={handleMarkModified}
           handleAcknowledge={handleAcknowledge} handleCloneNode={handleCloneNode}
           handleDetachFromParent={handleDetachFromParent} saveChecklist={saveChecklist}
           handleDelete={handleDelete} handleSave={handleSave} setErrorToast={setErrorToast}

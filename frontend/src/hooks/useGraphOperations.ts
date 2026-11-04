@@ -11,9 +11,10 @@ import {
   ActiveImpactItem,
 } from '../types';
 import { calculateEdgeBundling } from '../utils/edgeBundling';
-import { getSmartDefaultEdgeType } from '../utils/graphScopes';
+import { getSmartDefaultEdgeType, getEffectiveNodeDomain } from '../utils/graphScopes';
 import { recalcTargetAndPropagate, propagateToDependents, applyStatusChanges } from '../statusPropagation';
 import { api, extractErrorMessage } from '../api/client';
+import { t } from '../locales/koKR';
 
 export interface UseGraphOperationsProps {
   nodesRef: MutableRefObject<CoverageNode[]>;
@@ -34,15 +35,22 @@ export interface UseGraphOperationsProps {
   unparentNodesOnContainsDelete: (deletedContains: CoverageEdge[], remainingEdges: CoverageEdge[]) => void;
   setErrorToast: (msg: string | null) => void;
   isCreatingNode?: boolean;
+  isCreatingNodeRef?: MutableRefObject<boolean>;
+  createSessionRef?: MutableRefObject<number>;
   setIsCreatingNode?: Dispatch<SetStateAction<boolean>>;
   rfInstance?: ReactFlowInstance<CoverageNode, CoverageEdge> | null;
   setEditFormData?: Dispatch<SetStateAction<EditFormData>>;
   filterText?: string;
   setFilterText?: Dispatch<SetStateAction<string>>;
+  showAllDomains?: boolean;
   setShowAllDomains?: Dispatch<SetStateAction<boolean>>;
+  selectedDomain?: string | null;
+  setSelectedDomain?: Dispatch<SetStateAction<string | null>>;
+  setIsDomainIsolated?: Dispatch<SetStateAction<boolean>>;
   pendingCreatePosRef?: MutableRefObject<{ x: number; y: number } | null>;
   setAliases?: Dispatch<SetStateAction<string[]>>;
   fetchAliases?: () => Promise<void>;
+  fetchGlobals?: () => Promise<void>;
 }
 
 export function useGraphOperations({
@@ -64,16 +72,41 @@ export function useGraphOperations({
   unparentNodesOnContainsDelete,
   setErrorToast,
   isCreatingNode,
+  isCreatingNodeRef,
+  createSessionRef,
   setIsCreatingNode,
   rfInstance,
   setEditFormData,
   filterText,
   setFilterText,
+  showAllDomains,
   setShowAllDomains,
+  selectedDomain,
+  setSelectedDomain,
+  setIsDomainIsolated,
   pendingCreatePosRef,
   setAliases,
   fetchAliases,
+  fetchGlobals,
 }: UseGraphOperationsProps) {
+  const isSavingRef = useRef<boolean>(false);
+
+  const resolveNonOverlappingRootPosition = useCallback((basePos: { x: number; y: number }): { x: number; y: number } => {
+    let posX = basePos.x;
+    let posY = basePos.y;
+    let step = 0;
+    while (
+      nodesRef.current.some(
+        n => !n.hidden && !n.parentId && Math.abs((n.position?.x || 0) - posX) < 220 && Math.abs((n.position?.y || 0) - posY) < 110
+      )
+    ) {
+      step += 1;
+      posX = basePos.x + (step % 3) * 300;
+      posY = basePos.y + Math.floor(step / 3) * 150;
+    }
+    return { x: posX, y: posY };
+  }, [nodesRef]);
+
   /**
    * 캔버스 드래그 연결(onConnect), Quick Connect 팝오버(Pattern A), 2-Step 클릭 연결(Pattern B)이
    * 공통으로 사용하는 엣지 생성 핸들러입니다.
@@ -481,10 +514,18 @@ export function useGraphOperations({
     if (!selectedNode) return;
     const targetId = selectedNode.id;
     const prevNodes = nodesRef.current;
+    const prevNodeData = {
+      label: selectedNode.data?.label || 'Node',
+      name: selectedNode.data?.name || '',
+      aliases: selectedNode.data?.aliases || [],
+      test_status: selectedNode.data?.test_status || 'Untested',
+      properties: { ...(selectedNode.data?.properties || {}) },
+    };
     pushUndo({
       type: 'UPDATE_NODE',
       id: targetId,
-      oldData: { label: selectedNode.data?.label || 'Node', name: selectedNode.data?.name || '', aliases: selectedNode.data?.aliases || [], test_status: selectedNode.data?.test_status || 'Untested', properties: { ...(selectedNode.data?.properties || {}) } },
+      previousData: prevNodeData,
+      oldData: prevNodeData,
     });
     // 1) properties.checklist 반영 (전역 노드인 경우 다른 노드에 부착된 배지 객체의 properties.checklist도 함께 갱신)
     // 2) 체크리스트 기반 자기 자신 상태 재합성
@@ -696,6 +737,7 @@ export function useGraphOperations({
       if (rfInstance && screenPosition) {
         initialPos = rfInstance.screenToFlowPosition(screenPosition);
       }
+      initialPos = resolveNonOverlappingRootPosition(initialPos);
 
       const newNode: CoverageNode = {
         id: newId,
@@ -718,31 +760,58 @@ export function useGraphOperations({
       nodesRef.current = updatedNodes;
       setNodes(updatedNodes);
 
+      if (setAliases && payloadAliases.length > 0) {
+        setAliases(prev => Array.from(new Set([...prev, ...payloadAliases])).sort());
+      }
+      if (fetchAliases && payloadAliases.length > 0) {
+        void fetchAliases();
+      }
+
       await createEdgeBetweenNodes(sourceId, newId, edgeType);
     } catch (err: unknown) {
       setErrorToast(extractErrorMessage(err));
     }
-  }, [nodesRef, filterText, pushUndo, rfInstance, setNodes, createEdgeBetweenNodes, setErrorToast]);
+  }, [nodesRef, filterText, pushUndo, rfInstance, resolveNonOverlappingRootPosition, setNodes, setAliases, fetchAliases, createEdgeBetweenNodes, setErrorToast]);
 
   const handleSave = useCallback(async () => {
-    if (isCreatingNode) {
+    if (isSavingRef.current) return;
+
+    const creatingNow = Boolean(isCreatingNode || isCreatingNodeRef?.current);
+    if (creatingNow) {
+      const trimmedName = (editFormData.name || '').trim();
+      if (!trimmedName) {
+        setErrorToast(t.error.nodeNameRequired);
+        return;
+      }
+      const saveSessionId = createSessionRef ? createSessionRef.current : 0;
+      const snapshotLabel = editFormData.label || 'Node';
+      const snapshotAliases = editFormData.aliases;
+      const snapshotDescription = editFormData.description || '';
+      const snapshotStatus = (editFormData.test_status as StatusName) || 'Untested';
+      const snapshotProperties = { ...(editFormData.properties || {}) };
+      isSavingRef.current = true;
       try {
-        const payloadAliases = Array.isArray(editFormData.aliases)
-          ? editFormData.aliases
-          : (typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map(s => s.trim()).filter(Boolean) : []);
-        const statusName = (editFormData.test_status as StatusName) || 'Untested';
+        const payloadAliases = Array.isArray(snapshotAliases)
+          ? snapshotAliases
+          : (typeof snapshotAliases === 'string' ? snapshotAliases.split(',').map(s => s.trim()).filter(Boolean) : []);
+        const statusName = snapshotStatus;
+        const isGlobalNode = String(snapshotProperties.is_global ?? '').toLowerCase() === 'true';
         const newId = await api.nodes.createNode({
-          label: editFormData.label || 'Node',
-          name: editFormData.name || '',
+          label: snapshotLabel,
+          name: trimmedName,
           aliases: payloadAliases,
-          description: editFormData.description || '',
+          description: snapshotDescription,
 
           test_status: statusName,
-          properties: editFormData.properties || {},
+          properties: snapshotProperties,
         });
         pushUndo({ type: 'CREATE_NODE', id: newId });
 
-        const targetScreenPos = pendingCreatePosRef?.current || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        const defaultScreenPos = {
+          x: Math.max(120, Math.round((window.innerWidth - 360) * 0.25)),
+          y: Math.max(180, Math.round(window.innerHeight * 0.26)),
+        };
+        const targetScreenPos = pendingCreatePosRef?.current || defaultScreenPos;
         let initialPos = { x: targetScreenPos.x - 100, y: targetScreenPos.y - 50 };
         if (rfInstance) {
           initialPos = rfInstance.screenToFlowPosition(targetScreenPos);
@@ -750,38 +819,56 @@ export function useGraphOperations({
         if (pendingCreatePosRef) {
           pendingCreatePosRef.current = null;
         }
+        initialPos = resolveNonOverlappingRootPosition(initialPos);
+
+        const sessionStillActive = !createSessionRef || createSessionRef.current === saveSessionId;
         const newNode: CoverageNode = {
           id: newId,
           type: 'custom',
           position: initialPos,
-          selected: true,
-          className: `status-${statusName.toLowerCase()}`,
+          selected: !isGlobalNode && sessionStillActive,
+          hidden: isGlobalNode,
+          className: `status-${statusName.toLowerCase()}${isGlobalNode || !sessionStillActive ? '' : ' active highlight-selected'}`,
           data: {
             id: newId,
-            label: editFormData.label || 'Node',
-            name: editFormData.name || '',
+            label: snapshotLabel,
+            name: trimmedName,
             aliases: payloadAliases,
-            description: editFormData.description || '',
+            description: snapshotDescription,
   
             test_status: statusName,
-            properties: editFormData.properties || {},
+            properties: snapshotProperties,
+            is_global: isGlobalNode || undefined,
             badges: [],
           },
         };
-        const nextNodes = [...nodesRef.current.map(n => (n.selected ? { ...n, selected: false } : n)), newNode];
+        const nextNodes = [
+          ...nodesRef.current.map(n => (sessionStillActive && n.selected ? { ...n, selected: false } : n)),
+          newNode,
+        ];
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
-        selectedNodeRef.current = newNode;
+        if (sessionStillActive) {
+          if (isCreatingNodeRef) isCreatingNodeRef.current = false;
+          if (setIsCreatingNode) setIsCreatingNode(false);
+          selectedNodeRef.current = newNode;
+          setSelectedNode(newNode);
+          if (setEditFormData) {
+            setEditFormData(prev => ({ ...prev, id: newId, name: trimmedName, type: 'node' }));
+          }
+        }
         if (setAliases && payloadAliases.length > 0) {
           setAliases(prev => Array.from(new Set([...prev, ...payloadAliases])).sort());
         }
         if (fetchAliases) {
-          await fetchAliases();
+          void fetchAliases();
         }
-        if (setIsCreatingNode) setIsCreatingNode(false);
-        setSelectedNode(newNode);
-        if (setEditFormData) {
-          setEditFormData(prev => ({ ...prev, id: newId, type: 'node' }));
+        if (isGlobalNode) {
+          if (fetchGlobals) {
+            void fetchGlobals();
+          } else {
+            triggerRefresh();
+          }
         }
         if (filterText && setFilterText) {
           const fl = filterText.toLowerCase();
@@ -793,12 +880,22 @@ export function useGraphOperations({
             if (setShowAllDomains) setShowAllDomains(true);
             setFilterText('');
           }
-        } else if (!filterText && setShowAllDomains) {
+        } else if (!filterText && !showAllDomains && payloadAliases.length > 0 && setShowAllDomains) {
           setShowAllDomains(true);
         }
-        triggerRefresh();
+        if (!isGlobalNode && selectedDomain && setSelectedDomain) {
+          const effDomain = getEffectiveNodeDomain(newNode, nextNodes);
+          const matchesSelectedDomain =
+            selectedDomain === '__unassigned__' ? !effDomain : effDomain === selectedDomain;
+          if (!matchesSelectedDomain) {
+            setSelectedDomain(null);
+            if (setIsDomainIsolated) setIsDomainIsolated(false);
+          }
+        }
       } catch (err: unknown) {
         setErrorToast(extractErrorMessage(err));
+      } finally {
+        isSavingRef.current = false;
       }
       return;
     }
@@ -807,11 +904,19 @@ export function useGraphOperations({
       const targetId = editFormData.id;
       const targetNode = nodesRef.current.find(n => n.id === targetId) || (selectedNodeRef.current?.id === targetId ? selectedNodeRef.current : undefined);
       if (!targetId || !targetNode) return;
-      pushUndo({
-        type: 'UPDATE_NODE',
-        id: targetId,
-        oldData: { label: targetNode.data?.label || 'Node', name: targetNode.data?.name || '', aliases: targetNode.data?.aliases || [], test_status: targetNode.data?.test_status || 'Untested', properties: { ...(targetNode.data?.properties || {}) } },
-      });
+      const nextName = (editFormData.name !== undefined ? editFormData.name : (targetNode.data?.name || '')).trim();
+      if (!nextName) {
+        setErrorToast(t.error.nodeNameRequired);
+        return;
+      }
+      const prevNodeData = {
+        label: targetNode.data?.label || 'Node',
+        name: targetNode.data?.name || '',
+        aliases: targetNode.data?.aliases || [],
+        description: targetNode.data?.description || '',
+        test_status: targetNode.data?.test_status || 'Untested',
+        properties: { ...(targetNode.data?.properties || {}) },
+      };
       // Extract description and issue_link to top-level for the backend, while preserving is_global in properties
       // 전용 폼 컨트롤(#nodeIsGlobal, description)이 사용하는 키는 보존하되,
       // Custom Properties 목록에서는 SYSTEM_RESERVED_KEYS 필터로 숨깁니다.
@@ -819,9 +924,9 @@ export function useGraphOperations({
       // (폼을 연 뒤 연쇄 전파로 Blocked 등이 된 경우, 이름만 고쳐 저장해도 전파 결과를 덮어쓰지 않도록)
       // 기존 시스템 속성(checklist / 📌 고정 / 변경 표시 / is_global 등)은 로컬 state에서도 그대로 보존합니다.
       // (백엔드는 properties를 병합(n += $properties)하므로 서버 쪽 값도 유지됨)
+      isSavingRef.current = true;
       try {
         const nextLabel = editFormData.label || targetNode.data?.label || 'Node';
-        const nextName = editFormData.name !== undefined ? editFormData.name : (targetNode.data?.name || '');
         const nextAliases = Array.isArray(editFormData.aliases)
           ? editFormData.aliases
           : (typeof editFormData.aliases === 'string' ? editFormData.aliases.split(',').map(s => s.trim()).filter(Boolean) : (targetNode.data?.aliases || []));
@@ -835,6 +940,12 @@ export function useGraphOperations({
           description: nextDesc,
 
           properties: editFormData.properties,
+        });
+        pushUndo({
+          type: 'UPDATE_NODE',
+          id: targetId,
+          previousData: prevNodeData,
+          oldData: prevNodeData,
         });
         // Don't triggerRefresh for normal edits — local state is already updated
         // triggerRefresh would re-run dagre layout and reset all dragged positions
@@ -860,33 +971,29 @@ export function useGraphOperations({
           setAliases(prev => Array.from(new Set([...prev, ...nextAliases])).sort());
         }
         if (fetchAliases) {
-          await fetchAliases();
+          void fetchAliases();
+        }
+        if (globalChanged && fetchGlobals) {
+          void fetchGlobals();
         }
 
-        setNodes(nds => nds.map(n => (n.id === targetId ? {
-          ...n,
-          data: {
-            ...n.data,
-            label: nextLabel,
-            name: nextName,
-            aliases: nextAliases,
-            description: nextDesc,
-  
-            properties: { ...(n.data?.properties || {}), ...(editFormData.properties || {}) },
-          },
-        } : n)));
-        setSelectedNode(prev => (prev && prev.id === targetId ? {
-          ...prev,
-          data: {
-            ...prev.data,
-            label: nextLabel,
-            name: nextName,
-            aliases: nextAliases,
-            description: nextDesc,
-  
-            properties: { ...(prev.data?.properties || {}), ...(editFormData.properties || {}) },
-          },
-        } : prev));
+        setSelectedNode(prev => {
+          if (!prev || prev.id !== targetId) return prev;
+          const updatedSelected: CoverageNode = {
+            ...prev,
+            data: {
+              ...prev.data,
+              label: nextLabel,
+              name: nextName,
+              aliases: nextAliases,
+              description: nextDesc,
+    
+              properties: { ...(prev.data?.properties || {}), ...(editFormData.properties || {}) },
+            },
+          };
+          selectedNodeRef.current = updatedSelected;
+          return updatedSelected;
+        });
 
         if (globalChanged) {
           triggerRefresh();
@@ -895,6 +1002,8 @@ export function useGraphOperations({
         }
       } catch (err: unknown) {
         setErrorToast(extractErrorMessage(err));
+      } finally {
+        isSavingRef.current = false;
       }
     } else if (editFormData.type === 'edge') {
       const targetId = editFormData.id;
@@ -911,6 +1020,7 @@ export function useGraphOperations({
       // 1) 낙관적 업데이트: 엣지 상태 및 타입 반영 + 타겟 노드 재계산/하류 전파
       // data.type도 함께 갱신해야 전파 엔진(edgeTypeOf)이 바뀐 타입(예: Return 전환)을 인식합니다.
       // 타입/상태가 바뀐 엣지의 타겟을 재계산하고 하류로 전파 (낙관적) → 서버 결과로 재동기화
+      isSavingRef.current = true;
       try {
         const prevTypeLower = String(prevEdgeData.type).toLowerCase();
         const wasContains = prevTypeLower === 'contains' || prevTypeLower === 'has';
@@ -988,9 +1098,67 @@ export function useGraphOperations({
         syncStatusesFromServer();
       } catch (err: unknown) {
         setErrorToast(extractErrorMessage(err));
+      } finally {
+        isSavingRef.current = false;
       }
     }
-  }, [editFormData, isCreatingNode, setIsCreatingNode, rfInstance, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, setSelectedEdge, unparentNodesOnContainsDelete, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast, setEdges, pendingCreatePosRef, setEditFormData, filterText, setFilterText, setShowAllDomains, setAliases, fetchAliases]);
+  }, [editFormData, isCreatingNode, isCreatingNodeRef, createSessionRef, setIsCreatingNode, rfInstance, resolveNonOverlappingRootPosition, triggerRefresh, nodesRef, selectedNodeRef, pushUndo, edgesRef, selectedEdgeRef, setNodes, setSelectedNode, setSelectedEdge, unparentNodesOnContainsDelete, applyLocalStatusChanges, syncStatusesFromServer, setErrorToast, setEdges, pendingCreatePosRef, setEditFormData, filterText, setFilterText, showAllDomains, setShowAllDomains, selectedDomain, setSelectedDomain, setIsDomainIsolated, setAliases, fetchAliases, fetchGlobals]);
+
+  const handleUpdateEdgeStatusById = useCallback(async (edgeId: string, status: StatusName) => {
+    const targetEdge = edgesRef.current.find(e => e.id === edgeId);
+    if (!targetEdge) return;
+    const prevEdges = edgesRef.current;
+    const prevNodes = nodesRef.current;
+    const edgeType = String(targetEdge.data?.type || targetEdge.label || 'Transition');
+    const nextAction = targetEdge.data?.action || '';
+    const isContains = edgeType.toLowerCase() === 'contains' || edgeType.toLowerCase() === 'has';
+    const prevEdgeData = {
+      type: edgeType,
+      test_status: targetEdge.data?.test_status || 'Untested',
+      action: nextAction,
+    };
+
+    const optimisticEds = edgesRef.current.map(e => {
+      if (e.id !== edgeId) return e;
+      const baseCls = (e.className || '').replace(/\b(edge-contains|status-[a-z-]+)\b/g, '').trim();
+      const nextCls = `${baseCls} status-${status.toLowerCase()}${isContains ? ' edge-contains' : ''}`.trim();
+      return {
+        ...e,
+        className: nextCls,
+        data: {
+          ...e.data,
+          type: edgeType,
+          action: nextAction,
+          test_status: status,
+        },
+      };
+    });
+    setEdges(optimisticEds);
+    applyLocalStatusChanges(recalcTargetAndPropagate(nodesRef.current, optimisticEds, [targetEdge.target]));
+
+    try {
+      const res = await api.edges.updateEdge(edgeId, {
+        type: edgeType,
+        action: nextAction,
+        test_status: status,
+      });
+      const mappedNewId = res?.new_id || edgeId;
+      if (mappedNewId !== edgeId) {
+        setEdges(eds => eds.map(e => (e.id === edgeId ? { ...e, id: mappedNewId } : e)));
+      }
+      pushUndo({
+        type: 'UPDATE_EDGE',
+        id: mappedNewId,
+        previousData: prevEdgeData,
+        oldData: prevEdgeData,
+      });
+      syncStatusesFromServer();
+    } catch (err: unknown) {
+      setEdges(prevEdges);
+      setNodes(prevNodes);
+      setErrorToast(extractErrorMessage(err));
+    }
+  }, [edgesRef, nodesRef, setEdges, setNodes, applyLocalStatusChanges, pushUndo, syncStatusesFromServer, setErrorToast]);
 
   return {
     createEdgeBetweenNodes,
@@ -1000,6 +1168,7 @@ export function useGraphOperations({
     handleDetachFromParent,
     handleDelete,
     handleSaveStatus,
+    handleUpdateEdgeStatusById,
     saveChecklist,
     handleCloneNode,
     handleSave,
